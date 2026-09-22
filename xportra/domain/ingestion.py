@@ -1377,8 +1377,9 @@ class ApplicabilityToRiskIntegration:
             if outcome not in {"applicable", "not_applicable", "unknown"}:
                 continue
 
-            requirement = result.get("requirement", {})
-            req_id = requirement.get("id")
+            requirement = result.get("requirement")
+            requirement = requirement if isinstance(requirement, dict) else {}
+            req_id = result.get("requirement_id") or requirement.get("id")
             if not req_id:
                 continue
 
@@ -1688,7 +1689,9 @@ class RiskToActionIntegration:
         original_results = original_report.get("results", [])
         result_lookup = {}
         for result in original_results:
-            req_id = result.get("requirement", {}).get("id")
+            requirement = result.get("requirement")
+            requirement = requirement if isinstance(requirement, dict) else {}
+            req_id = result.get("requirement_id") or requirement.get("id")
             if req_id:
                 result_lookup[req_id] = result
 
@@ -1700,7 +1703,8 @@ class RiskToActionIntegration:
 
             # Find original result for this requirement
             original = result_lookup.get(req_id, {})
-            requirement = original.get("requirement", {})
+            requirement = original.get("requirement")
+            requirement = requirement if isinstance(requirement, dict) else {}
 
             case = {
                 "tenant_id": tenant_id,
@@ -1728,6 +1732,325 @@ class RiskToActionIntegration:
 
         return cases
     
+
+class ComplianceDecisionSummaryService:
+    """Deterministic representation boundary for the compliance decision summary.
+
+    Condenses the existing Applicability -> Risk -> Action outputs into a single
+    structured, tenant-scoped representation for future application/API layers:
+
+    Applicability -> Risk -> Action -> Summary
+
+    This boundary decides nothing. Applicability determination, risk
+    classification, and action recommendation remain owned by their existing
+    services; this service only joins what those services already produced,
+    preserves unknown/insufficient states explicitly, and orders every section
+    deterministically. It performs no persistence, no external calls, and no
+    retrieval, RAG, LLM, embedding, or vector work.
+    """
+
+    def __init__(
+        self,
+        risk_service: ComplianceRiskService | None = None,
+        risk_to_action: RiskToActionIntegration | None = None,
+    ) -> None:
+        self._risk_service = risk_service or ComplianceRiskService()
+        self._risk_to_action = risk_to_action or RiskToActionIntegration()
+
+    def summarize(
+        self,
+        cases: list[dict[str, Any]],
+        *,
+        tenant_id: UUID,
+    ) -> dict[str, Any]:
+        """Summarize existing compliance cases into a decision summary.
+
+        Args:
+            cases: Existing compliance cases (applicability, assessment,
+                   evidence), as consumed by ComplianceRiskService
+            tenant_id: Tenant identity for isolation
+
+        Returns:
+            Structured decision summary derived only from existing service outputs
+
+        Raises:
+            ComplianceSummaryValidationError: If inputs are invalid or cross tenants
+        """
+        if not isinstance(cases, list):
+            raise ComplianceSummaryValidationError("cases must be a list")
+        if not isinstance(tenant_id, UUID):
+            raise ComplianceSummaryValidationError("tenant_id is required")
+
+        risk_results = self._risk_service.classify(cases, tenant_id=tenant_id)
+        actions = self._risk_to_action.recommend_from_risk(cases, tenant_id=tenant_id)
+        ordered_cases = sorted(cases, key=lambda case: str(case["requirement"]["id"]))
+        views = [self._view_from_case(case) for case in ordered_cases]
+
+        return self._compose(
+            tenant_id=tenant_id,
+            context_fingerprint=self._first_fingerprint(ordered_cases),
+            applicability=self._applicability_section(
+                [
+                    {
+                        "requirement_id": view["requirement_id"],
+                        "requirement_text": view["requirement_text"],
+                        "outcome": view["applicability_outcome"],
+                        "reason": view["applicability_reason"],
+                    }
+                    for view in views
+                ]
+            ),
+            requirement_views=views,
+            risk_results=risk_results,
+            actions=actions,
+        )
+
+    def summarize_from_applicability(
+        self,
+        applicability_report: dict[str, Any],
+        *,
+        tenant_id: UUID,
+    ) -> dict[str, Any]:
+        """Summarize an applicability report by running the existing pipeline.
+
+        Args:
+            applicability_report: Output of ComplianceApplicabilityService.determine()
+            tenant_id: Tenant identity for isolation
+
+        Returns:
+            Structured decision summary; risk and action sections come from the
+            existing Phase 3.3/3.4 pipeline and applicability from the report
+            itself. A report carries no assessment or evidence, so those fields
+            stay None rather than being assumed.
+
+        Raises:
+            ComplianceSummaryValidationError: If inputs are invalid or cross tenants
+        """
+        if not isinstance(applicability_report, dict):
+            raise ComplianceSummaryValidationError("applicability_report is required")
+        if not isinstance(tenant_id, UUID):
+            raise ComplianceSummaryValidationError("tenant_id is required")
+
+        pipeline = self._risk_to_action.full_pipeline(
+            applicability_report, tenant_id=tenant_id
+        )
+        applicability_results = self._applicability_results_from_report(
+            applicability_report
+        )
+        views = [
+            {
+                "requirement_id": result["requirement_id"],
+                "requirement_text": result["requirement_text"],
+                "applicability_outcome": result["outcome"],
+                "applicability_reason": result["reason"],
+                "assessment_outcome": None,
+                "assessment_reason": None,
+                "evidence_present": None,
+            }
+            for result in applicability_results
+        ]
+
+        return self._compose(
+            tenant_id=tenant_id,
+            context_fingerprint=applicability_report.get("context_fingerprint"),
+            applicability=self._applicability_section(applicability_results),
+            requirement_views=views,
+            risk_results=pipeline["risk_results"],
+            actions=pipeline["action_recommendations"],
+        )
+
+    @staticmethod
+    def _view_from_case(case: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "requirement_id": case["requirement"]["id"],
+            "requirement_text": case["requirement"].get("text"),
+            "applicability_outcome": case["applicability"]["outcome"],
+            "applicability_reason": case["applicability"].get("reason"),
+            "assessment_outcome": case["assessment"]["outcome"],
+            "assessment_reason": case["assessment"].get("reason"),
+            "evidence_present": bool(case.get("evidence")),
+        }
+
+    @staticmethod
+    def _first_fingerprint(ordered_cases: list[dict[str, Any]]) -> str | None:
+        for case in ordered_cases:
+            fingerprint = case.get("context_fingerprint")
+            if fingerprint:
+                return fingerprint
+        return None
+
+    @staticmethod
+    def _applicability_results_from_report(
+        applicability_report: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        results = []
+        for result in applicability_report.get("results", []):
+            if not isinstance(result, dict):
+                continue
+            requirement = result.get("requirement")
+            requirement = requirement if isinstance(requirement, dict) else {}
+            requirement_id = result.get("requirement_id") or requirement.get("id")
+            outcome = result.get("outcome")
+            if not requirement_id:
+                continue
+            if outcome not in {"applicable", "not_applicable", "unknown"}:
+                continue
+            results.append(
+                {
+                    "requirement_id": requirement_id,
+                    "requirement_text": result.get("requirement_text")
+                    or requirement.get("text"),
+                    "outcome": outcome,
+                    "reason": result.get("reason"),
+                }
+            )
+        return results
+
+    @classmethod
+    def _applicability_section(cls, results: list[dict[str, Any]]) -> dict[str, Any]:
+        ordered = sorted(results, key=lambda result: str(result["requirement_id"]))
+        counts = cls._counts([result["outcome"] for result in ordered])
+        return {
+            "total_requirements": len(ordered),
+            "applicable_count": counts.get("applicable", 0),
+            "not_applicable_count": counts.get("not_applicable", 0),
+            "unknown_count": counts.get("unknown", 0),
+            "results": ordered,
+        }
+
+    @staticmethod
+    def _counts(values: list[str]) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for value in values:
+            counts[value] = counts.get(value, 0) + 1
+        return {key: counts[key] for key in sorted(counts)}
+
+    @classmethod
+    def _compose(
+        cls,
+        *,
+        tenant_id: UUID,
+        context_fingerprint: str | None,
+        applicability: dict[str, Any],
+        requirement_views: list[dict[str, Any]],
+        risk_results: list[dict[str, Any]],
+        actions: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        ordered_risk = sorted(
+            risk_results, key=lambda result: str(result["requirement_id"])
+        )
+        ordered_actions = sorted(
+            actions, key=lambda action: str(action["requirement_id"])
+        )
+        risk_by_requirement = {
+            str(result["requirement_id"]): result for result in ordered_risk
+        }
+        action_by_requirement = {
+            str(action["requirement_id"]): action for action in ordered_actions
+        }
+
+        views = []
+        for view in sorted(
+            requirement_views, key=lambda view: str(view["requirement_id"])
+        ):
+            key = str(view["requirement_id"])
+            risk = risk_by_requirement.get(key)
+            action = action_by_requirement.get(key)
+            views.append(
+                {
+                    "requirement_id": view["requirement_id"],
+                    "requirement_text": view["requirement_text"],
+                    "applicability_outcome": view["applicability_outcome"],
+                    "applicability_reason": view["applicability_reason"],
+                    "assessment_outcome": view.get("assessment_outcome"),
+                    "assessment_reason": view.get("assessment_reason"),
+                    "evidence_present": view.get("evidence_present"),
+                    "risk_state": risk["state"] if risk else None,
+                    "action_type": action["action_type"] if action else None,
+                }
+            )
+
+        return {
+            "tenant_id": tenant_id,
+            "context_fingerprint": context_fingerprint,
+            "status": "decision_summary",
+            "applicability": applicability,
+            "risk": {
+                "classified_count": len(ordered_risk),
+                "by_state": cls._counts([result["state"] for result in ordered_risk]),
+                "results": ordered_risk,
+            },
+            "actions": {
+                "recommendation_count": len(ordered_actions),
+                "by_type": cls._counts(
+                    [action["action_type"] for action in ordered_actions]
+                ),
+                "results": ordered_actions,
+            },
+            "unknown_states": cls._unknown_states(views, risk_by_requirement),
+            "requirements": views,
+        }
+
+    @staticmethod
+    def _unknown_states(
+        views: list[dict[str, Any]],
+        risk_by_requirement: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """List every uncertainty observable from the supplied input.
+
+        Kinds are descriptive labels for existing states only; they never change
+        a decision. A source that carries no assessment or evidence (such as a
+        pure applicability report) cannot produce those kinds.
+        """
+        unknown: list[dict[str, Any]] = []
+        for view in views:
+            requirement_id = view["requirement_id"]
+            applicable = view["applicability_outcome"] == "applicable"
+            assessment_unknown = view["assessment_outcome"] == "unknown"
+
+            if view["applicability_outcome"] == "unknown":
+                unknown.append(
+                    {
+                        "requirement_id": requirement_id,
+                        "kind": "applicability_unknown",
+                        "reason": view["applicability_reason"],
+                    }
+                )
+            if applicable and assessment_unknown:
+                unknown.append(
+                    {
+                        "requirement_id": requirement_id,
+                        "kind": "assessment_unknown",
+                        "reason": view["assessment_reason"],
+                    }
+                )
+            # Mirror the existing services' missing-evidence semantics exactly:
+            # empty evidence or the "required evidence absent" assessment reason.
+            missing_evidence = view["evidence_present"] is False or (
+                view["assessment_reason"] == "required evidence absent"
+            )
+            if applicable and assessment_unknown and missing_evidence:
+                unknown.append(
+                    {
+                        "requirement_id": requirement_id,
+                        "kind": "missing_evidence",
+                        "reason": view["assessment_reason"],
+                    }
+                )
+            risk = risk_by_requirement.get(str(requirement_id))
+            if risk is not None and risk["state"] == "unknown":
+                unknown.append(
+                    {
+                        "requirement_id": requirement_id,
+                        "kind": "risk_unknown",
+                        "reason": risk["explanation"],
+                    }
+                )
+        return sorted(
+            unknown, key=lambda item: (str(item["requirement_id"]), item["kind"])
+        )
+
+
 
 class SourceAcquisitionService:
     """Persist a registry-backed source artifact without allowing silent replacement.

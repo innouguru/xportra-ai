@@ -2,7 +2,7 @@
 
 > Source of truth for what is true about Xportra AI right now.
 > Updated: 2026-09-22
-> Phase: Phase 3 — Applicability Engine (Phase 3.4 complete; Phase 3.5 not started)
+> Phase: Phase 3 — Applicability Engine (Phase 3.5 complete; Phase 3.6 not started)
 
 ## Status
 
@@ -18,17 +18,18 @@ Phase 2.1 through Phase 2.9 are complete: knowledge ingestion, artifact parsing
 and normalization, regulatory document structuring, regulatory requirement
 extraction, requirement applicability foundation, compliance evidence and
 assessment foundation, compliance case read model, compliance decision-support
-summary, and compliance risk/priority foundation. Phase 3.0 through Phase 3.4
+summary, and compliance risk/priority foundation. Phase 3.0 through Phase 3.5
 are complete: compliance action recommendation foundation, compliance
 applicability determination, applicability integration boundary,
-applicability-to-risk integration, and risk-to-action integration.
+applicability-to-risk integration, risk-to-action integration, and the
+compliance decision summary boundary.
 No production environment is configured.
-Current verified test state: 186/186 unit tests passing, 0 failures, 0 errors.
-This is the previously verified Phase 3.4 implementation state; no new test run
-was performed for this project-state documentation update.
-Phase 3.4 is complete. Phase 3.5 has not started.
+Current verified test state: 202/202 unit tests passing, 0 failures, 0 errors.
+This is the verified Phase 3.5 implementation state (16 focused Phase 3.5 tests
+plus the 186-test baseline).
+Phase 3.5 is complete. Phase 3.6 has not started.
 
-## Current Domain Pipeline (through Phase 3.4)
+## Current Domain Pipeline (through Phase 3.5)
 
 ```text
 Export Case Facts
@@ -40,6 +41,8 @@ Applicability Determination
 Risk Classification
     ↓
 Action Recommendations
+    ↓
+Compliance Decision Summary
 ```
 
 - Applicability context: `ApplicabilityContextBuilder` (Phase 3.2) translates
@@ -55,6 +58,12 @@ Action Recommendations
   risk-classified cases into recommendations via the existing
   `ComplianceActionRecommendationService` (Phase 3.0), and provides the
   end-to-end `full_pipeline()` entry point.
+- Decision summary: `ComplianceDecisionSummaryService` (Phase 3.5) joins the
+  existing applicability, risk, and action outputs into one deterministic
+  structured summary (`summarize()` for existing cases,
+  `summarize_from_applicability()` for a pipeline run). It decides nothing,
+  reuses the existing services, and preserves unknown/insufficient states
+  explicitly.
 - The pipeline is deterministic, read-only, tenant-scoped, and in-memory. It
   preserves `applicable`, `not_applicable`, and `unknown` states without silent
   conversion, performs no persistence, makes no external calls, and uses no
@@ -120,9 +129,10 @@ Action Recommendations
   applied and validated against the Supabase development/test database.
 - Regulatory ingestion, parsing, normalization, structuring, requirement
   extraction, applicability, evidence assessment, case read model,
-  decision-support summary, risk classification, and action recommendation
-  services exist. Retrieval, RAG, vector databases, embeddings, chunking,
-  reranking, LLM reasoning, agents, crawling, and UI do not exist.
+  decision-support summary, risk classification, action recommendation, and
+  compliance decision summary services exist. Retrieval, RAG, vector databases,
+  embeddings, chunking, reranking, LLM reasoning, agents, crawling, and UI do
+  not exist.
 - No provider-specific implementation details beyond the approved technology
   baseline document.
 - No dependency list derived from `.venv` contents.
@@ -132,6 +142,14 @@ Action Recommendations
   and dependency-free unit tests outside `.venv`.
 
 ## Last Verified
+
+### Phase 3.5 implementation state (2026-09-22)
+
+- Unit suite: 202/202 tests passing, 0 failures, 0 errors — 16 new focused
+  Phase 3.5 tests plus the 186-test baseline, no regressions.
+- Focused Phase 3.5 tests: 16/16 passing
+  (`tests/unit/test_compliance_decision_summary.py`).
+- Baseline re-confirmed immediately before Phase 3.5 work: 186/186 passing.
 
 ### Phase 3.4 implementation state (2026-09-21)
 
@@ -173,10 +191,10 @@ Action Recommendations
 
 ## Next
 
-Phase 1, Phase 2, and Phase 3.0 through Phase 3.4 are complete. Phase 3.4 is
-complete and Phase 3.5 has not started. Any next step must first be defined in
+Phase 1, Phase 2, and Phase 3.0 through Phase 3.5 are complete. Phase 3.5 is
+complete and Phase 3.6 has not started. Any next step must first be defined in
 `REQUIREMENTS.md` and scheduled through `tasks/` and `ACTIVE_TASK.md`; no Phase
-3.5 implementation exists in the repository. Retrieval, RAG, embeddings, vector
+3.6 implementation exists in the repository. Retrieval, RAG, embeddings, vector
 search, LLM reasoning, and agents are not implemented and must not be treated
 as existing.
 
@@ -595,5 +613,40 @@ as existing.
   database operations are introduced.
 - Verification status: focused Phase 3.4 tests passed (15/15), full unit suite
   passed (186/186), no regressions detected.
+- PostgreSQL integration tests were not run because `DATABASE_URL` is not
+  configured in the current environment.
+
+## Phase 3.5 — Compliance Decision Summary (Complete, 2026-09-22)
+
+- `ComplianceDecisionSummaryService` condenses the existing Applicability →
+  Risk → Action outputs into a single structured, tenant-scoped Compliance
+  Decision Summary for future application/API layers. It is an
+  orchestration/representation boundary only: it decides nothing and reuses
+  `ComplianceRiskService` (risk), `RiskToActionIntegration` /
+  `ComplianceActionRecommendationService` (actions), and the applicability
+  data already carried by cases and reports.
+- Two entry points: `summarize()` for existing compliance cases, and
+  `summarize_from_applicability()` which runs the existing Phase 3.4
+  `full_pipeline()` and takes applicability from the report itself.
+- The summary represents tenant identity, context fingerprint, applicability
+  results and counts, risk classification results with per-state counts,
+  action recommendations with per-type counts, per-requirement rows joining
+  applicability/assessment/evidence presence/risk state/action type, and an
+  explicit `unknown_states` list.
+- Unknown/insufficient states are preserved, never converted: applicability
+  `unknown` remains `unknown`, assessment `unknown` remains `unknown`, missing
+  evidence is reported as `missing_evidence`, unknown risk state is reported
+  as `risk_unknown`, and recommendations from the existing action logic are
+  passed through unmodified. A pure applicability report carries no assessment
+  or evidence, so those fields remain `None` rather than assumed.
+- Output is deterministic: identical input produces an identical summary, and
+  every section (applicability, risk, actions, requirement rows,
+  unknown_states) is ordered by requirement ID.
+- No persistence, external calls, LLM, RAG, retrieval, embeddings, vector
+  operations, new rules, new risk levels, or new action types were introduced.
+  Two latent dict-shape assumptions in `RiskToActionIntegration` were hardened
+  defensively (non-dict `requirement` payloads) without behavior change.
+- Verification status: focused Phase 3.5 tests passed (16/16), full unit suite
+  passed (202/202) against the 186-test baseline, no regressions.
 - PostgreSQL integration tests were not run because `DATABASE_URL` is not
   configured in the current environment.
