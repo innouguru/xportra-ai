@@ -2052,6 +2052,237 @@ class ComplianceDecisionSummaryService:
 
 
 
+class ComplianceCaseReadinessService:
+    """Deterministic readiness and evidence-coverage boundary over existing cases.
+
+    Evaluates whether each compliance case carries the information the existing
+    Applicability -> Risk -> Action pipeline needs, and reports information gaps
+    explicitly so future retrieval work can target them:
+
+    Applicability -> Risk -> Action -> Summary -> Readiness
+
+    Readiness is NOT compliance. A ready case may still contain high-risk or
+    not_satisfied requirements, and a not_ready case is not non-compliant -- it
+    simply lacks information for a complete determination. This service adds no
+    compliance verdicts and no new rules: applicability, risk, and action
+    semantics remain owned by the existing services, and "missing evidence"
+    reuses ComplianceRiskService._is_missing_evidence directly.
+
+    Readiness states:
+    - ready: every required piece of information is known
+    - partially_ready: applicability is known for all requirements, but some
+      assessment, evidence, or risk information is missing
+    - not_ready: no cases at all, or at least one requirement with unknown
+      applicability -- the applicable requirement set itself cannot be
+      enumerated completely
+
+    Unknown, not_applicable, and missing evidence remain distinct. No
+    persistence, external calls, retrieval, RAG, LLM, embedding, or vector work.
+    """
+
+    def __init__(
+        self,
+        risk_service: ComplianceRiskService | None = None,
+        risk_to_action: RiskToActionIntegration | None = None,
+    ) -> None:
+        self._risk_service = risk_service or ComplianceRiskService()
+        self._risk_to_action = risk_to_action or RiskToActionIntegration()
+
+    def assess(
+        self,
+        cases: list[dict[str, Any]],
+        *,
+        tenant_id: UUID,
+    ) -> dict[str, Any]:
+        """Assess information readiness of existing compliance cases.
+
+        Args:
+            cases: Existing compliance cases (applicability, assessment,
+                   evidence), as consumed by ComplianceRiskService
+            tenant_id: Tenant identity for isolation
+
+        Returns:
+            Deterministic readiness report derived only from existing outputs
+
+        Raises:
+            ComplianceSummaryValidationError: If inputs are invalid or cross tenants
+        """
+        if not isinstance(cases, list):
+            raise ComplianceSummaryValidationError("cases must be a list")
+        if not isinstance(tenant_id, UUID):
+            raise ComplianceSummaryValidationError("tenant_id is required")
+
+        validated = [
+            ComplianceRiskService._validate_case(case, tenant_id) for case in cases
+        ]
+        ordered = sorted(validated, key=lambda case: str(case["requirement"]["id"]))
+        risk_results = self._risk_service.classify(ordered, tenant_id=tenant_id)
+        risk_by_requirement = {
+            str(result["requirement_id"]): result for result in risk_results
+        }
+        actions = self._risk_to_action.recommend_from_risk(
+            ordered, tenant_id=tenant_id
+        )
+
+        gaps: list[dict[str, Any]] = []
+        required = 0
+        known = 0
+        for case in ordered:
+            requirement_id = case["requirement"]["id"]
+            outcome = case["applicability"]["outcome"]
+
+            # Applicability information is required for every requirement.
+            required += 1
+            if outcome == "unknown":
+                gaps.append(
+                    {
+                        "requirement_id": requirement_id,
+                        "kind": "applicability_unknown",
+                        "reason": case["applicability"].get("reason"),
+                    }
+                )
+            else:
+                known += 1
+
+            if outcome != "applicable":
+                continue
+
+            # Assessment, evidence, and risk information are required only for
+            # applicable requirements, matching existing pipeline semantics.
+            required += 3
+
+            if case["assessment"]["outcome"] == "unknown":
+                gaps.append(
+                    {
+                        "requirement_id": requirement_id,
+                        "kind": "assessment_unknown",
+                        "reason": case["assessment"].get("reason"),
+                    }
+                )
+            else:
+                known += 1
+
+            # Existing services (risk, action, and the Phase 2.8 summary) consult
+            # missing evidence only for unknown assessments; the readiness layer
+            # mirrors that scope exactly and invents no extra evidence rule.
+            if (
+                case["assessment"]["outcome"] == "unknown"
+                and ComplianceRiskService._is_missing_evidence(case)
+            ):
+                gaps.append(
+                    {
+                        "requirement_id": requirement_id,
+                        "kind": "missing_evidence",
+                        "reason": case["assessment"].get("reason"),
+                    }
+                )
+            else:
+                known += 1
+
+            risk = risk_by_requirement.get(str(requirement_id))
+            if risk is not None and risk["state"] in {"high", "medium", "low"}:
+                known += 1
+            else:
+                gaps.append(
+                    {
+                        "requirement_id": requirement_id,
+                        "kind": "risk_unknown",
+                        "reason": (
+                            risk["explanation"]
+                            if risk is not None
+                            else "no risk classification produced"
+                        ),
+                    }
+                )
+
+        actions_by_requirement = {
+            str(action["requirement_id"]): action for action in actions
+        }
+
+        # Actions that ask for more information rather than remediation. The
+        # existing action logic produces these two types exactly when
+        # information is insufficient; address_requirement and
+        # no_action_required already rest on known information.
+        evidence_actions = sorted(
+            (
+                action
+                for action in actions
+                if action["action_type"]
+                in {"provide_missing_evidence", "review_requirement"}
+            ),
+            key=lambda action: str(action["requirement_id"]),
+        )
+
+        requirement_views = []
+        for case in ordered:
+            key = str(case["requirement"]["id"])
+            risk = risk_by_requirement.get(key)
+            action = actions_by_requirement.get(key)
+            requirement_views.append(
+                {
+                    "requirement_id": case["requirement"]["id"],
+                    "requirement_text": case["requirement"].get("text"),
+                    "applicability_outcome": case["applicability"]["outcome"],
+                    "assessment_outcome": case["assessment"]["outcome"],
+                    "evidence_present": bool(case.get("evidence")),
+                    "risk_state": risk["state"] if risk else None,
+                    "action_type": action["action_type"] if action else None,
+                }
+            )
+
+        # The applicable requirement set cannot be enumerated completely while
+        # any applicability is unknown; an empty input has nothing to determine.
+        if not ordered or any(
+            gap["kind"] == "applicability_unknown" for gap in gaps
+        ):
+            readiness_state = "not_ready"
+        elif gaps:
+            readiness_state = "partially_ready"
+        else:
+            readiness_state = "ready"
+
+        missing_information = sorted(
+            gaps, key=lambda gap: (str(gap["requirement_id"]), gap["kind"])
+        )
+
+        def _ids(kind: str) -> list[Any]:
+            return [
+                gap["requirement_id"]
+                for gap in missing_information
+                if gap["kind"] == kind
+            ]
+
+        return {
+            "tenant_id": tenant_id,
+            "context_fingerprint": ComplianceDecisionSummaryService._first_fingerprint(
+                ordered
+            ),
+            "status": "readiness_report",
+            "readiness_state": readiness_state,
+            "required_information": required,
+            "known_information": known,
+            "missing_information": len(missing_information),
+            "gaps": missing_information,
+            "unknown_applicability_requirements": _ids("applicability_unknown"),
+            "unknown_assessment_requirements": _ids("assessment_unknown"),
+            "missing_evidence_requirements": _ids("missing_evidence"),
+            "unknown_risk_requirements": _ids("risk_unknown"),
+            "actions_requiring_evidence": [
+                {
+                    "requirement_id": action["requirement_id"],
+                    "action_type": action["action_type"],
+                    "explanation": action["explanation"],
+                }
+                for action in evidence_actions
+            ],
+            "requirements": requirement_views,
+            "readiness_not_compliance": (
+                "readiness reflects information sufficiency only; it is not a "
+                "compliance verdict"
+            ),
+        }
+
+
 class SourceAcquisitionService:
     """Persist a registry-backed source artifact without allowing silent replacement.
 

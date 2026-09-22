@@ -2,7 +2,7 @@
 
 > Source of truth for what is true about Xportra AI right now.
 > Updated: 2026-09-22
-> Phase: Phase 3 — Applicability Engine (Phase 3.5 complete; Phase 3.6 not started)
+> Phase: Phase 3 — Applicability Engine (Phase 3.6 complete; Phase 3.7 not started)
 
 ## Status
 
@@ -18,16 +18,16 @@ Phase 2.1 through Phase 2.9 are complete: knowledge ingestion, artifact parsing
 and normalization, regulatory document structuring, regulatory requirement
 extraction, requirement applicability foundation, compliance evidence and
 assessment foundation, compliance case read model, compliance decision-support
-summary, and compliance risk/priority foundation. Phase 3.0 through Phase 3.5
+summary, and compliance risk/priority foundation. Phase 3.0 through Phase 3.6
 are complete: compliance action recommendation foundation, compliance
 applicability determination, applicability integration boundary,
-applicability-to-risk integration, risk-to-action integration, and the
-compliance decision summary boundary.
+applicability-to-risk integration, risk-to-action integration, the compliance
+decision summary boundary, and the compliance case readiness boundary.
 No production environment is configured.
-Current verified test state: 202/202 unit tests passing, 0 failures, 0 errors.
-This is the verified Phase 3.5 implementation state (16 focused Phase 3.5 tests
-plus the 186-test baseline).
-Phase 3.5 is complete. Phase 3.6 has not started.
+Current verified test state: 222/222 unit tests passing, 0 failures, 0 errors.
+This is the verified Phase 3.6 implementation state (20 focused Phase 3.6 tests
+plus the 202-test baseline).
+Phase 3.6 is complete. Phase 3.7 has not started.
 
 ## Current Domain Pipeline (through Phase 3.5)
 
@@ -129,10 +129,10 @@ Compliance Decision Summary
   applied and validated against the Supabase development/test database.
 - Regulatory ingestion, parsing, normalization, structuring, requirement
   extraction, applicability, evidence assessment, case read model,
-  decision-support summary, risk classification, action recommendation, and
-  compliance decision summary services exist. Retrieval, RAG, vector databases,
-  embeddings, chunking, reranking, LLM reasoning, agents, crawling, and UI do
-  not exist.
+  decision-support summary, risk classification, action recommendation,
+  compliance decision summary, and compliance case readiness services exist.
+  Retrieval, RAG, vector databases, embeddings, chunking, reranking, LLM
+  reasoning, agents, crawling, and UI do not exist.
 - No provider-specific implementation details beyond the approved technology
   baseline document.
 - No dependency list derived from `.venv` contents.
@@ -142,6 +142,14 @@ Compliance Decision Summary
   and dependency-free unit tests outside `.venv`.
 
 ## Last Verified
+
+### Phase 3.6 implementation state (2026-09-22)
+
+- Unit suite: 222/222 tests passing, 0 failures, 0 errors — 20 new focused
+  Phase 3.6 tests plus the 202-test baseline, no regressions.
+- Focused Phase 3.6 tests: 20/20 passing
+  (`tests/unit/test_compliance_case_readiness.py`).
+- Baseline re-confirmed immediately before Phase 3.6 work: 202/202 passing.
 
 ### Phase 3.5 implementation state (2026-09-22)
 
@@ -191,10 +199,10 @@ Compliance Decision Summary
 
 ## Next
 
-Phase 1, Phase 2, and Phase 3.0 through Phase 3.5 are complete. Phase 3.5 is
-complete and Phase 3.6 has not started. Any next step must first be defined in
+Phase 1, Phase 2, and Phase 3.0 through Phase 3.6 are complete. Phase 3.6 is
+complete and Phase 3.7 has not started. Any next step must first be defined in
 `REQUIREMENTS.md` and scheduled through `tasks/` and `ACTIVE_TASK.md`; no Phase
-3.6 implementation exists in the repository. Retrieval, RAG, embeddings, vector
+3.7 implementation exists in the repository. Retrieval, RAG, embeddings, vector
 search, LLM reasoning, and agents are not implemented and must not be treated
 as existing.
 
@@ -648,5 +656,49 @@ as existing.
   defensively (non-dict `requirement` payloads) without behavior change.
 - Verification status: focused Phase 3.5 tests passed (16/16), full unit suite
   passed (202/202) against the 186-test baseline, no regressions.
+- PostgreSQL integration tests were not run because `DATABASE_URL` is not
+  configured in the current environment.
+
+## Phase 3.6 — Compliance Case Readiness / Evidence Coverage (Complete, 2026-09-22)
+
+- `ComplianceCaseReadinessService` evaluates whether existing compliance cases
+  carry sufficient known information to support the current Applicability →
+  Risk → Action pipeline, exposing evidence/readiness gaps explicitly so future
+  retrieval/RAG work can target them. It is a representation/readiness boundary
+  only.
+- Readiness is information sufficiency, not a compliance verdict: `ready` does
+  not mean compliant and `not_ready` does not mean non-compliant. The report
+  states this explicitly via a `readiness_not_compliance` field, and no
+  compliance verdicts were introduced.
+- Exactly three readiness states: `ready` (no missing information),
+  `partially_ready` (missing assessment/evidence/risk information but all
+  applicability known), `not_ready` (no cases supplied, or any unknown
+  applicability). `not_applicable`, `unknown`, and missing evidence remain
+  distinct and are never conflated.
+- Gap kinds reuse the Phase 3.5 vocabulary: `applicability_unknown`,
+  `assessment_unknown`, `missing_evidence`, `risk_unknown`. Missing facts are
+  never invented and unknown requirements are never inferred as satisfied or
+  unsatisfied.
+- Report contains tenant identity, context fingerprint, readiness state,
+  required/known/missing information counts, the ordered gap list, per-category
+  requirement lists (unknown applicability, unknown assessment, missing
+  evidence, unknown risk), and actions requiring evidence derived from the
+  existing recommendation output.
+- Risk classification and action recommendation are delegated to the existing
+  `ComplianceRiskService` and `RiskToActionIntegration`; missing-evidence
+  detection reuses the existing risk-service semantics. No applicability, risk,
+  or action rule was reimplemented.
+- Determinism: identical input produces an identical report; requirements and
+  gaps are ordered by requirement ID; counts are reproducible. Empty input is
+  handled deterministically (`not_ready` with zero counts).
+- Tenant handling: a valid tenant UUID is required, tenant identity is
+  preserved in the report, and cases from a different tenant are rejected.
+- No persistence, external calls, LLM, RAG, retrieval, embeddings, vector
+  operations, API endpoints, UI, crawling, connectors, reranking, agents, or
+  automated compliance verdicts were introduced.
+- Verification status: focused Phase 3.6 tests passed (20/20), full unit suite
+  passed (222/222) against the 202-test baseline, no regressions. The
+  `xportra/domain/ingestion.py` change is purely additive (231 insertions, 0
+  deletions); existing services were not modified.
 - PostgreSQL integration tests were not run because `DATABASE_URL` is not
   configured in the current environment.
