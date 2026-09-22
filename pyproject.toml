@@ -1,0 +1,22 @@
+[project]
+name = "xportra-ai"
+version = "0.0.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+	"fastapi>=0.115,<1.0",
+	"httpx>=0.27,<1.0",
+	"psycopg[binary]>=3.2,<4",
+	"pyjwt>=2.8,<3",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
