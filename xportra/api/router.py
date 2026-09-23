@@ -1,14 +1,21 @@
-"""FastAPI routes for the intentionally small Phase 1.8 resource API."""
+"""FastAPI routes for the API boundary."""
 
 from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
+from xportra.domain.answer_validation import ValidatedAnswer
 from xportra.domain.errors import DomainNotFoundError
+from xportra.domain.evidence_context import EvidenceContextBudget
+from xportra.domain.evidence_retrieval import EvidenceRetrievalScope
 
 from .auth import MemberContext
-from .dependencies import ServicesDependency, require_permission
+from .dependencies import (
+    RAGServiceDependency,
+    ServicesDependency,
+    require_permission,
+)
 from .authorization import (
     ASSOCIATE_EVIDENCE_REQUIREMENT,
     CREATE_CERTIFICATION,
@@ -32,6 +39,8 @@ from .schemas import (
     ExporterResponse,
     ProductCreateRequest,
     ProductResponse,
+    RAGQueryRequest,
+    RAGQueryResponse,
 )
 
 router = APIRouter()
@@ -41,6 +50,79 @@ def _require_record(record, resource_name: str, record_id: UUID):
     if record is None:
         raise DomainNotFoundError(f"{resource_name} {record_id} was not found for tenant")
     return record
+
+
+def _rag_response(validated: ValidatedAnswer) -> RAGQueryResponse:
+    """Translate a validated answer into the API response contract.
+
+    Uses only the validated citation mapping produced by Phase 5.12 —
+    citations are never parsed or reconstructed from answer text here.
+    Tenant identity, raw evidence content, embedding details, scores,
+    and provider internals are never exposed.
+    """
+    citations = []
+    for citation in validated.validated_citations:
+        evidence = citation.selected.ranked.evidence
+        citations.append(
+            {
+                "label": citation.label,
+                "rank_position": citation.rank_position,
+                "evidence": {
+                    "chunk_id": evidence.chunk_id,
+                    "document_id": evidence.document_id,
+                    "chunk_index": evidence.chunk_index,
+                    "source_id": evidence.source_id,
+                    "source_type": evidence.source_type,
+                    "source_location": evidence.source_location,
+                    "document_version": evidence.document_version,
+                    "content_fingerprint": evidence.content_fingerprint,
+                },
+            }
+        )
+    return RAGQueryResponse(
+        answer_text=validated.answer_text,
+        status=validated.status,
+        is_empty=validated.is_empty,
+        extracted_references=list(validated.extraction.references),
+        invalid_references=list(validated.invalid_references),
+        citations=citations,
+    )
+
+
+@router.post("/rag/query", response_model=RAGQueryResponse)
+def query_rag(
+    payload: RAGQueryRequest,
+    rag: RAGServiceDependency,
+    member: Annotated[MemberContext, Depends(require_permission(READ_TENANT_RESOURCE))],
+):
+    """Execute one coherent RAG query for the authenticated tenant.
+
+    Tenant identity comes exclusively from the authenticated member
+    context — the request body cannot supply or override it. Retrieval
+    mode, context budget, top-k, candidate pool, and canonical scope
+    are forwarded to the injected application service, which owns all
+    orchestration; this handler constructs no pipeline, client, or
+    infrastructure adapter.
+    """
+    scope = None
+    if payload.scope is not None:
+        scope = EvidenceRetrievalScope(
+            source_id=payload.scope.source_id,
+            source_type=payload.scope.source_type,
+            document_id=payload.scope.document_id,
+            document_version=payload.scope.document_version,
+        )
+    validated = rag.query(
+        payload.information_need,
+        tenant_id=member.tenant,
+        mode=payload.mode,
+        context_budget=EvidenceContextBudget(
+            payload.max_context_characters),
+        scope=scope,
+        top_k=payload.top_k,
+        candidate_pool=payload.candidate_pool,
+    )
+    return _rag_response(validated)
 
 
 @router.post(

@@ -106,6 +106,25 @@ access tokens and are only required on deployments that authenticate requests.
 - Type/format: string model identifier.
 - Example placeholder: `model-name`
 
+#### LLM_BASE_URL
+- Purpose: base URL of the OpenAI-compatible chat-completions API
+  (Phase 5.15: OpenRouter, per the TB-5 baseline). Optional
+  override only; the adapter defaults to
+  `https://openrouter.ai/api/v1`.
+- Required: no. Defaults to the OpenRouter endpoint when unset.
+- Secret: no.
+- Type/format: URL.
+- Example placeholder: `https://openrouter.ai/api/v1`
+
+#### LLM_TIMEOUT_SECONDS
+- Purpose: explicit finite timeout for one LLM provider attempt.
+  (Phase 5.15: no retries — one call is one attempt; a timeout
+  becomes `LLMProviderError`, never an empty answer.)
+- Required: no. Defaults to `60` when unset.
+- Secret: no.
+- Type/format: positive number of seconds.
+- Example: `60`
+
 ### Embeddings
 
 #### EMBEDDING_MODEL
@@ -114,6 +133,17 @@ access tokens and are only required on deployments that authenticate requests.
 - Secret: no.
 - Type/format: string model identifier.
 - Example placeholder: `embedding-model-name`
+
+#### EMBEDDING_DIMENSIONS
+- Purpose: embedding vector dimensions. Must match the configured
+  embedding model's output and the vector collection's dimensions;
+  mismatches fail closed at the indexing/retrieval boundary and at
+  collection verification. (Phase 5.14: required by the production
+  RAG composition root alongside `EMBEDDING_MODEL`.)
+- Required: yes when embeddings are enabled.
+- Secret: no.
+- Type/format: positive integer.
+- Example placeholder: `384`
 
 ### Observability
 

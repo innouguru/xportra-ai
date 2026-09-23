@@ -7,10 +7,13 @@ from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from xportra.domain.answer_validation import AnswerValidationError
 from xportra.domain.errors import (
     DomainNotFoundError,
     DomainPersistenceError,
     DomainValidationError,
+    LLMProviderError,
+    VectorStoreError,
 )
 
 logger = logging.getLogger(__name__)
@@ -54,6 +57,9 @@ def register_exception_handlers(application) -> None:
     application.add_exception_handler(AuthenticationError, _handle_authentication_error)
     application.add_exception_handler(RequestValidationError, _handle_validation_error)
     application.add_exception_handler(DomainNotFoundError, _handle_not_found)
+    application.add_exception_handler(AnswerValidationError, _handle_answer_validation)
+    application.add_exception_handler(LLMProviderError, _handle_llm_provider)
+    application.add_exception_handler(VectorStoreError, _handle_vector_store)
     application.add_exception_handler(DomainValidationError, _handle_domain_validation)
     application.add_exception_handler(DomainPersistenceError, _handle_persistence)
     application.add_exception_handler(Exception, _handle_unexpected_error)
@@ -126,6 +132,58 @@ async def _handle_domain_validation(
             "error": {
                 "code": "domain_validation_error",
                 "message": "The request violates a domain rule",
+            }
+        },
+    )
+
+
+async def _handle_answer_validation(
+    _request: Request, _exc: AnswerValidationError
+) -> JSONResponse:
+    """Citation-integrity failures stay distinguishable from provider failures.
+
+    Registered alongside (and more specific than) the generic domain
+    handler, so ``AnswerValidationError`` — a ``DomainValidationError``
+    subclass — maps here via MRO lookup instead of collapsing into
+    ``domain_validation_error``. No trace, answer text, or provenance
+    internals leak into the response.
+    """
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "code": "citation_integrity_error",
+                "message": "The generated answer failed citation validation",
+            }
+        },
+    )
+
+
+async def _handle_llm_provider(
+    _request: Request, _exc: LLMProviderError
+) -> JSONResponse:
+    """Operational LLM failures never become successful empty answers."""
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": {
+                "code": "llm_provider_error",
+                "message": "Answer generation is temporarily unavailable",
+            }
+        },
+    )
+
+
+async def _handle_vector_store(
+    _request: Request, _exc: VectorStoreError
+) -> JSONResponse:
+    """Operational retrieval failures never become successful empty answers."""
+    return JSONResponse(
+        status_code=502,
+        content={
+            "error": {
+                "code": "vector_store_error",
+                "message": "Evidence retrieval is temporarily unavailable",
             }
         },
     )

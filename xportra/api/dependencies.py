@@ -1,8 +1,8 @@
 """Dependency wiring for the API boundary."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import os
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, Header, Request
@@ -49,6 +49,11 @@ class ApplicationServices:
     destinations: DestinationMarketService
     evidence: ComplianceEvidenceService
     certifications: CertificationService
+    #: Phase 5.13 RAG application service (or a test fake implementing
+    #: ``RAGApplicationContract``). ``None`` until the retrieval/LLM
+    #: infrastructure is wired for an environment — the RAG route then
+    #: fails closed with 503 instead of serving an unwired chain.
+    rag: Any = field(default=None)
 
     @classmethod
     def from_environment(cls) -> "ApplicationServices":
@@ -77,6 +82,51 @@ class ApplicationServices:
             ),
         )
 
+    @classmethod
+    def from_environment_with_rag(
+        cls,
+        *,
+        llm_client=None,
+        embedding_provider=None,
+    ) -> "ApplicationServices":
+        """Build the full container with the production RAG chain wired.
+
+        Opt-in composition entry point used once per application
+        lifecycle (e.g. ``create_app(cls.from_environment_with_rag())``).
+        The default ``from_environment`` is unchanged (``rag=None`` →
+        the RAG route fails closed with 503). With no explicit
+        ``llm_client``, the production OpenRouter adapter is built
+        from the canonical LLM settings; an injected client (e.g.
+        ``ScriptedLLMClient``) always wins for deterministic use.
+        The embedding provider defaults to the approved
+        sentence-transformers baseline (lazy — no model download at
+        startup). Missing/invalid RAG configuration raises at
+        startup, never per request.
+        """
+        # Resolved lazily via importlib (stdlib) so that xportra.api
+        # keeps no static dependency on xportra.infrastructure — the
+        # Phase 5.13 boundary guarantee. The composition root itself
+        # remains the single explicit wiring place.
+        import importlib
+
+        rag_composition = importlib.import_module(
+            "xportra.infrastructure.rag_composition"
+        )
+        base = cls.from_environment()
+        stack = rag_composition.compose_rag_stack_from_environment(
+            embedding_provider=embedding_provider,
+            llm_client=llm_client,
+        )
+        return cls(
+            database=base.database,
+            exporters=base.exporters,
+            products=base.products,
+            destinations=base.destinations,
+            evidence=base.evidence,
+            certifications=base.certifications,
+            rag=stack.service,
+        )
+
 
 def get_services(request: Request) -> ApplicationServices:
     services = getattr(request.app.state, "services", None)
@@ -87,6 +137,29 @@ def get_services(request: Request) -> ApplicationServices:
             "Application services are not initialized",
         )
     return services
+
+
+def get_rag_service(request: Request):
+    """Resolve the RAG application service for the request.
+
+    The chain (context pipeline, LLM client, answer validator) is
+    injected through the service container, so tests can replace it
+    with deterministic fakes. No Qdrant/LLM SDK client is ever
+    constructed inside a route handler. Fails closed when the chain
+    is not wired for the environment.
+    """
+    services = get_services(request)
+    rag = getattr(services, "rag", None)
+    if rag is None:
+        raise APIError(
+            503,
+            "rag_not_configured",
+            "The RAG query service is not configured for this deployment",
+        )
+    return rag
+
+
+RAGServiceDependency = Annotated[Any, Depends(get_rag_service)]
 
 
 def get_development_tenant_context(

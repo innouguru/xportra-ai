@@ -8,7 +8,9 @@
 - [ ] **Phase 2 — Knowledge Ingestion**
 - [ ] **Phase 3 — Deterministic Applicability Engine**
 - [ ] **Phase 4 — Document Intelligence & Evidence Matching**
-- [ ] **Phase 5 — Retrieval & RAG**
+- [x] **Phase 5 — Retrieval & RAG** (complete 2026-09-23: RAG
+  retrieval, generation & validation, Phases 5.1–5.16 verified;
+  live gates recorded NOT EXECUTED — see `CURRENT_STATE.md`)
 - [ ] **Phase 6 — Compliance Reasoning & Decision Support**
 - [ ] **Phase 7 — User Workflow**
 - [ ] **Phase 8 — API & Application Integration**

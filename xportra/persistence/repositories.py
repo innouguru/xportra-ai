@@ -938,3 +938,74 @@ class CertificationPermitLicenseRepository:
             """,
             (tenant.tenant_id, certificate_id),
         )
+
+class EvidenceDocumentRepository:
+    """Tenant-scoped persistence boundary for the evidence corpus."""
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create(self, record: Row) -> Row:
+        return _insert(
+            self._database,
+            "evidence document creation",
+            """
+            INSERT INTO xportra.evidence_documents
+                (id, tenant_id, title, content, source_type, source_id,
+                 source_location, jurisdiction, document_version,
+                 effective_date, retrieved_at, status, metadata,
+                 content_fingerprint)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                record["id"],
+                record["tenant_id"],
+                record["title"],
+                record["content"],
+                record["source_type"],
+                record["source_id"],
+                record.get("source_location"),
+                record.get("jurisdiction"),
+                record.get("document_version"),
+                record.get("effective_date"),
+                record.get("retrieved_at"),
+                record["status"],
+                Jsonb(record.get("metadata") or {}),
+                record["content_fingerprint"],
+            ),
+        )
+
+    def get_by_id(self, tenant: TenantContext, document_id: UUID) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.evidence_documents
+               WHERE tenant_id = %s AND id = %s""",
+            (tenant.tenant_id, document_id),
+        )
+
+    def get_by_source_identity(
+        self, tenant: TenantContext, source_id: str, version: str | None
+    ) -> Row | None:
+        norm_version = version.strip() if isinstance(version, str) else None
+        if norm_version == "":
+            norm_version = None
+        if norm_version is None:
+            statement = """SELECT * FROM xportra.evidence_documents
+                WHERE tenant_id = %s AND source_id = %s
+                  AND document_version IS NULL"""
+            parameters: Sequence[Any] = (tenant.tenant_id, source_id)
+        else:
+            statement = """SELECT * FROM xportra.evidence_documents
+                WHERE tenant_id = %s AND source_id = %s
+                  AND document_version = %s"""
+            parameters = (tenant.tenant_id, source_id, norm_version)
+        return _fetch_one(self._database, statement, parameters)
+
+    def list_for_tenant(self, tenant: TenantContext) -> list[Row]:
+        return _fetch_all(
+            self._database,
+            """SELECT * FROM xportra.evidence_documents
+               WHERE tenant_id = %s ORDER BY created_at, id""",
+            (tenant.tenant_id,),
+        )

@@ -1,9 +1,26 @@
-"""HTTP request and response schemas for the Phase 1.8 API boundary."""
+"""HTTP request and response schemas for the API boundary."""
 
 from datetime import date, datetime
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StrictInt
+
+from xportra.domain.evidence_retrieval import DEFAULT_TOP_K
+
+RAG_RETRIEVAL_MODES = ("semantic", "lexical", "hybrid")
+RAGRetrievalMode = Literal["semantic", "lexical", "hybrid"]
+
+#: API-layer guard on information-need length. The domain validates
+#: presence/normalization only; this bound keeps a single request from
+#: carrying unbounded text into retrieval/prompt/LLM stages. It is an
+#: API choice, not a domain rule.
+MAX_INFORMATION_NEED_CHARACTERS = 4000
+
+#: API-layer default context budget (content characters). The domain
+#: owns budget semantics (``EvidenceContextBudget``); this default
+#: only applies when the caller supplies no explicit budget.
+DEFAULT_RAG_CONTEXT_CHARACTERS = 4000
 
 
 class APIRequest(BaseModel):
@@ -141,3 +158,86 @@ class CertificationResponse(BaseModel):
     document_reference: str | None
     created_at: datetime
     updated_at: datetime
+
+
+class RAGQueryScopeRequest(APIRequest):
+    """Optional conjunctive scope over the canonical indexed dimensions.
+
+    Mirrors ``EvidenceRetrievalScope`` exactly: only the four
+    established dimensions may be expressed. Tenant scoping is never
+    part of the body — it comes from the authenticated context.
+    """
+
+    source_id: str | None = None
+    source_type: str | None = None
+    document_id: UUID | None = None
+    document_version: str | None = None
+
+
+class RAGQueryRequest(APIRequest):
+    """Single coherent RAG query operation.
+
+    Only the user's information need is required. The optional
+    controls mirror already-validated domain values (retrieval mode,
+    context budget, top-k, candidate pool, canonical scope). No
+    tenant identity, no provider settings, no raw prompts, no
+    embedding configuration, and no vector-store internals may be
+    supplied — ``extra="forbid"`` (via ``APIRequest``) rejects them.
+    """
+
+    information_need: str = Field(
+        min_length=1, max_length=MAX_INFORMATION_NEED_CHARACTERS
+    )
+    mode: RAGRetrievalMode = "hybrid"
+    max_context_characters: StrictInt = Field(
+        default=DEFAULT_RAG_CONTEXT_CHARACTERS, gt=0
+    )
+    top_k: StrictInt = Field(default=DEFAULT_TOP_K, gt=0)
+    candidate_pool: StrictInt | None = Field(default=None, gt=0)
+    scope: RAGQueryScopeRequest | None = None
+
+
+class RAGCitationEvidenceResponse(BaseModel):
+    """Authoritative provenance for one cited evidence item.
+
+    Tenant identity, raw content, embedding contract, and scores are
+    deliberately omitted: the client receives identifiers and source
+    pointers sufficient to trace the evidence, never infrastructure
+    internals.
+    """
+
+    chunk_id: UUID
+    document_id: UUID
+    chunk_index: int
+    source_id: str
+    source_type: str
+    source_location: str | None
+    document_version: str | None
+    content_fingerprint: str
+
+
+class RAGCitationResponse(BaseModel):
+    """One validated citation: prompt-local label plus its evidence."""
+
+    label: str
+    rank_position: int
+    evidence: RAGCitationEvidenceResponse
+
+
+class RAGQueryResponse(BaseModel):
+    """Structured answer boundary.
+
+    ``status`` preserves the Phase 5.11/5.12 distinction: ``valid``
+    (validated answer), ``invalid_citations`` (structured non-raising
+    validator path), ``empty`` (model produced no substantive output
+    — distinct from provider failure and validation failure).
+    Operational failures never surface here; they map to error
+    responses instead.
+    """
+
+    answer_text: str
+    status: str
+    is_empty: bool
+    extracted_references: list[str]
+    invalid_references: list[str]
+    citations: list[RAGCitationResponse]

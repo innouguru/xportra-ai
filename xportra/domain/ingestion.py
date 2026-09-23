@@ -13,7 +13,7 @@ import hashlib
 import re
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
-from typing import Any
+from typing import Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 
@@ -2281,6 +2281,439 @@ class ComplianceCaseReadinessService:
                 "compliance verdict"
             ),
         }
+
+
+class EvidenceRequirementPlanService:
+    """Deterministic evidence-requirement contract boundary over readiness gaps.
+
+    Converts the Phase 3.6 readiness report's information gaps into a structured
+    Evidence Requirement Plan -- the contract a future retrieval layer would
+    consume:
+
+    Applicability -> Risk -> Action -> Summary -> Readiness -> Evidence Plan
+
+    The plan answers "what evidence do we need to obtain or verify?" and never
+    obtains it: no retrieval, search, crawling, embeddings, vector work, RAG,
+    LLM reasoning, external calls, or persistence. Existing applicability, risk,
+    action, and readiness semantics are consumed, not reimplemented.
+
+    Evidence requirement identifiers are deterministic:
+    "<requirement_id>:<gap_kind>" -- stable for identical input, unique within a
+    plan (each gap kind occurs at most once per requirement in the readiness
+    report), and free of randomness, timestamps, generated IDs, or secret
+    material.
+
+    Priority is derived only from existing domain information: the
+    requirement's existing risk state ("high", "medium", or "low") is preserved
+    as the priority; when the existing domain exposes no defensible ranking
+    (risk state "unknown" or absent), the neutral priority "unknown" is used --
+    no ranking is invented. The existing action signal (for example
+    provide_missing_evidence) is preserved on each item as triggering_action.
+
+    Status model: "required" for actual readiness gaps, "not_required" for
+    information already known. Only "required" items are ever emitted; a fully
+    ready case yields an empty plan, and no requirement is fabricated merely
+    because a compliance requirement exists.
+
+    Ordering: evidence requirements are sorted by requirement ID, then gap
+    kind, then evidence requirement ID. Unknown applicability, unknown
+    assessment, missing evidence, and unknown risk remain distinct; the plan
+    asserts neither compliance nor non-compliance.
+    """
+
+    def plan(
+        self,
+        readiness_report: dict[str, Any],
+        *,
+        tenant_id: UUID,
+    ) -> dict[str, Any]:
+        """Convert a Phase 3.6 readiness report into an evidence requirement plan.
+
+        Args:
+            readiness_report: Output of ComplianceCaseReadinessService.assess()
+            tenant_id: Tenant identity for isolation
+
+        Returns:
+            Deterministic evidence requirement plan derived only from the
+            readiness report's existing gaps, requirement views, and actions
+
+        Raises:
+            ComplianceSummaryValidationError: If inputs are invalid or cross tenants
+        """
+        if not isinstance(readiness_report, dict):
+            raise ComplianceSummaryValidationError("readiness_report is required")
+        if not isinstance(tenant_id, UUID):
+            raise ComplianceSummaryValidationError("tenant_id is required")
+        if readiness_report.get("tenant_id") != tenant_id:
+            raise ComplianceSummaryValidationError(
+                "readiness report belongs to a different tenant"
+            )
+        if readiness_report.get("status") != "readiness_report":
+            raise ComplianceSummaryValidationError("readiness_report is required")
+
+        gaps = [
+            gap
+            for gap in readiness_report.get("gaps", [])
+            if isinstance(gap, dict)
+            and gap.get("requirement_id")
+            and isinstance(gap.get("kind"), str)
+            and gap["kind"]
+        ]
+        requirements_by_id = {
+            str(view.get("requirement_id")): view
+            for view in readiness_report.get("requirements", [])
+            if isinstance(view, dict)
+        }
+        actions_by_id = {
+            str(action.get("requirement_id")): action.get("action_type")
+            for action in readiness_report.get("actions_requiring_evidence", [])
+            if isinstance(action, dict)
+        }
+
+        # Build one evidence requirement per readiness gap. Each item is
+        # traceable to its compliance requirement and preserves the gap kind,
+        # the existing reason, the existing risk state as priority (or the
+        # neutral "unknown"), and the existing action signal when one exists.
+        items = []
+        for gap in gaps:
+            requirement_id = gap["requirement_id"]
+            key = str(requirement_id)
+            kind = gap["kind"]
+            view = requirements_by_id.get(key, {})
+            risk_state = view.get("risk_state")
+            priority = (
+                risk_state if risk_state in {"high", "medium", "low"} else "unknown"
+            )
+            items.append(
+                {
+                    "tenant_id": tenant_id,
+                    "requirement_id": requirement_id,
+                    "evidence_requirement_id": f"{key}:{kind}",
+                    "gap_kind": kind,
+                    "requirement": view.get("requirement_text"),
+                    "reason": gap.get("reason"),
+                    "priority": priority,
+                    "status": "required",
+                    "triggering_action": actions_by_id.get(key),
+                }
+            )
+
+        ordered = sorted(
+            items,
+            key=lambda item: (
+                str(item["requirement_id"]),
+                item["gap_kind"],
+                item["evidence_requirement_id"],
+            ),
+        )
+
+        return {
+            "tenant_id": tenant_id,
+            "context_fingerprint": readiness_report.get("context_fingerprint"),
+            "status": "evidence_requirement_plan",
+            "readiness_state": readiness_report.get("readiness_state"),
+            "required_count": len(ordered),
+            "items": ordered,
+            "retrieval_boundary": (
+                "evidence requirements describe what to obtain or verify; "
+                "this service performs no retrieval"
+            ),
+            "plan_not_verdict": (
+                "the evidence plan asserts neither compliance nor non-compliance"
+            ),
+        }
+
+
+class EvidenceRetrievalRequestService:
+    """Deterministic retrieval-request boundary over the evidence plan.
+
+    Converts the Phase 3.7 Evidence Requirement Plan into a structured
+    Evidence Retrieval Request set -- the contract a future retrieval/RAG
+    implementation would receive:
+
+    Plan -> Retrieval Request -> (future retrieval, not this phase)
+
+    The boundary answers "what exactly should the retrieval layer be asked
+    to find?" and never finds it: no vector search, embeddings, chunking,
+    reranking, keyword search, web search, crawling, LLM calls, RAG,
+    external APIs, connectors, ingestion changes, persistence, caching,
+    agents, or UI. Existing applicability, risk, action, readiness, and
+    evidence-plan semantics are consumed, not reimplemented.
+
+    Validation is fail-closed: any malformed plan item (non-dict item,
+    missing or empty required identity fields, an ``evidence_requirement_id``
+    that does not equal ``"<requirement_id>:<gap_kind>"``, a ``gap_kind``
+    outside the four known kinds, or a per-item tenant that does not match
+    the plan tenant) raises ``ComplianceSummaryValidationError``. Malformed
+    items are never silently skipped, so a partial request set can never
+    hide corruption in the Phase 3.7 plan.
+
+    Request identity reuses the existing ``evidence_requirement_id`` as the
+    stable request identity -- deterministic, stable for identical input,
+    unique within the set, and free of randomness, timestamps, generated
+    IDs, or secret material.
+
+    Query construction uses only information already present in the plan
+    item: the existing requirement text (stripped) when available, else a
+    deterministic fallback naming the gap kind and requirement identity.
+    No facts are invented (no exporter, authority, date, jurisdiction, or
+    issuer is added), and the query describes what evidence is needed
+    rather than asserting unestablished facts.
+
+    Retrieval scope is the conservative fixed vocabulary
+    ``requirement_evidence`` -- a future extension point, not retrieval
+    infrastructure. Gap kinds, priorities, and statuses are preserved
+    exactly; unknown states remain distinct; no compliance, risk, or action
+    decision is made here.
+    """
+
+    #: Fixed conservative scope vocabulary for this phase.
+    RETRIEVAL_SCOPE = "requirement_evidence"
+
+    #: Gap kinds this boundary passes through unchanged.
+    GAP_KINDS = frozenset(
+        {
+            "applicability_unknown",
+            "assessment_unknown",
+            "missing_evidence",
+            "risk_unknown",
+        }
+    )
+
+    def build(
+        self,
+        plan: dict[str, Any],
+        *,
+        tenant_id: UUID,
+    ) -> dict[str, Any]:
+        """Convert a Phase 3.7 evidence requirement plan to requests.
+
+        Args:
+            plan: Output of EvidenceRequirementPlanService.plan()
+            tenant_id: Tenant identity for isolation
+
+        Returns:
+            Deterministic retrieval request set derived only from the
+            plan's existing items.
+
+        Raises:
+            ComplianceSummaryValidationError: If inputs are invalid or cross tenants
+        """
+        if not isinstance(plan, dict):
+            raise ComplianceSummaryValidationError("evidence plan is required")
+        if not isinstance(tenant_id, UUID):
+            raise ComplianceSummaryValidationError("tenant_id is required")
+        if plan.get("tenant_id") != tenant_id:
+            raise ComplianceSummaryValidationError(
+                "evidence plan belongs to a different tenant"
+            )
+        if plan.get("status") != "evidence_requirement_plan":
+            raise ComplianceSummaryValidationError("evidence plan is required")
+
+        items = plan.get("items", [])
+        if not isinstance(items, list):
+            raise ComplianceSummaryValidationError("evidence plan is required")
+
+        requests: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                raise ComplianceSummaryValidationError(
+                    "evidence plan item is malformed"
+                )
+            requirement_id = item.get("requirement_id")
+            evidence_requirement_id = item.get("evidence_requirement_id")
+            gap_kind = item.get("gap_kind")
+            if not requirement_id or not evidence_requirement_id:
+                raise ComplianceSummaryValidationError(
+                    "evidence plan item is malformed"
+                )
+            if not isinstance(evidence_requirement_id, str):
+                raise ComplianceSummaryValidationError(
+                    "evidence requirement identity is malformed"
+                )
+            if not isinstance(gap_kind, str) or gap_kind not in self.GAP_KINDS:
+                raise ComplianceSummaryValidationError(
+                    "evidence plan gap kind is malformed"
+                )
+            if (
+                evidence_requirement_id
+                != f"{requirement_id}:{gap_kind}"
+            ):
+                raise ComplianceSummaryValidationError(
+                    "evidence requirement identity is malformed"
+                )
+            item_tenant = item.get("tenant_id")
+            if item_tenant is not None and item_tenant != tenant_id:
+                raise ComplianceSummaryValidationError(
+                    "evidence plan item belongs to a different tenant"
+                )
+            requests.append(
+                {
+                    "tenant_id": tenant_id,
+                    "evidence_requirement_id": evidence_requirement_id,
+                    "requirement_id": requirement_id,
+                    "gap_kind": gap_kind,
+                    "query": self._build_query(item),
+                    "reason": item.get("reason"),
+                    "priority": item.get("priority"),
+                    "status": item.get("status"),
+                    "retrieval_scope": self.RETRIEVAL_SCOPE,
+                }
+            )
+
+        ordered = sorted(
+            requests,
+            key=lambda request: (
+                str(request["requirement_id"]),
+                request["gap_kind"],
+                str(request["evidence_requirement_id"]),
+            ),
+        )
+
+        return {
+            "tenant_id": tenant_id,
+            "context_fingerprint": plan.get("context_fingerprint"),
+            "status": "evidence_retrieval_request",
+            "readiness_state": plan.get("readiness_state"),
+            "request_count": len(ordered),
+            "requests": ordered,
+            "retrieval_not_executed": (
+                "retrieval requests describe what to find; "
+                "this service performs no retrieval"
+            ),
+            "request_not_verdict": (
+                "a retrieval request asserts neither compliance "
+                "nor non-compliance"
+            ),
+        }
+
+    @staticmethod
+    def _build_query(item: dict[str, Any]) -> str:
+        """Build a deterministic query from existing plan information only."""
+        requirement = item.get("requirement")
+        if isinstance(requirement, str) and requirement.strip():
+            return requirement.strip()
+        gap_kind = item.get("gap_kind")
+        return f"{gap_kind} evidence for requirement {item.get('requirement_id')}"
+
+
+class EvidenceRetrievalExecutor(Protocol):
+    """Execution contract between the domain and future retrieval backends.
+
+    The domain depends on this contract, never on a concrete retrieval
+    technology (vector, keyword, hybrid, PostgreSQL, Qdrant, web search,
+    regulatory APIs, document stores, or any future provider).
+    """
+
+    def execute(
+        self,
+        request: dict[str, Any],
+        *,
+        tenant_id: UUID,
+    ) -> dict[str, Any]:
+        """Execute one validated Phase 3.8 retrieval request."""
+        ...  # pragma: no cover - contract only
+
+
+class EvidenceRetrievalResultBuilder:
+    """Deterministic retrieval-result contract boundary."""
+
+    GAP_KINDS = frozenset(
+        {
+            "applicability_unknown",
+            "assessment_unknown",
+            "missing_evidence",
+            "risk_unknown",
+        }
+    )
+
+    def build_result(
+        self,
+        request: dict[str, Any],
+        results: list[dict[str, Any]] | None = None,
+        *,
+        tenant_id: UUID,
+        retrieval_executed: bool = False,
+    ) -> dict[str, Any]:
+        """Build a retrieval result from a validated request."""
+        self.validate_request(request, tenant_id=tenant_id)
+        items = self._normalize_results(results or [])
+        return {
+            "tenant_id": tenant_id,
+            "evidence_requirement_id": request["evidence_requirement_id"],
+            "requirement_id": request["requirement_id"],
+            "gap_kind": request["gap_kind"],
+            "query": request["query"],
+            "reason": request.get("reason"),
+            "priority": request["priority"],
+            "status": request["status"],
+            "retrieval_scope": request["retrieval_scope"],
+            "retrieval_executed": bool(retrieval_executed),
+            "result_count": len(items),
+            "results": items,
+            "result_status": "retrieval_result",
+            "empty_result_meaning": "empty means executor returned nothing",
+            "result_not_verdict": "result asserts no compliance",
+        }
+
+    @classmethod
+    def validate_request(
+        cls, request: dict[str, Any], *, tenant_id: UUID
+    ) -> dict[str, Any]:
+        """Fail closed on any malformed Phase 3.8 retrieval request."""
+        if not isinstance(request, dict):
+            raise ComplianceSummaryValidationError("request is required")
+        if not isinstance(tenant_id, UUID):
+            raise ComplianceSummaryValidationError("tenant_id is required")
+        if request.get("tenant_id") != tenant_id:
+            raise ComplianceSummaryValidationError("cross-tenant request")
+        req_id = request.get("requirement_id")
+        er_id = request.get("evidence_requirement_id")
+        gap = request.get("gap_kind")
+        if not req_id or not er_id:
+            raise ComplianceSummaryValidationError("identity is required")
+        if not isinstance(er_id, str):
+            raise ComplianceSummaryValidationError("identity is malformed")
+        if not isinstance(gap, str) or gap not in cls.GAP_KINDS:
+            raise ComplianceSummaryValidationError("gap kind is malformed")
+        if er_id != f"{req_id}:{gap}":
+            raise ComplianceSummaryValidationError("identity is malformed")
+        for field in ("query", "priority", "status", "retrieval_scope"):
+            value = request.get(field)
+            if not isinstance(value, str) or not value:
+                raise ComplianceSummaryValidationError(f"{field} is required")
+        return request
+
+    @classmethod
+    def _normalize_results(cls, results):
+        normalized = []
+        for item in results:
+            if not isinstance(item, dict):
+                raise ComplianceSummaryValidationError("result malformed")
+            normalized.append(
+                {
+                    "source_id": item.get("source_id"),
+                    "title": item.get("title"),
+                    "content": item.get("content"),
+                    "source_type": item.get("source_type"),
+                    "location": item.get("location"),
+                    "relevance": item.get("relevance"),
+                }
+            )
+        return normalized
+
+
+class NoOpEvidenceRetrievalExecutor:
+    """Minimal deterministic executor proving the Phase 3.9 contract."""
+
+    def execute(self, request, *, tenant_id: UUID) -> dict[str, Any]:
+        """Validate the request and return an explicitly empty result."""
+        EvidenceRetrievalResultBuilder.validate_request(
+            request, tenant_id=tenant_id
+        )
+        return EvidenceRetrievalResultBuilder().build_result(
+            request, [], tenant_id=tenant_id, retrieval_executed=False
+        )
 
 
 class SourceAcquisitionService:

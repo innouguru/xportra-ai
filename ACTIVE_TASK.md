@@ -1,79 +1,85 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: Phase 3.6 — Compliance Case Readiness / Evidence Coverage Boundary
+## Task: Phase 5.16 — Production RAG End-to-End Verification & Phase Closure
 
-**Phase:** Phase 3 — Applicability Engine
-**Status:** Complete (2026-09-22) — `ComplianceCaseReadinessService` reports whether each case carries sufficient known information for the existing decision pipeline, exposing evidence/readiness gaps explicitly, with 20 focused tests and 222/222 total unit tests passing
+**Phase:** Phase 5 — Retrieval & RAG
+**Status:** Complete and verified (2026-09-23) — full
+verification matrix executed, live gates recorded NOT EXECUTED,
+**Phase 5 — RAG Retrieval, Generation & Validation: COMPLETE**;
+1189/1189 total unit tests passing
 
 ## Objective
 
-Build a small deterministic domain boundary that evaluates whether a compliance
-case has sufficient known information to support the existing Applicability →
-Risk → Action decision pipeline. The purpose is to expose evidence/readiness
-gaps explicitly so that future retrieval/RAG phases can target those gaps.
-This is a domain representation/readiness boundary only — no retrieval, web
-search, RAG, LLM reasoning, embeddings, vector search, crawling, or external
-API calls.
+Final production-oriented verification of the complete RAG path
+with no new functionality, then formal Phase 5 closure if all
+required gates pass.
 
-## Integration Path
-Applicability (Phase 3.1) → Risk (Phase 3.3) → Action (Phase 3.0) → Summary (Phase 3.5) → Readiness (Phase 3.6)
+## What Was Done
 
-## What Was Implemented
-
-- `ComplianceCaseReadinessService` with a single `assess(cases, *, tenant_id)`
-  entry point producing a deterministic readiness report
-- Reuse of the existing services as sources of truth: case validation and
-  missing-evidence semantics from `ComplianceRiskService`, risk states from
-  `ComplianceRiskService.classify()`, actions from
-  `RiskToActionIntegration.recommend_from_risk()`
-- Minimal readiness state model: `ready`, `partially_ready`, `not_ready`
-- Explicit evidence-gap kinds reusing the Phase 3.5 vocabulary:
-  `applicability_unknown`, `assessment_unknown`, `missing_evidence`,
-  `risk_unknown`, plus `evidence_required_action` for actions that require
-  additional evidence
-- Information dimensions: applicability (all requirements); assessment,
-  evidence, and risk (applicable requirements) — unknown applicability means
-  assessment/evidence/risk cannot be judged
-- Tenant identity validated (required UUID) and preserved in the report
-- Deterministic ordering of requirements, gaps, and sections by stable
-  requirement identifier
-- No persistence, external calls, LLM, RAG, retrieval, embeddings, or vector
-  work; readiness is explicitly not a compliance verdict
-
-## Constraints
-
-- No chunking, vector database, embeddings, reranking, LLM reasoning, or
-  retrieval work.
-- No compliance scoring or verdicts; readiness is not compliance.
-- No frontend or UI work.
-- No generalized crawling or arbitrary web ingestion.
-- No weakening of authentication, tenant isolation, or authorization
-  boundaries.
-- Existing applicability, risk, action, and summary services remain the source
-  of truth; no applicability, risk, or action rule is re-implemented.
-- `not_applicable`, `unknown`, and `missing evidence` are never conflated.
-- Unknown states are never silently converted to known states.
-- Preserve tenant isolation.
-- Output must be deterministic.
-- In-memory/read-service layer; no persistence.
-- Avoid unrelated refactoring.
+- `tests/unit/test_rag_production_verification.py` (25 tests):
+  configuration audit (schema/example consistency,
+  placeholders-only, dimension/timeout consistency, no hidden
+  fallback), security audit (no key literals, repr safety,
+  domain purity, no API transport construction, no execution
+  surface), performance sanity (single model load, no
+  retrieval duplication, stable clients, bounded context, no
+  retries), and the full §11 failure-closed matrix through
+  HTTP (all 10 rows observed: config→startup error;
+  auth/timeout/malformed→502; Qdrant-down→`VectorStoreError`;
+  cross-tenant→502; invalid citation→422; empty→200 `empty`;
+  no evidence→200 valid; bad request→422).
+- `tests/integration/test_rag_combined_live.py` (gated):
+  combined live path with controlled evidence + isolated
+  tenants + throwaway collection, structural assertions only;
+  tenant-isolation and invalid-credential probes. Skipped
+  without the documented environment.
+- Single audit correction: `LLMSettings.api_key` excluded from
+  repr (`field(repr=False)`); value usable; test-locked.
+  `DatabaseSettings` noted for Phase 10, untouched.
+- `docs/phases/phase-5-16-production-rag-verification.md` with
+  the complete matrix, audits, and NOT EXECUTED live gates.
 
 ## Acceptance Criteria
 
-- [x] Readiness boundary implemented without duplicating business rules
-- [x] Applicability, risk, action, and summary semantics remain owned by
-      existing services
-- [x] Minimal state model: ready / partially_ready / not_ready only
-- [x] Evidence gaps explicit (applicability, assessment, evidence, risk)
-- [x] `not_applicable`, `unknown`, and `missing evidence` kept distinct
-- [x] No compliance verdict introduced; a ready case may still be high risk
-- [x] Tenant identity preserved throughout the report
-- [x] Deterministic output guaranteed
-- [x] Focused unit tests covering Phase 3.6 pass (20/20)
-- [x] Full unit regression remains green (222/222 = 202 + 20)
-- [x] `docs/phases/phase-3-6-compliance-case-readiness.md`, `ACTIVE_TASK.md`,
-      and `CURRENT_STATE.md` updated
+- [x] Minimum inspection; no redesign, no new abstractions
+- [x] Verification matrix established and documented
+      (deterministic vs. live)
+- [x] Combined live RAG test added (gated, isolated tenant +
+      controlled evidence, secret-free)
+- [x] Controlled evidence path specified (known chunk →
+      retrieval → citation → validation; no wording asserts)
+- [x] Structural citation verification (mapping subset,
+      provenance IDs; no correctness claims)
+- [x] Live tenant-isolation specified (A/B, cross-tenant,
+      overrides; no leakage)
+- [x] Live failure paths specified (bad creds, unreachable
+      Qdrant) + deterministic failure matrix executed
+- [x] Configuration audit executed (vars, defaults, secrets,
+      consistency, finite timeout, no fallback)
+- [x] Security audit executed (secrets, tenant, output,
+      evidence, infrastructure, domain purity)
+- [x] Performance sanity (no per-request construction, no
+      duplication/retries, bounded context; no load test, no
+      invented claims)
+- [x] Failure-closed matrix observed end to end
+- [x] Full regression: 721 focused + 1189 total, live gates
+      distinguished passed/skipped-gated/unavailable
+- [x] Unexecuted live tests labelled NOT EXECUTED, never
+      "verified"
+- [x] Phase doc created; state/task/roadmap updated
+- [x] No architecture modifications beyond the single
+      audit correction; no prohibited additions
 
 ## Completion
 
-Complete. Phase 3.6 implemented and verified. Phase 3.7 has not started.
+Complete. Phase 5.16 verified (2026-09-23): focused 25/25;
+Phase 5.1–5.16 focused 721/721; complete tree 1189 passed +
+37 skipped (32 `DATABASE_URL`, Qdrant smoke, OpenRouter live,
+combined live — all gated, environments unconfigured).
+
+**Phase 5 COMPLETE.** No mandatory live gate exists in the
+roadmap or requirements; the three live gates are recorded
+NOT EXECUTED with exact missing requirements and remain
+runnable without reopening implementation. No new phase
+created for unavailable credentials. Phase 6 not started —
+stop at this boundary.

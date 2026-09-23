@@ -1,8 +1,9 @@
 # CURRENT_STATE.md — Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-09-22
-> Phase: Phase 3 — Applicability Engine (Phase 3.6 complete; Phase 3.7 not started)
+> Updated: 2026-09-23
+> Phase: Phase 5 — Retrieval & RAG — COMPLETE (Phases 5.1–5.16 verified;
+> live gates NOT EXECUTED, see below)
 
 ## Status
 
@@ -18,16 +19,43 @@ Phase 2.1 through Phase 2.9 are complete: knowledge ingestion, artifact parsing
 and normalization, regulatory document structuring, regulatory requirement
 extraction, requirement applicability foundation, compliance evidence and
 assessment foundation, compliance case read model, compliance decision-support
-summary, and compliance risk/priority foundation. Phase 3.0 through Phase 3.6
-are complete: compliance action recommendation foundation, compliance
-applicability determination, applicability integration boundary,
-applicability-to-risk integration, risk-to-action integration, the compliance
-decision summary boundary, and the compliance case readiness boundary.
+summary, and compliance risk/priority foundation. Phase 3.0 through Phase 3.9
+are complete, and Phases 4.0–4.5 (evidence corpus foundation, evidence
+document ingestion, evidence chunking, evidence embedding/indexing, vector
+index persistence, and evidence index synchronization) plus Phases
+5.1–5.12 (evidence retrieval boundary; retrieval quality and query
+semantics; evidence scope and metadata filtering; hybrid retrieval;
+deterministic evidence ranking; retrieval pipeline orchestration;
+budget-aware context selection; retrieval-to-context pipeline
+composition; evidence provenance chain audit; citation-aware prompt
+construction; LLM invocation & answer boundary; answer validation &
+citation integrity) are complete:
+compliance action recommendation foundation, compliance applicability
+determination, applicability integration boundary, applicability-to-risk
+integration, risk-to-action integration, the compliance decision summary
+boundary, the compliance case readiness boundary, the evidence requirement /
+retrieval contract boundary, the evidence retrieval request boundary, the
+evidence retrieval execution boundary, the persistent evidence corpus, the
+controlled evidence ingestion boundary, the evidence chunking boundary, the
+evidence embedding/indexing boundary, the vector index persistence
+boundary, the evidence index synchronization boundary, the evidence
+retrieval boundary, the retrieval quality / query semantics boundary,
+the evidence scope / metadata filtering boundary, and the hybrid
+retrieval boundary.
 No production environment is configured.
-Current verified test state: 222/222 unit tests passing, 0 failures, 0 errors.
-This is the verified Phase 3.6 implementation state (20 focused Phase 3.6 tests
-plus the 202-test baseline).
-Phase 3.6 is complete. Phase 3.7 has not started.
+Current verified test state: 1189/1189 unit tests passing (32 PostgreSQL
+integration tests skipped without `DATABASE_URL`; Qdrant smoke,
+OpenRouter live, and combined live RAG tests skipped without
+`QDRANT_URL` / `OPENROUTER_LIVE_TEST` + credentials), 0 failures,
+0 errors.
+This is the verified Phase 5.16 closure state (25 focused Phase 5.16
+audit/matrix tests plus the 1164-test Phase 5.15 baseline).
+Phase 4.5, Phase 5.1 through Phase 5.16 are complete.
+**Phase 5 — RAG Retrieval, Generation & Validation: COMPLETE.**
+Live Qdrant, live OpenRouter, and combined live RAG verification
+are explicitly NOT EXECUTED (no environment) and remain available
+as gated tests; neither the roadmap nor the requirements define
+live execution as a completion gate.
 
 ## Current Domain Pipeline (through Phase 3.5)
 
@@ -131,8 +159,9 @@ Compliance Decision Summary
   extraction, applicability, evidence assessment, case read model,
   decision-support summary, risk classification, action recommendation,
   compliance decision summary, and compliance case readiness services exist.
-  Retrieval, RAG, vector databases, embeddings, chunking, reranking, LLM
-  reasoning, agents, crawling, and UI do not exist.
+  Retrieval, RAG, vector databases, embeddings, chunking, hybrid retrieval,
+  deterministic evidence ranking, and reranking exist; LLM reasoning,
+  learned reranking, agents, crawling, and UI do not exist.
 - No provider-specific implementation details beyond the approved technology
   baseline document.
 - No dependency list derived from `.venv` contents.
@@ -199,12 +228,15 @@ Compliance Decision Summary
 
 ## Next
 
-Phase 1, Phase 2, and Phase 3.0 through Phase 3.6 are complete. Phase 3.6 is
-complete and Phase 3.7 has not started. Any next step must first be defined in
-`REQUIREMENTS.md` and scheduled through `tasks/` and `ACTIVE_TASK.md`; no Phase
-3.7 implementation exists in the repository. Retrieval, RAG, embeddings, vector
-search, LLM reasoning, and agents are not implemented and must not be treated
-as existing.
+Phase 5.16 (production RAG verification & closure) is complete
+and verified: the full deterministic matrix passes, the three
+live gates are recorded NOT EXECUTED with exact missing
+requirements, and Phase 5 is formally closed (see
+`docs/phases/phase-5-16-production-rag-verification.md`).
+The single audit correction (`LLMSettings.api_key` excluded
+from repr) is the only behavior-neutral change. Any next step
+must first be defined in `REQUIREMENTS.md` and scheduled
+through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
 
 ## Phase 2.2 — Artifact Parsing & Normalization (Complete, 2026-09-21)
 
@@ -702,3 +734,800 @@ as existing.
   deletions); existing services were not modified.
 - PostgreSQL integration tests were not run because `DATABASE_URL` is not
   configured in the current environment.
+
+## Phase 3.7 — Evidence Requirement / Retrieval Contract (Complete, 2026-09-22)
+
+- `EvidenceRequirementPlanService.plan(readiness_report, *, tenant_id)`
+  converts Phase 3.6 readiness gaps into an evidence requirement plan:
+  Applicability → Risk → Action → Summary → Readiness → Evidence Plan.
+- One requirement per gap, traceable via `requirement_id`, stable ID
+  `<requirement_id>:<gap_kind>`; gap kinds preserved; unknowns kept
+  distinct; no compliance asserted.
+- Priority from existing `risk_state` else neutral `unknown`; existing
+  action preserved as `triggering_action`; only `required` items emitted.
+- Deterministic ordering; tenant UUID required; no rule reimplemented.
+- No persistence, retrieval, RAG, LLM, embeddings, vectors, API, UI,
+  crawling, connectors, agents, or verdicts introduced.
+- Verification: focused 20/20, full suite 242/242, no regressions;
+  additive-only change to `xportra/domain/ingestion.py`.
+- PostgreSQL integration tests not run (`DATABASE_URL` unconfigured).
+
+## Phase 3.8 — Evidence Retrieval Request (Complete, 2026-09-22)
+
+- `EvidenceRetrievalRequestService.build(plan, *, tenant_id)` converts the
+  Phase 3.7 plan into retrieval requests: Plan → Retrieval Request.
+- One request per plan item; identity reuses `evidence_requirement_id`;
+  query from existing requirement text only; no fact invention.
+- Gaps/priority/status preserved exactly; fixed scope
+  `requirement_evidence`; deterministic ordering; tenant UUID required.
+- Malformed plan items fail closed via `ComplianceSummaryValidationError`
+  (never silently skipped); no partial request set on corruption.
+- No retrieval executed; no business rules reimplemented.
+- Verification: focused 25/25, full suite 267/267, no regressions;
+  additive-only change.
+- PostgreSQL integration tests not run (`DATABASE_URL` unconfigured).
+
+## Phase 3.9 — Evidence Retrieval Execution (Complete, 2026-09-22)
+
+- Executor contract + result builder + NoOp implementation.
+- Fail-closed request validation; traceable identity; empty-means-empty.
+- Verification: focused 20/20, full suite 287/287, no regressions.
+- No concrete retrieval backend implemented.
+- PostgreSQL integration tests not run (`DATABASE_URL` unconfigured).
+
+## Phase 4.0 — Evidence Corpus Foundation (Complete, 2026-09-22)
+
+- `EvidenceDocument` + `EvidenceCorpusService` + `EvidenceDocumentRepository`
+  + migration `009_evidence_documents` (+ down).
+- Stable uuid5 identity; tenant+source+version dedup; provenance required.
+- Verification: focused 26/26, full suite 313/313, no regressions.
+## Phase 4.5 — Evidence Index Synchronization Boundary (Complete, 2026-09-22)
+
+- `EvidenceIndexSyncService.sync(document, *, tenant_id)` orchestrates
+  EvidenceChunkingService → EvidenceIndexingService → EvidenceVectorIndex;
+  no chunking/embedding/vector logic of its own, no Qdrant import.
+- Deterministic report (tenant, document id/version, chunk_count,
+  indexed_count, indexed_chunk_ids, status "complete") returned only on
+  full success; partial upsert failure raises VectorStoreError (no false
+  success; no rollback — idempotent upsert, safe re-run).
+- Tenant checked at document, chunk, and indexable-chunk stages; document
+  version preserved; deterministic identities, no duplicate points on repeat.
+- Verification: focused 30/30 (fakes, no live Qdrant), full suite 468/468
+  (438 + 30), no regressions. Live Qdrant integration not run (no server
+  configured). No retrieval/search/RAG/query API introduced.
+
+
+- No search/retrieval/RAG/embeddings implemented.
+- PostgreSQL integration tests not run (`DATABASE_URL` unconfigured).
+
+## Phase 5.1 — Evidence Retrieval Boundary (Complete, 2026-09-22)
+
+- `xportra/domain/evidence_retrieval.py`: `EvidenceRetrievalQuery`
+  (text + configurable top-k; tenant never a field — required keyword of
+  every call), `EvidenceRetrievalResult` (full Phase 4.4 payload +
+  score, fail-closed `from_record`), `EvidenceRetriever` protocol, and
+  `VectorIndexEvidenceRetriever` (embeds the query via the existing
+  `EmbeddingProvider`/`EmbeddingModelConfig`, delegates to
+  `EvidenceVectorIndex.find`; no Qdrant import).
+- `EvidenceVectorIndex.find(query_vector, *, tenant_id, top_k)` added to
+  the Phase 4.4 contract (no second vector-store abstraction);
+  `QdrantEvidenceVectorIndex.find` applies a mandatory tenant metadata
+  filter and translates `query_points` responses into domain results,
+  with a per-result tenant re-check (cross-tenant → fail closed).
+- Provenance/version preserved exactly (identity, content, fingerprint,
+  source, document_version, embedding contract + score); errors reuse
+  `DomainValidationError`/`VectorStoreError(operation, cause)`;
+  empty query / invalid top-k → `DomainValidationError`; top-k larger
+  than available, no matches, nonexistent tenant, missing collection →
+  fewer/zero results, never an error.
+- Verification: focused 56/56 (fakes, no live Qdrant), full suite 524/524
+  (468 + 56), no regressions; Phase 4 tests unmodified. Live Qdrant
+  integration not run (no server configured). No LLM, prompt, answer
+  generation, compliance decision, query rewriting, reranking, hybrid
+  search, agentic retrieval, memory, or UI/API endpoint introduced.
+  Phase 5.2 has not started; Phase 5 is not complete.
+
+## Phase 5.2 — Retrieval Quality & Query Semantics (Complete, 2026-09-22)
+
+- Query semantics: information need → `EvidenceRetrievalConfig(
+  top_k=DEFAULT_TOP_K).build_query()` / `EvidenceRetrievalQuery` →
+  normalized text → `EmbeddingProvider` → query vector →
+  `EvidenceVectorIndex.find` → ordered, deduplicated results. Tenant
+  stays execution-level; config carries only `top_k`; embedding config
+  remains the Phase 4.3 `EmbeddingModelConfig` (no second system, no
+  competing default constant).
+- Normalization: trim + collapse internal whitespace runs;
+  empty/whitespace-only/non-string rejected; case, punctuation, and
+  wording preserved — no semantic rewriting; the normalized text is
+  what gets embedded.
+- Ordering contract: descending relevance score, ties broken by
+  ascending `chunk_id`; scores are never recomputed or reranked.
+- Duplicate rule: after ordering, keep only the first result per
+  (`document_id`, `content_fingerprint`); evidence from different
+  documents/versions/sources never collapsed (even for identical
+  text); near-duplicates deferred and documented (no heuristics);
+  result count may fall below top-k after collapse.
+- Fail closed: embedding/index/malformed/config failures raise
+  (`DomainValidationError`/`VectorStoreError`) and are never converted
+  into empty successful retrievals; `[]` means "no matching evidence".
+- Verification: focused 40/40; Phase 5.1 focused re-run 56/56 (one
+  fixture fingerprint corrected to honor the Phase 4 sha256(content)
+  invariant — no assertion weakened); full suite 564/564 (524 + 40),
+  no regressions. No LLM, prompt, answer generation, compliance
+  conclusion, reranking, hybrid search, agentic retrieval, memory, or
+  UI introduced. Phase 5.3 has not started; Phase 5 is not complete.
+
+## Phase 5.3 — Evidence Scope & Metadata Filtering (Complete, 2026-09-22)
+
+- `EvidenceRetrievalScope` (frozen value object): optional, explicit,
+  conjunctive (AND) restrictions over the four canonical indexed
+  dimensions — `source_id`, `source_type`, `document_id`,
+  `document_version`; values validated fail-closed and trimmed.
+  Unsupported/speculative dimensions (tenant, jurisdiction, dates,
+  status, commodity, `filters` dicts) cannot be expressed; non-canonical
+  keyword arguments are rejected.
+- Tenant isolation is separate from and prior to scope: the scope has no
+  tenant field, `require_tenant_context` still runs first, the adapter's
+  provider filter always starts with the mandatory tenant condition, and
+  empty/omitted scope means tenant-only retrieval — never all tenants.
+- Provider translation: the Qdrant adapter converts canonical scope
+  pairs into provider filter conditions (UUIDs encoded per the Phase 4.4
+  payload); no Qdrant filter objects appear in domain models, services,
+  or domain-semantics tests.
+- Defense in depth preserved: every returned result is re-checked
+  against the tenant and then against the requested scope; an
+  out-of-scope or malformed-metadata result raises
+  `VectorStoreError` (integrity failure) — never a silent drop and never
+  an empty success. Filtering never strips provenance: results remain
+  complete 13-field `EvidenceRetrievalResult` values.
+- Compatibility: `scope` is an optional keyword (`None` ≡ empty scope)
+  on `EvidenceRetriever.retrieve` and `EvidenceVectorIndex.find`; Phase
+  5.1/5.2 call sites and semantics are unchanged (test doubles' `find`
+  signatures were extended mechanically — no assertion weakened).
+- Verification: focused 41/41; Phase 5.1 re-run 56/56; Phase 5.2 re-run
+  40/40; full suite 605/605 (564 + 41), no regressions. Live Qdrant
+  integration not run (no server configured). No LLM query rewriting,
+  reranking, hybrid search, agentic retrieval, answer generation,
+  compliance reasoning, legal interpretation, citation generation,
+  conversational retrieval, or heuristic query classification
+  introduced. Phase 5.4 has not started; Phase 5 is not complete.
+
+## Phase 5.13 — RAG Application/API Boundary (Complete, 2026-09-23)
+
+- `xportra/domain/rag_application.py` (rewritten from a stray
+  untracked draft whose broken `xportra.domain.infrastructure`
+  import prevented the entire domain package from importing):
+  `RAGApplicationService`, `RAGApplicationContract`
+  (runtime-checkable protocol), `build_rag_application_service` —
+  pure orchestration composing Phase 5.8 context pipeline → Phase
+  5.10 prompt builder → Phase 5.11 `LLMClient` + injected
+  `LLMGenerationConfig` → `GeneratedAnswer` (structural
+  fail-closed check only) → Phase 5.12 validator, returning the
+  validator's exact `ValidatedAnswer`. No retrieval/ranking/
+  selection/prompt/LLM/validation logic of its own; no
+  infrastructure imports (AST-verified); tenant is a mandatory
+  execution-level keyword; no broad exception handling. Three
+  additive exports in `xportra/domain/__init__.py`.
+- `POST /rag/query` (`xportra/api/router.py`, existing
+  no-version-prefix convention) behind the existing auth boundary
+  (`require_permission(READ_TENANT_RESOURCE)`; owner + member may
+  query). Tenant comes exclusively from `MemberContext` — the body
+  cannot supply or override it (`tenant_id` anywhere in the body →
+  422); missing context fails closed with 401 before any service
+  runs.
+- Request (`RAGQueryRequest`, `extra="forbid"`): required
+  `information_need` (1–4000 chars, API-layer guard); optional
+  `mode` Literal allowlist defaulting to `"hybrid"` (API-layer
+  default, domain still validates), `max_context_characters`
+  (StrictInt, default 4000), `top_k` (StrictInt, default
+  `DEFAULT_TOP_K`), `candidate_pool` (StrictInt|None), and `scope`
+  limited to the four canonical `EvidenceRetrievalScope`
+  dimensions. No provider settings, raw prompts, embedding config,
+  vector filters, or Qdrant parameters exposed.
+- DI: `ApplicationServices.rag` + `get_rag_service` (fails closed
+  with 503 `rag_not_configured` when unwired — the default, since
+  `from_environment` wires only Phase 1.x persistence; no live
+  Qdrant/LLM constructed at startup). Generation config is
+  server-side; credentials never enter domain values or responses.
+- Response (`RAGQueryResponse`): verbatim `answer_text`, `status`
+  (`valid`/`invalid_citations`/`empty`), `is_empty`,
+  `extracted_references`, `invalid_references`, and citations with
+  identifiers/source pointers only (no tenant, content, scores,
+  embeddings, secrets, or SDK objects). Citations come solely from
+  the validated mapping — never parsed from text.
+- Errors: 422 `validation_error` (malformed body/unknown fields),
+  409 `domain_validation_error` (whitespace need, bad scope, malformed
+  LLM output, cross-tenant), 422 `citation_integrity_error`
+  (distinguishable from provider failures), 502
+  `vector_store_error`/`llm_provider_error` (never empty
+  successes), 401/403 via the existing boundary, 503 when unwired,
+  500 otherwise — all API-safe with no leaks.
+- Empty answers preserved end to end (200, `status="empty"`,
+  verbatim text; nothing fabricated, no retries). Model output
+  stays inert JSON text.
+- Verification: focused 42/42; Phase 5.1–5.13 focused 603/603;
+  full suite 1071 passed + 32 skipped (`DATABASE_URL`
+  unconfigured), 0 failures. No Phase 5.1–5.12 behavior file
+  modified; no prior test touched. Production RAG-chain wiring,
+  vendor adapters, streaming, retries, agents, and semantic
+  grounding explicitly deferred. Phase 5 remains open.
+
+## Phase 5.14 — Production RAG Composition & Infrastructure Wiring (Complete, 2026-09-23)
+
+- `xportra/infrastructure/rag_composition.py` — the single explicit
+  composition root: `RAGInfrastructureConfig` (one authoritative
+  config path: `VECTOR_STORE_URL`, `VECTOR_STORE_COLLECTION`,
+  `EMBEDDING_MODEL`, new `EMBEDDING_DIMENSIONS`, `LLM_API_KEY`,
+  `LLM_MODEL`; `RAGConfigurationError` on missing/invalid; secret
+  holder excluded from repr), `SentenceTransformerEmbeddingProvider`
+  (the single approved TB-6 baseline implementation; lazy load on
+  first `embed()` — composition/import never download; fail-closed
+  input/dimension validation), `compose_rag_stack` (real graph:
+  `QdrantClient` → one `QdrantEvidenceVectorIndex` serving both
+  semantic and lexical paths → `VectorIndexEvidenceRetriever` →
+  retrieval pipeline → context pipeline → prompt builder →
+  `RAGApplicationService` with fail-closed validator; injected
+  `LLMClient` seam required, no vendor adapter vendored),
+  `RAGComposition` (service + index + `ensure_collection()`
+  lifecycle hook), `compose_rag_stack_from_environment`.
+- `ApplicationServices.from_environment_with_rag(*, llm_client,
+  embedding_provider=None)` — opt-in once-per-lifecycle wiring;
+  `from_environment()` unchanged (`rag=None` → 503 preserved).
+  Resolved via lazy `importlib` so `xportra/api` keeps zero static
+  infrastructure imports (Phase 5.13 boundary test preserved
+  unmodified).
+- `pyproject.toml` declares `qdrant-client` + `sentence-transformers`
+  (CD-12; declaration only); `EMBEDDING_DIMENSIONS` added to
+  `environment-schema.md` + `.env.example`.
+- `tests/unit/test_rag_composition.py` (46 tests: graph, config,
+  infra selection, deterministic HTTP e2e through the real domain
+  graph, tenant isolation, failures, security/observability) plus
+  gated `tests/integration/test_rag_qdrant_smoke.py` (skipped
+  without `QDRANT_URL`).
+- Verification: focused 46/46; Phase 5.1–5.14 focused 649/649;
+  full suite 1117 passed + 33 skipped, 0 failures. No Phase
+  5.1–5.13 behavior modified; no prior test weakened. Vendor LLM
+  adapter, production LLM wiring, and live Qdrant verification
+  explicitly deferred. Phase 5 remains open.
+
+## Phase 5.15 — Production LLM Provider Adapter & Wiring (Complete, 2026-09-23)
+
+- `OpenRouterLLMClient` (`xportra/infrastructure/llm.py`, TB-5):
+  the single production `LLMClient` speaking OpenRouter's
+  OpenAI-compatible chat completions over `httpx` (declared
+  dependency; no vendor SDK). Structured `EvidencePrompt` →
+  system + deterministically built user message (need, evidence,
+  labels, order preserved verbatim; no tenant content);
+  `LLMGenerationConfig` → `model`/`temperature`/`max_tokens`
+  only. Provider payload → canonical `LLMResponse`
+  (`""` preserved as valid empty; `None`/missing content is a
+  failure). Every provider/network/shape failure → 
+  `LLMProviderError("generate", cause)` (401/429/5xx, timeout,
+  connect, bad JSON/shapes); malformed our-side inputs stay
+  `DomainValidationError`. Exactly one POST per call (no
+  retries/fallback); explicit finite timeout (default 60 s).
+  Per-request Bearer headers (secret-free client); logs carry
+  provider/model/latency/outcome only.
+- Composition: `RAGInfrastructureConfig` gains `llm_base_url`
+  (default OpenRouter endpoint, `LLM_BASE_URL` override) and
+  `llm_timeout_seconds` (default 60, `LLM_TIMEOUT_SECONDS`
+  override); `compose_rag_stack` auto-builds the adapter when no
+  explicit client is given (explicit injection still wins);
+  missing LLM credentials still fail closed at configuration.
+  `.env.example` + `environment-schema.md` document the two new
+  optional variables.
+- Tests: `tests/unit/test_llm_provider_adapter.py` (47:
+  contract, response, 12 failure cases, single-attempt proofs,
+  security, immutability, composition, HTTP e2e) via
+  `httpx.MockTransport` — no network/credentials; gated
+  `tests/integration/test_llm_openrouter_live.py` (skipped
+  without `OPENROUTER_LIVE_TEST=1` + credentials).
+- Minimal task-mandated contract corrections (no weakening):
+  one 5.11 assertion now allows the sanctioned `httpx`
+  transport in the seam (vendor SDKs stay forbidden); two 5.14
+  tests updated to the specified auto-wiring behavior
+  (non-client seam still fails closed; entry point wires the
+  adapter). No domain behavior modified.
+- Verification: focused 47/47; Phase 5.1–5.15 focused 696/696;
+  full suite 1164 passed + 34 skipped, 0 failures. Live
+  provider test skipped (gate off). Streaming, tools, agents,
+  retries, grounding, and combined live Qdrant+LLM
+  verification explicitly deferred. Phase 5 remains open.
+
+## Phase 5.16 — Production RAG Verification & Phase Closure (Complete, 2026-09-23)
+
+- Verification-only phase: `tests/unit/test_rag_production_verification.py`
+  (25 deterministic tests: configuration audit, security audit,
+  performance sanity, full §11 failure-closed matrix through
+  HTTP) + gated `tests/integration/test_rag_combined_live.py`
+  (real API → isolated tenant → real Qdrant + real embeddings
+  of controlled evidence → real OpenRouter → real validation;
+  structural assertions only; tenant isolation + invalid-
+  credential probes included).
+- Audits executed: config contract complete (placeholders only,
+  no obsolete vars, dimension/timeout consistency, no hidden
+  fallback); secrets absent from package/logs/responses/reprs;
+  domain free of IO/network/SDK imports; API builds no
+  transports; adapter executes nothing; model loads once;
+  single retrieval per path; stable clients across requests;
+  budget-bounded context; no retries.
+- Single audit correction: `LLMSettings.api_key` excluded from
+  repr (`field(repr=False)`; value still usable; test-locked).
+  Noted for Phase 10: `DatabaseSettings` (Phase 1.x) untouched.
+- Verification: focused 25/25; Phase 5.1–5.16 focused 721/721;
+  full suite 1189 passed + 37 skipped, 0 failures. Live gates
+  NOT EXECUTED (`QDRANT_URL`, `OPENROUTER_LIVE_TEST` +
+  credentials unset; ports 6333/6334 unreachable).
+- **Phase 5 — RAG Retrieval, Generation & Validation: COMPLETE.**
+  No mandatory live gate exists in roadmap/requirements; live
+  tests remain available gated. No new functionality; Phase 6
+  not started.
+
+## Phase 5.12 — Answer Validation & Citation Integrity (Complete, 2026-09-23)
+
+- `xportra/domain/answer_validation.py`:
+  `AnswerValidationError(DomainValidationError)`, `AnswerValidator`
+  protocol, `CitationAwareAnswerValidator`, `ValidatedAnswer`
+  (frozen, reference-preserving), `CitationExtraction`,
+  `extract_citation_references`, status constants. Nine additive
+  exports; no Phase 5.1–5.11 behavior file modified.
+- Contract: `GeneratedAnswer → AnswerValidator → ValidatedAnswer` —
+  deterministic, pure, provider-independent. The original answer,
+  prompt, and citations are carried by reference (assertIs-proven);
+  original text recoverable verbatim; the model cannot create
+  provenance, evidence, or a new citation mapping.
+- Citation syntax: exact `[E<n>]` regex; strict extraction (no fuzzy
+  matching, no normalization; `[e1]`, `[E1`, `[Evidence 1]`, `[E-1]`,
+  `[EE1]` etc. never match); first-occurrence unique references plus
+  full occurrence/position trace; repeated and adjacent citations
+  deterministic.
+- Authoritative universe: `GeneratedAnswer.prompt.citations`.
+  Establishes (1) label exists in mapping + (2) label appears in
+  answer; explicitly NOT semantic grounding. Documented statement:
+  validation proves referenced labels correspond to authoritative
+  retrieved evidence supplied to the model — not that the claim is
+  factually or legally supported.
+- Invalid-citation policy (fail closed, production default):
+  unknown labels raise `AnswerValidationError`; nothing silently
+  removed/rewritten/repaired; never an empty response. Optional
+  structured non-raising path (`fail_on_invalid_citations=False`)
+  yields status `invalid_citations` + `invalid_references`, mutually
+  consistent with the raising path.
+- Integrity checks fail closed: malformed answers, missing mapping,
+  duplicate authoritative labels, malformed citation objects,
+  cross-tenant provenance, label/rank-inconsistent citations.
+  Operational `LLMProviderError` stays a separate channel.
+- Empty answers: `status="empty"` — valid and distinguishable from
+  provider failure, validation failure, and invalid citations
+  (Phase 5.11 policy respected; nothing fabricated).
+- Tenant: from the evidence chain only, single-tenant verified fail
+  closed; model text can never establish tenant identity.
+- Purity: AST-verified (`re`/`dataclasses`/`typing`/`__future__` +
+  sibling domain modules only); no execution/tools/filesystem/
+  network/LLM; no input mutation (snapshot-proven even on failure
+  paths); dangerous model text inert.
+- Verification: focused 50/50; whole chain (document → retrieval →
+  ranking → selection → prompt → answer → validation) through real
+  Phase 5.5/5.7/5.10 domain logic. Semantic grounding, vendor
+  adapter, API exposure, retries explicitly deferred. Phase 5 is not
+  complete.
+
+## Phase 5.11 — LLM Invocation & Answer Boundary (Complete, 2026-09-23)
+
+- First explicit boundary between the deterministic evidence/prompt
+  subsystem and an external LLM, following the established
+  domain-protocol + infrastructure-adapter pattern:
+  `xportra/domain/llm.py` (`LLMClient` runtime-checkable protocol,
+  `LLMGenerationConfig`, `LLMResponse`, `LLMUsage`,
+  `GeneratedAnswer`) plus `xportra/infrastructure/llm.py`
+  (`LLMSettings` via the canonical `LLM_API_KEY`/`LLM_MODEL`
+  environment contract, provider-neutral `ScriptedLLMClient` test
+  seam, `answer_from_response`, `LLMConfigurationError`).
+  `LLMProviderError(operation, cause)` added to
+  `xportra/domain/errors.py` mirroring `VectorStoreError`. No vendor
+  SDK, no network I/O, no live credentials anywhere; six + four
+  additive exports.
+- Generation config: frozen/validated — non-empty model identifier,
+  finite temperature in [0.0, 2.0], positive int max_output_tokens;
+  bool/string/None/NaN/inf rejected fail-closed; no provider-specific
+  fields invented.
+- Response: canonical, provider-independent — generated text + model
+  identifier, explicitly optional finish_reason/usage/provider_name;
+  frozen slots prevent provider-field leakage; no secrets, keys, or
+  headers ever stored (test-proven).
+- Failure semantics fail closed: config validation before any
+  external call; provider/timeout/auth/rate-limit failures translated
+  to `LLMProviderError` with cause identity — never `""`/`None`/`[]`;
+  malformed responses rejected; single call, NO automatic retry.
+  Empty model output policy: returned as received with explicit
+  `is_empty` flag — never fabricated, never an exception (operational
+  failures have their own channel).
+- Prompt immutability: the authoritative structured `EvidencePrompt`
+  crosses the seam by reference (assertIs-proven), never reconstructed
+  from `render()`; unchanged after success and failure; citations are
+  the only authoritative evidence references — model text like `[E7]`
+  is untrusted and unvalidated.
+- Tenant: internal invocation metadata only — never in model-visible
+  text (test-proven against system instructions, information need,
+  evidence context, and rendered preview).
+- Security: model output is untrusted — no execution, no tools, no
+  filesystem, no external actions; the seam exposes only
+  `generate` + call records (test-proven).
+- Verification: focused 53/53; AST-verified adapter isolation both
+  directions (domain imports no SDK/HTTP; seam contains no vendor
+  SDK). Answer validation, citation correctness, injection detection,
+  vendor adapters, retries, streaming, and API exposure explicitly
+  deferred. Phase 5 is not complete; Phase 5.12 has not started.
+
+## Phase 5.10 — Citation-Aware Prompt Construction (Complete, 2026-09-23)
+
+- `xportra/domain/evidence_prompt.py`: `CitationAwarePromptBuilder`,
+  `EvidencePrompt` (frozen structured prompt), `EvidencePromptConfig`,
+  `PromptCitation`, `CITATION_FORMAT`, `citation_label` — the
+  deterministic boundary converting the Phase 5.7
+  `EvidenceContextSelection` into an LLM-ready prompt representation.
+  Construction only: no LLM invocation, no answer generation, no
+  retrieval/ranking/selection, no budget arithmetic, no
+  summarizing/paraphrasing/truncation. No Phase 5.1–5.9 file was
+  modified; six additive exports in `xportra/domain/__init__.py`.
+- Prompt representation: structured and immutable —
+  `system_instructions`, `information_need`, `evidence_context`,
+  `citations`, headings, `tenant_id`, plus `is_empty`, `to_record()`,
+  and a deterministic `render()` preview. The three components stay
+  separate fields (never one opaque string) — the prompt-injection
+  DATA boundary; detection/enforcement deferred to the future
+  generation boundary.
+- Citations: `[E1]`…`[E3]`… assigned in the selection's
+  authoritative order — deterministic, prompt-locally unique,
+  stable for the prompt lifetime; explicit rank relationship verified
+  (`citation.rank_position == selected.rank_position`).
+  `PromptCitation` carries the original `SelectedEvidence` by
+  reference (`assertIs`-proven), so the full Phase 5.9 provenance
+  chain resolves by reference — no schema duplication. `[E1]` means
+  "first evidence item in this prompt", never "legally authoritative
+  citation".
+- Determinism: identical inputs → identical prompt and rendering;
+  no timestamps, random ids, environment values, or hidden metadata.
+  Evidence order preserved exactly (no reordering/grouping/dedup).
+- Content integrity: two-space indent per evidence line is a
+  formatting wrapper only — original content recovered verbatim
+  after stripping it (multi-line and 2000-char items test-proven);
+  metadata lines (Source/Source type/Document version/Evidence:
+  marker) distinct from the content body.
+- Tenant: builder exposes no tenant parameter (signature-verified);
+  identity from the evidence contract only, validated single-tenant
+  (multi-tenant fails closed as defense-in-depth).
+- Validation (fail-closed): non-selection input, empty/non-string
+  information need, invalid config, malformed selected items,
+  rank/citation inconsistency, tenant-less evidence, multi-tenant
+  selection. Empty evidence is a valid prompt (zero citations,
+  explicit "no evidence matched" marker in render) — nothing
+  fabricated.
+- Purity: AST-verified — only dataclasses/typing/__future__ + sibling
+  domain imports; no LLM/Qdrant/DB/HTTP/file/tokenizer/os/dotenv; no
+  input mutation (frozen objects, snapshot-tested).
+- Verification: focused 51/51 (selections built through the real
+  Phase 5.5 ranker + Phase 5.7 selector); no Phase 5.1–5.9 behavior
+  changed. LLM adapter, answer generation, injection detection,
+  tokenizer budgeting, and API exposure explicitly deferred.
+  Phase 5 is not complete; Phase 5.11 has not started.
+
+## Phase 5.9 — Evidence Provenance Chain Audit & Contract (Complete, 2026-09-23)
+
+- Audit-only phase — **no production code modified**. Formalized the
+  end-to-end provenance chain (Phase 4.0 document identity → 4.2
+  chunking → 5.1 retrieval → 5.4 hybrid → 5.5 ranking → 5.7 selection
+  → 5.6/5.8 pipelines) in `docs/phases/phase-5-9-evidence-provenance-contract.md`
+  and verified it with 31 focused tests in
+  `tests/unit/test_evidence_provenance.py`.
+- Canonical identity: derived uuid5 `stable_document_id(tenant, source,
+  version)` and `stable_chunk_id(tenant, document, index, fingerprint)`
+  plus sha256 `content_fingerprint` — one authoritative mechanism,
+  no second identity system introduced. Identity drift is
+  unconstructible at the owning boundaries (construction-enforced).
+- No new provenance value object: `EvidenceRetrievalResult` (Phase 5.1,
+  frozen, 13 fail-closed fields) already is the authoritative
+  provenance carrier; every Phase 5 transition wraps it by reference
+  (assertIs-verified: one object survives candidate → ranked →
+  selected). All chain objects frozen — in-place provenance mutation
+  impossible.
+- Validation ownership documented per layer (4.2 owns
+  content↔fingerprint; 5.1 owns provider payload integrity; 5.4 owns
+  candidate source↔score consistency; 5.5 owns duplicate chunk
+  identity; 5.7 owns tenant/content/rank-order integrity at the
+  context boundary; 5.6/5.8 own composition integrity only). No
+  validation duplicated across layers.
+- Integrity tests prove fail-closed behavior for cross-tenant
+  evidence, duplicate chunk identity, fabricated retrieval-source
+  provenance, malformed candidates/payloads, emptied content, and
+  rank-order violations — each detected at its owning layer.
+- End-to-end traceability: real document → real chunking → real
+  5.6/5.8 pipelines → selected items traced back to exact original
+  chunk (tenant, document, version, chunk, source, fingerprint, rank,
+  key); distinct document versions with identical content never
+  collapse.
+- Source traceability semantics documented: `source_id`/`source_type`/
+  `source_location` are provenance pointers, NOT legal citations;
+  `source_location` optionality preserved faithfully; no URLs
+  invented.
+- Verification: focused 31/31; no Phase 4/5 behavior changed; no
+  prior test weakened. Phase 5 is not complete; no Phase 5.10 exists
+  in the phase plan.
+
+## Phase 5.8 — Retrieval-to-Context Pipeline Composition (Complete, 2026-09-23)
+
+- `xportra/domain/evidence_context_pipeline.py`:
+  `EvidenceContextPipelineContract` (runtime-checkable protocol),
+  `EvidenceContextPipeline`, and `build_evidence_context_pipeline` —
+  the second application-facing orchestration boundary, composing the
+  Phase 5.6 retrieval pipeline and the Phase 5.7 context selector into
+  one call (`select_context(information_need, *, tenant_id, mode,
+  context_budget, scope=None, top_k=DEFAULT_TOP_K,
+  candidate_pool=None) -> EvidenceContextSelection`). No Phase 5.1–5.7
+  file was modified; only additive exports in
+  `xportra/domain/__init__.py`.
+- Composition only — reimplements nothing: retrieval is delegated
+  unchanged to the injected `RetrievalPipeline` (never
+  `ComposedHybridEvidenceRetriever` or `EvidenceRanker` directly);
+  selection is delegated unchanged to the injected `ContextSelector`
+  with the caller's `EvidenceContextBudget`. No budget arithmetic, no
+  pre-filtering, no truncation, no token estimation, no score
+  inspection, no oversized-item policy at this layer.
+- Dependency injection: both collaborators injected explicitly, with
+  fail-closed construction validation (`DomainValidationError`);
+  no DI framework, no infrastructure construction. The factory wires
+  the Phase 5.6 factory + Phase 5.7 `DeterministicContextSelector`
+  default — construction consistency only.
+- Tenant/scope/mode: `tenant_id` mandatory at this API boundary via
+  `require_tenant_context` (no second isolation mechanism); `scope`
+  forwarded with object identity preserved (assertIs-tested); `mode`
+  forwarded unchanged — Phase 5.6 owns validation, no silent
+  conversion. `top_k`/`candidate_pool` forwarded per the Phase 5.6
+  contract.
+- Result integrity: the returned `EvidenceContextSelection` is the
+  exact object produced by the selector (assertIs-tested); ranked
+  results reach the selector in retrieval order, unmodified, no
+  premature truncation; full provenance survives by reference end to
+  end. Structural defense-in-depth on the retrieval pipeline's output
+  only (malformed output fails closed).
+- Empty behavior: empty ranked evidence flows to the selector and
+  returns its established successful empty selection — never an
+  error, never a fabricated result.
+- Failure semantics: fail-closed, no broad exception handling —
+  retrieval and selection failures propagate with exception identity
+  (RuntimeError/KeyError/DomainValidationError all test-proven); the
+  selector is never invoked after a retrieval failure; validation
+  failures fail closed before any collaborator runs.
+- Purity: AST-verified — only sibling domain imports plus
+  typing/__future__; no Qdrant/HTTP/embedding/LLM/tokenizer/database
+  SDK; no network I/O; no mutation of inputs or global state; no
+  prompts, answers, or compliance decisions.
+- Verification: focused 41/41; Phase 5.1–5.7 focused re-runs and
+  complete tree recorded below (see Phase 5.8 verification state in
+  the Status section). Import check: all three new symbols resolvable
+  from `xportra.domain`. Phase 5 is not complete; no Phase 5.9 exists
+  in the phase plan.
+
+## Phase 5.7 — Budget-Aware Context Selection (Complete, 2026-09-23)
+
+- `xportra/domain/evidence_context.py`: `EvidenceContextBudget`
+  (frozen, strict value object), `SelectedEvidence` (thin frozen
+  wrapper carrying the `RankedEvidenceResult` by reference +
+  `character_count`), `EvidenceContextSelection` (selected items +
+  `used_budget`/`remaining_budget`/`skipped_rank_positions` +
+  `to_record()`), `ContextSelector` protocol, and
+  `DeterministicContextSelector` — the deterministic boundary between
+  Phase 5.6 ranked output and downstream context use. No Phase 5.1–5.6
+  file was modified.
+- Budget semantics: content-characters-only accounting — the budget
+  bounds the sum of `len(content)` over selected items; separators,
+  labels, wrappers, and prompt scaffolding are NOT counted (prompt
+  formatting is a later boundary). Explicitly documented as a
+  deterministic approximation, NOT an exact LLM token count;
+  tokenizer-based accounting deliberately deferred, no tokenizer
+  dependency introduced. Strict validation: zero/negative/bool/float/
+  str/None all rejected fail-closed.
+- Selection algorithm: greedy single pass in given (Phase 5.5 rank)
+  order; include iff `used + len(content) <= budget`; deterministic
+  skip-and-continue when an item exceeds the remaining budget (rank
+  gap recorded in `skipped_rank_positions`); no reordering, no
+  rescoring, no dedup, no balancing.
+- Oversized-item policy: an item larger than the TOTAL budget is
+  rejected fail-closed (production chunking bounds content at 1200
+  chars, so this indicates corruption/misuse, not a normal skip); an
+  item exceeding only the REMAINING budget is skipped and selection
+  continues. Content is never truncated. Empty selection is a valid
+  successful outcome (empty input, or nothing fits).
+- Ordering/provenance/tenant: selected items retain rank order with
+  explicit gaps (never independently sorted); every item preserves
+  tenant, chunk/document/version, source, content, fingerprint,
+  embedding contract, scores, retrieval sources, and ranking key by
+  reference; tenant context mandatory and re-validated per item
+  (cross-tenant fails closed; no second isolation mechanism).
+- Integrity (fail-closed `DomainValidationError`): malformed ranked
+  input, non-`RankedEvidenceResult` items, empty/malformed content,
+  duplicate chunk identity, non-positive/non-ascending rank positions,
+  cross-tenant results, items over total budget, invalid budgets.
+  Nothing silently repaired, dropped, or truncated.
+- Purity: no Qdrant/HTTP/embedding/LLM/tokenizer/database access; no
+  infrastructure imports (AST-verified); no mutation of inputs or
+  global state; no compliance decisions, answers, or prompts.
+- Verification: focused 45/45; Phase 5.1–5.6 focused re-runs 251/251
+  (56+40+41+58+56+39); complete tree 803 passed + 32 skipped
+  (`DATABASE_URL` unconfigured, as every prior phase). Import check:
+  all five new symbols resolvable from `xportra.domain`.
+  Phase 5 is not complete; Phase 5.8 has not started.
+
+## Phase 5.6 — Retrieval Pipeline Orchestration (Complete, 2026-09-23)
+
+- `xportra/domain/evidence_pipeline.py`: `RetrievalPipeline` protocol
+  (runtime-checkable, application-facing), `EvidenceRetrievalPipeline`,
+  and `build_evidence_retrieval_pipeline` — the first application-facing
+  orchestration boundary composing Phase 5.4 hybrid retrieval and Phase
+  5.5 deterministic ranking into one call
+  (`retrieve(information_need, *, tenant_id, mode, scope=None,
+  top_k=DEFAULT_TOP_K, candidate_pool=None)`).
+- Composition only — reimplements nothing: it constructs the Phase 5.2
+  `EvidenceRetrievalQuery` (normalization semantics for free), forwards
+  `tenant_id` (mandatory `TenantContext` via `require_tenant_context`,)
+  and `scope` (identity-preserved; `None`/empty = tenant-only) unchanged
+  to the Phase 5.4 retriever, and returns Phase 5.5
+  `RankedEvidenceResult[]` verbatim. No competing query/scope/candidate/
+  result model was created.
+- Mode is explicit and required (`semantic` | `lexical` | `hybrid`,
+  validated against `RETRIEVAL_MODES` before any retriever call); no
+  silent default (omitting `mode` raises `TypeError`); invalid modes fail
+  closed.
+- Top-k ownership: exactly ONE authoritative final top-k — the Phase 5.5
+  ranker's post-ordering truncation, driven by the pipeline's `top_k`.
+  `candidate_pool` (default `top_k`) is the separate explicit per-path
+  retrieval bound inside the Phase 5.4 query, so the ranker sees the full
+  merged pool (up to 2 × candidate_pool before Phase 5.2 duplicate
+  collapse); the pipeline never truncates before ranking and never
+  multiplies top-k by a hidden constant.
+- Failure propagation: no broad exception handling — embedding,
+  vector-store, lexical, and ranking failures propagate unchanged;
+  `[]` still means exactly "successful retrieval, no evidence matched".
+- Result integrity: ranked results returned as produced (identity
+  asserted) — rank positions, scores, retrieval-source provenance, and
+  ranking keys untouched; dependency results never mutated. Structural
+  defense-in-depth on the injected ranker's output only.
+- Purity: no LLM, embedding, Qdrant, lexical-matching, score-computation,
+  or compliance-decision logic; AST-verified stdlib + intra-domain
+  imports only. Explicit structural constructor validation keeps the
+  pipeline fake-testable; the factory composes
+  `ComposedHybridEvidenceRetriever` + `DeterministicEvidenceRanker`
+  (default ranker) with no DI framework and no startup wiring.
+- Verification: focused 39/39; Phase 5.1–5.5 focused re-runs 251/251
+  (56+40+41+58+56); complete tree 758 passed + 32 skipped (`DATABASE_URL`
+  unconfigured, as every prior phase). No LLM, context selection, prompt
+  generation, answer generation, or compliance reasoning introduced.
+  Phase 5 is not complete; Phase 5.7 has not started.
+
+## Phase 5.5 — Retrieval Ranking & Reranking (Complete, 2026-09-23)
+
+- `xportra/domain/evidence_ranking.py`: `EvidenceRanker` protocol
+  (runtime-checkable, provider-independent), `DeterministicEvidenceRanker`,
+  and `RankedEvidenceResult` — a thin frozen wrapper carrying an explicit
+  1-based `rank_position`, the unchanged Phase 5.1 `EvidenceRetrievalResult`
+  by reference (no second evidence representation), both per-path scores,
+  retrieval sources, and a structured `ranking_key` (the explicit sort
+  tuple) for explainability without natural-language generation.
+- Ranking policy (deterministic, explainable): provenance tier first
+  ({"semantic","lexical"} > {"semantic"} > {"lexical"} — an informational
+  agreement signal, not a score combination), then descending semantic
+  score, then descending lexical score, then ascending `chunk_id`. Semantic
+  and lexical scores are never added, weighted, normalized, or fused: their
+  contracts (similarity value vs term-frequency count) are not comparable
+  and no normalization is justified by the actual score contracts.
+- Deterministic tie-breaking by ascending canonical `chunk_id`; no set/dict
+  iteration order, provider ordering, or object identity participates.
+  Repeated ranking of the same candidate set — in any input order —
+  produces the identical order (test-proven).
+- Top-k is applied at the ranking layer after ordering: the ranker sees the
+  full Phase 5.4 candidate pool (up to 2 × top_k before Phase 5.2 duplicate
+  collapse), and the final `top_k` truncates ranked results only;
+  retrieval candidate count and final ranked result count stay explicit and
+  distinct.
+- Provenance preservation: ranking changes order, not evidence identity.
+  Every result preserves chunk/document identity, document version, source,
+  content, fingerprint, tenant, both scores, and retrieval sources (the
+  same evidence object, not a copy; inputs are never mutated).
+- Purity: no network, Qdrant, embedding, or LLM call; no mutation. The
+  module's imports are verified stdlib + intra-domain only (AST test). No
+  compliance or legal-authority signal (no source type, reputation,
+  jurisdiction, or age) — the repository has no domain authority model to
+  justify one; ranking is retrieval relevance, not legal authority.
+- Fail-closed validation: duplicate chunk identity, both-scores-missing,
+  non-finite (NaN/inf) or bool/str scores, source/score inconsistency,
+  malformed sources, and invalid top-k (zero/negative/bool/float/str/None)
+  raise `DomainValidationError`; an empty candidate list returns `[]`.
+  Phase 5.4's candidate invariant is re-checked as defense in depth rather
+  than re-derived.
+- Verification: focused 56/56; Phase 5.1 56/56, Phase 5.2 40/40,
+  Phase 5.3 41/41, Phase 5.4 58/58 re-runs (195 focused, no regressions);
+  full suite 719/719 (663 + 56), 0 failures. No LLM, learned reranker,
+  cross-encoder, answer generation, or compliance reasoning introduced.
+  Phase 5 is not complete; Phase 5.6 has not started.
+
+## Phase 5.4 — Hybrid Retrieval Boundary (Complete, 2026-09-22)
+
+- `xportra/domain/evidence_hybrid.py`: `RETRIEVAL_MODES`/`RETRIEVAL_SOURCES`;
+  deterministic `lexical_tokens`/`lexical_terms`/`lexical_matches`/
+  `lexical_relevance_score` (lowercase alphanumeric tokens, no stemming/
+  stop-words/fuzzy matching, exact whole-token AND semantics);
+  `EvidenceLexicalIndex` protocol (`find_lexical`); `HybridRetrievalCandidate`
+  (wraps the existing `EvidenceRetrievalResult` plus per-path scores and
+  source labels — never a fused/combined score); `HybridEvidenceRetriever`
+  protocol + `ComposedHybridEvidenceRetriever` with explicit, required
+  `mode` (`semantic` | `lexical` | `hybrid`).
+- Semantic mode composes the unchanged Phase 5.1 retriever (embedded
+  query → vector search); lexical mode uses terms derived from the
+  normalized query and never embeds; hybrid runs both and merges by
+  canonical `chunk_id`, preserving both scores and both source labels.
+- Qdrant adapter: `find_lexical` via `scroll` with the mandatory tenant
+  condition + scope conditions + `MatchText(content)`; conservative text
+  payload index provisioned idempotently (WORD tokenizer, lowercase, no
+  stop-words/stemmer); provider over-matches narrowed by explicit
+  verification of the domain whole-token rule; lexical relevance
+  (term occurrences) computed in the domain; deterministic ordering
+  (relevance desc, `chunk_id` asc). No new dependency; no second search
+  system.
+- Tenant/scope: both paths enforce the Phase 5.1/5.3 invariants, and the
+  merged candidate set is re-validated; cross-tenant or out-of-scope
+  results raise `VectorStoreError` (integrity failure), never a silent
+  drop or empty success. Phase 5.2's provenance-aware duplicate rule
+  (`evidence_duplicate_key`) remains authoritative across the union.
+- Failure behavior: fail closed with **no degraded mode** — a hybrid call
+  raises if either branch fails (lexical failures are wrapped as
+  `VectorStoreError("hybrid evidence retrieval (lexical path)")`);
+  empty lexical queries are rejected; `[]` remains reachable only for
+  genuine "no evidence" outcomes.
+- Verification: focused 58/58 (fakes only, no live Qdrant); Phase 5.1
+  re-run 56/56, Phase 5.2 40/40, Phase 5.3 41/41; full suite 663/663
+  (605 + 58), no regressions. No LLM query rewriting, generated terms,
+  reranking/cross-encoder, hybrid fusion ranking, answer generation,
+  compliance reasoning, citation generation, agentic retrieval,
+  conversational memory, or query classification introduced.
+  Phase 5.5 has not started; Phase 5 is not complete.
+
+## Phase 4.4 — Vector Index Persistence Boundary (Complete, 2026-09-22)
+
+- `xportra/domain/vector_index.py`: `EvidenceVectorIndex` protocol
+  (upsert/get/delete, tenant-scoped) + `VectorIndexConfig`; domain imports
+  no Qdrant types.
+- `xportra/infrastructure/vector_index.py`: `QdrantEvidenceVectorIndex` —
+  idempotent `ensure_collection`, canonical `chunk_id` point IDs, idempotent
+  upsert, provenance payload with `tenant_id`, tenant-scoped get/delete,
+  fail-closed validation, `VectorStoreError` translation.
+- Fixed broken `xportra.infrastructure.vector_index` imports in both
+  `__init__.py` files; `VectorStoreError` added to domain errors.
+- Verification: focused 48/48, full suite 438/438, imports verified
+  (infrastructure + domain), no regressions.
+- Real Qdrant integration NOT run: no configured Qdrant instance
+  (`QDRANT_URL`/`QDRANT_HOST` unset, connection timed out); unit tests use a
+  fake client. No search/retrieval/RAG API introduced.
+
+## Phase 4.1 — Evidence Document Ingestion Boundary (Complete, 2026-09-22)
+
+- `EvidenceDocumentIngestionService.ingest(source_record, *, tenant_id)`:
+  validates provenance/source type/tenant/content/metadata/dates/version,
+  normalizes title/source_location only, preserves content byte-for-byte,
+  persists via `EvidenceDocumentRepository` only.
+- Idempotent identical re-ingestion; conflicting duplicates rejected
+  (no overwrite); stable Phase 4.0 identity reused; no acquisition and no
+  retrieval/RAG/LLM implemented.
+- Verification: focused 26/26, full suite 339/339, no regressions.
+- PostgreSQL integration tests not run (`DATABASE_URL` unconfigured).
+
+## Phase 4.2 — Evidence Chunking Boundary (Complete, 2026-09-22)
+
+- `EvidenceChunk` + `EvidenceChunkingService.chunk(document, *, tenant_id)`:
+  blank-line paragraph segmentation with deterministic
+  `MAX_CHUNK_CHARACTERS = 1200` bound; oversized paragraphs split at the
+  last whitespace per window; chunk content always an exact substring.
+- Stable uuid5 chunk identity (tenant + document + index + content
+  fingerprint); provenance/tenant propagated unchanged; sections never
+  inferred; in-memory representation only (no repository/migration).
+- Verification: focused 25/25, full suite 364/364, no regressions.
+- No embeddings/retrieval/RAG/persistence implemented.
