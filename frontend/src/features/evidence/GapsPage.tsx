@@ -100,28 +100,56 @@ export function GapsPage() {
           {report.gaps.length === 0 ? (
             <p>No gaps reported — every required information item is known.</p>
           ) : (
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Requirement</th>
-                  <th scope="col">Gap</th>
-                  <th scope="col">Why it matters</th>
-                </tr>
-              </thead>
-              <tbody>
-                {report.gaps.map((gap, index) => (
-                  <tr key={`${gap.requirement_id}-${index}`}>
-                    <td>
-                      <Identifier value={gap.requirement_id} />
-                    </td>
-                    <td>
-                      <StatusBadge value={gapKindLabel(gap.kind)} tone="attention" />
-                    </td>
-                    <td>{gap.reason}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ol className="need-list">
+              {report.gaps.map((gap, index) => (
+                <li key={`${gap.requirement_id}-${index}`} className="need-block">
+                  <p className="eyebrow">Information needed</p>
+                  <p className="reference-id">
+                    <Identifier value={gap.requirement_id} short={36} />
+                  </p>
+                  <dl className="need-detail">
+                    <div>
+                      <dt>Why it is needed</dt>
+                      <dd>{gap.reason}</dd>
+                    </div>
+                    <div>
+                      <dt>Gap</dt>
+                      <dd>
+                        <StatusBadge value={gapKindLabel(gap.kind)} tone="attention" />
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Current evidence state</dt>
+                      <dd>
+                        {record.supplied_evidence_ids.length === 0 ? (
+                          <span className="muted">
+                            No evidence supplied to this workflow yet.
+                          </span>
+                        ) : (
+                          <span>
+                            {record.supplied_evidence_ids.length} reference
+                            {record.supplied_evidence_ids.length === 1 ? "" : "s"} supplied —
+                            coverage is for the backend to judge, not this screen.
+                          </span>
+                        )}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>What you can provide</dt>
+                      <dd>
+                        Register an evidence reference for this requirement, then supply it
+                        to the workflow.
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="ledger-actions">
+                    <Link to="../evidence">Register evidence</Link>
+                    <span aria-hidden="true"> · </span>
+                    <Link to="../additional-evidence">Supply requested evidence</Link>
+                  </p>
+                </li>
+              ))}
+            </ol>
           )}
           <div className="action-row">
             <Link className="secondary-button" to="../evidence">

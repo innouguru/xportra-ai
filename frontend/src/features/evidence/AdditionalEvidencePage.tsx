@@ -180,6 +180,21 @@ export function AdditionalEvidencePage() {
       <header className="page-intro">
         <p className="page-kicker">Evidence requested</p>
       </header>
+      <section className="context-strip" aria-label="Where this request continues from">
+        <p className="muted">
+          Continuing from the findings review:{" "}
+          <Link to="../review">Findings review</Link> identified information
+          still needed
+          {openRequirements.length > 0 ? (
+            <>
+              {" "}— {openRequirements.length} requirement
+              {openRequirements.length === 1 ? "" : "s"} flagged open
+            </>
+          ) : null}
+          . Supply a reference below, then{" "}
+          <Link to="../analysis">re-run analysis explicitly</Link>.
+        </p>
+      </section>
       {closed ? (
         <TerminalNotice title="This workflow is finalized — additional evidence can no longer be supplied">
           <p>

@@ -1,14 +1,15 @@
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useWorkflow } from "../../app/WorkflowContext";
 import { AppShell } from "../../components/AppShell";
-import { Stepper } from "../../components/Stepper";
 import { Collapsible, EmptyState, Field, Identifier } from "../../components/StatusBits";
-import { isTerminalState, journeyStepForState, workflowStateLabel } from "../../lib/workflow";
+import { isTerminalState, workflowStateLabel } from "../../lib/workflow";
 
 /**
- * Shipment workspace shell: header with shipment reference,
- * workflow state and current step, journey stepper, and
- * section navigation. Requires an active workflow record.
+ * Shipment workspace shell: compact identity bar, workflow
+ * state, and grouped section navigation. The six-step
+ * journey diagram no longer dominates here — the Overview
+ * screen carries the assessment status strip, and the active
+ * section is marked on the navigation itself.
  */
 export function WorkspacePage() {
   const { record } = useWorkflow();
@@ -30,7 +31,6 @@ export function WorkspacePage() {
     );
   }
 
-  const step = journeyStepForState(record.state);
   const closed = isTerminalState(record.state);
 
   return (
@@ -85,7 +85,6 @@ export function WorkspacePage() {
           </Field>
         </dl>
       </Collapsible>
-      <Stepper state={record.state} current={step} />
       <nav className="section-nav" aria-label="Workspace sections">
         <div className="section-nav__group">
           <span className="section-nav__label" aria-hidden="true">

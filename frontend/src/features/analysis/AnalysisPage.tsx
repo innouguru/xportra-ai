@@ -99,6 +99,12 @@ export function AnalysisPage() {
     <div>
       <header className="page-intro">
         <p className="page-kicker">Compliance analysis</p>
+        <p className="lede">
+          Running analysis weighs the supplied evidence against the case
+          views below and records a new round with its findings. The
+          deterministic assessment stays authoritative — analysis organizes
+          what is known, missing, uncertain, and contradictory for review.
+        </p>
       </header>
       {closed ? (
         <TerminalNotice title="This workflow is finalized — analysis cannot be rerun">

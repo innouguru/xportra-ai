@@ -120,4 +120,25 @@ describe("EvidencePage", () => {
     expect(within(section).getByTitle("66666666-6666-6666-0000-000000000001")).toBeInTheDocument();
     expect(screen.getByText("Supplied to this workflow (1)")).toBeInTheDocument();
   });
+
+  it("separates needed and attention areas without equating absence with failure", () => {
+    renderWithRecord({
+      ...RECORD,
+      state: "additional_evidence_requested",
+      supplied_evidence_ids: [],
+      open_requirements: ["44444444-4444-4444-4444-444444444444"],
+    });
+    // Needed: open requirements as information needs.
+    expect(screen.getByText("Needed (1)")).toBeInTheDocument();
+    expect(screen.getByTitle("44444444-4444-4444-4444-444444444444")).toBeInTheDocument();
+    expect(screen.getByText(/not non-compliance/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "What information is missing" }),
+    ).toBeInTheDocument();
+    // Attention: the recorded request, not a verdict.
+    expect(screen.getByText("Additional evidence was requested")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open request" })).toBeInTheDocument();
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/failed|non-compliant|score/i);
+  });
 });

@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
+import { AnalysisProvider } from "../../app/AnalysisContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
 import { RequirementsPage } from "./RequirementsPage";
 import type { WorkflowRecord } from "../../types/api";
@@ -23,18 +24,20 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
-function renderWithRecord() {
+function renderWithRecord(record: WorkflowRecord = RECORD) {
   sessionStorage.setItem(
     "xportra.workflow-record.v1",
-    JSON.stringify(RECORD),
+    JSON.stringify(record),
   );
   render(
     <MemoryRouter initialEntries={["/workspace/requirements"]}>
       <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
         <WorkflowProvider>
-          <Routes>
-            <Route path="/workspace/requirements" element={<RequirementsPage />} />
-          </Routes>
+          <AnalysisProvider>
+            <Routes>
+              <Route path="/workspace/requirements" element={<RequirementsPage />} />
+            </Routes>
+          </AnalysisProvider>
         </WorkflowProvider>
       </AuthProvider>
     </MemoryRouter>,
@@ -110,5 +113,50 @@ describe("RequirementsPage", () => {
     expect(unknownBadges[0].closest(".badge")).toHaveClass("badge--attention");
     const failedOutcomes = screen.queryAllByText("failed", { exact: true });
     expect(failedOutcomes).toHaveLength(0);
+  });
+
+  it("presents each result as a ledger row with evidence and analysis state", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            counts: { applicable: 1 },
+            results: [
+              {
+                requirement_id: "44444444-4444-4444-4444-444444444444",
+                outcome: "applicable",
+                reason: "Matches commodity code.",
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithRecord();
+    await user.type(screen.getByLabelText("Requirement ID"), "req-1");
+    await user.type(screen.getByLabelText("Requirement text"), "File form X.");
+    await user.click(screen.getByRole("button", { name: "Determine applicability" }));
+    await screen.findByText("Matches commodity code.");
+    // One ruled ledger record: applicability, evidence, assessment.
+    expect(screen.getByText("Applicability")).toBeInTheDocument();
+    expect(screen.getByText("Evidence")).toBeInTheDocument();
+    expect(screen.getByText("Assessment")).toBeInTheDocument();
+    // No analysis recorded yet: honest about what is missing.
+    expect(screen.getByText("Not yet analyzed")).toBeInTheDocument();
+    expect(screen.getByText("None recorded")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Evidence workspace" }),
+    ).toBeInTheDocument();
+  });
+
+  it("disables outcome recording once the workflow is terminal", () => {
+    renderWithRecord({ ...RECORD, state: "assessment_package_ready" });
+    expect(
+      screen.getByRole("button", { name: "Record applicability outcome" }),
+    ).toBeDisabled();
+    expect(screen.getByText(/permanently closed/i)).toBeInTheDocument();
   });
 });

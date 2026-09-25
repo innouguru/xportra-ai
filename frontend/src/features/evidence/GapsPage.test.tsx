@@ -127,4 +127,44 @@ describe("GapsPage", () => {
     expect(body.cases).toHaveLength(1);
     expect((body.cases[0]["requirement"] as Record<string, unknown>)["id"]).toBe("req-9");
   });
+
+  it("presents each gap as information needed with a way to provide it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            readiness_state: "partially_ready",
+            required_information: 2,
+            known_information: 1,
+            missing_information_count: 1,
+            gaps: [
+              {
+                requirement_id: "44444444-4444-4444-4444-444444444444",
+                kind: "evidence_absent",
+                reason: "No certificate on file.",
+              },
+            ],
+            missing_evidence_requirements: ["44444444-4444-4444-4444-444444444444"],
+            unknown_applicability_requirements: [],
+            unknown_assessment_requirements: [],
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithRecord();
+    await user.type(screen.getByLabelText("Requirement ID"), "req-1");
+    await user.type(screen.getByLabelText("Requirement text"), "File form X.");
+    await user.click(screen.getByRole("button", { name: "Assess evidence coverage" }));
+    await screen.findByText("Information needed");
+    expect(screen.getByText("Why it is needed")).toBeInTheDocument();
+    expect(screen.getByText("What you can provide")).toBeInTheDocument();
+    expect(screen.getByText("No certificate on file.")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Register evidence" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "Supply requested evidence" }),
+    ).toBeInTheDocument();
+  });
 });

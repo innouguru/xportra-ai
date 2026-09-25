@@ -1257,8 +1257,241 @@ summary:focus-visible {
   cursor: not-allowed;
 }
 
-/* Long UUIDs, URIs and serialized references wrap instead of
- * overflowing narrow viewports. */
+/* ------------------------------------------------------------------
+ * Pass A — shipment intelligence workspace.
+ *
+ * Operational mode: typographic hierarchy, separators and two
+ * deliberate surfaces (hero, attention) instead of card grids.
+ * The editorial/document character stays on the assessment
+ * artifact screens only.
+ * ------------------------------------------------------------------ */
+
+/* Current-shipment navigation: second shell row, subordinate
+ * to the application nav, visible only with an active record. */
+.shipment-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-wrap: wrap;
+  flex-basis: 100%;
+  border-top: 1px solid var(--line);
+  padding-top: 0.45rem;
+}
+
+.shipment-nav__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-right: 0.5rem;
+}
+
+.shipment-nav a {
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-small);
+  border-bottom: 2px solid transparent;
+}
+
+.shipment-nav a:hover {
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+.shipment-nav a.active {
+  color: var(--accent-deep);
+  border-bottom-color: var(--accent);
+  background: var(--accent-wash);
+}
+
+/* Shipment overview (command center). */
+.overview {
+  max-width: 960px;
+}
+
+.overview-identity {
+  padding-bottom: 1rem;
+  border-bottom: 2px solid var(--rule-dark);
+  margin-bottom: 1.5rem;
+}
+
+.overview-reference {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 600;
+  line-height: 1.15;
+  margin: 0.15rem 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.overview-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.overview-heading {
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-soft);
+  margin: 1.75rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+/* Assessment status strip: five workspace areas, compact. */
+.status-strip {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0 1.25rem;
+}
+
+.status-cell {
+  border-top: 3px solid var(--line-strong);
+  padding: 0.55rem 0 0.8rem;
+  min-width: 0;
+}
+
+.status-cell .eyebrow {
+  margin-bottom: 0.3rem;
+}
+
+.status-cell__state {
+  margin: 0.25rem 0;
+}
+
+.status-cell__detail {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0.2rem 0;
+}
+
+.status-cell__action {
+  font-size: 0.88rem;
+  font-weight: 600;
+  margin: 0.3rem 0 0;
+}
+
+.status-cell__action a {
+  color: var(--accent-deep);
+}
+
+.status-cell--current {
+  border-top-color: var(--accent);
+}
+
+.status-cell--action-required {
+  border-top-color: var(--attention);
+}
+
+.status-cell--complete-closed {
+  border-top-color: var(--ink);
+}
+
+/* Attention: one strong surface, rows separated by rules. */
+.attention-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.attention-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 1.1rem;
+  border-left: 4px solid var(--line-strong);
+}
+
+.attention-item + .attention-item {
+  border-top: 1px solid var(--line);
+}
+
+.attention-item--attention {
+  border-left-color: var(--attention);
+}
+
+.attention-item--neutral {
+  border-left-color: var(--ink);
+}
+
+.attention-item__title {
+  font-weight: 700;
+  margin: 0 0 0.15rem;
+}
+
+.attention-item .muted {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+/* Workspace area index: linked rows, no boxes. */
+.workspace-areas {
+  margin: 0;
+  border-top: 1px solid var(--line-strong);
+}
+
+.workspace-areas > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: 0.25rem 1.25rem;
+  padding: 0.65rem 0;
+  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+}
+
+.workspace-areas dt {
+  font-weight: 700;
+}
+
+.workspace-areas dt a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.workspace-areas dt a:hover {
+  color: var(--accent-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.workspace-areas dd {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+@media (max-width: 860px) {
+  .overview-reference {
+    font-size: 1.5rem;
+  }
+
+  .attention-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .workspace-areas > div {
+    grid-template-columns: 1fr;
+  }
+}
 dd,
 .reference-list li,
 .finding-section,
@@ -1280,6 +1513,205 @@ h4 {
 /* ------------------------------------------------------------------
  * Responsive: collapse, stack, keep actions reachable.
  * ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------
+ * Pass B — compliance intelligence detail screens.
+ *
+ * Ledger rows, need blocks, filter chips, context strips and
+ * checkpoint lists: ruled, information-dense composition for
+ * the operational workspace. No new card grids.
+ * ------------------------------------------------------------------ */
+
+/* Requirements ledger: one ruled record per requirement. */
+.ledger {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+  max-width: 880px;
+  border-top: 2px solid var(--rule-dark);
+}
+
+.ledger-row {
+  padding: 1rem 0 1.1rem;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.ledger-row .eyebrow {
+  color: var(--attention);
+  margin-bottom: 0.2rem;
+}
+
+.ledger-title {
+  font-size: 1.12rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem;
+  max-width: 64ch;
+}
+
+.ledger-status {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.3rem 1.5rem;
+  margin: 0.6rem 0 0;
+}
+
+.ledger-status > div {
+  display: grid;
+  gap: 0.15rem;
+  align-content: start;
+}
+
+.ledger-status dt {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.ledger-status dd {
+  margin: 0;
+}
+
+.ledger-reason {
+  margin: 0.5rem 0 0;
+  max-width: var(--measure);
+  color: var(--ink-soft);
+}
+
+.ledger-actions {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0.5rem 0 0;
+}
+
+.ledger-actions a {
+  color: var(--accent-deep);
+}
+
+/* Findings filter chips: plain buttons, pressed state in text. */
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.chip {
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  min-height: 2rem;
+  cursor: pointer;
+}
+
+.chip:hover {
+  border-color: var(--accent-deep);
+  color: var(--accent-deep);
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+/* Evidence-gap need blocks. */
+.need-list {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+  max-width: 880px;
+  border-top: 2px solid var(--rule-dark);
+}
+
+.need-block {
+  padding: 1rem 0 1.1rem;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.need-detail {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.6rem 0 0;
+}
+
+.need-detail > div {
+  display: grid;
+  grid-template-columns: minmax(160px, 210px) 1fr;
+  gap: 0.25rem 1.25rem;
+  align-items: baseline;
+}
+
+.need-detail dt {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.need-detail dd {
+  margin: 0;
+  max-width: var(--measure);
+}
+
+/* Context strip: why the user arrived here. */
+.context-strip {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-wash);
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+  padding: 0.7rem 1rem;
+  margin: 0 0 1.5rem;
+  max-width: 880px;
+}
+
+.context-strip p {
+  margin: 0;
+}
+
+.context-strip a {
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+/* Final-review checkpoint list. */
+.checkpoint-list {
+  margin: 1rem 0;
+  max-width: 880px;
+  border-top: 2px solid var(--rule-dark);
+}
+
+.checkpoint-list > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 240px) 1fr;
+  gap: 0.25rem 1.25rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+  align-items: baseline;
+}
+
+.checkpoint-list dt {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-soft);
+}
+
+.checkpoint-list dd {
+  margin: 0;
+}
+
+.checkpoint-list dd a {
+  color: var(--accent-deep);
+  font-weight: 600;
+}
 
 @media (max-width: 960px) {
   .stepper {
@@ -1370,5 +1802,14 @@ h4 {
 
   .data-table tr {
     border-bottom: 2px solid var(--line-strong);
+  }
+
+  .need-detail > div,
+  .checkpoint-list > div {
+    grid-template-columns: 1fr;
+  }
+
+  .ledger-title {
+    font-size: 1.02rem;
   }
 }

@@ -245,6 +245,54 @@ requirements, and Phase 5 is formally closed (see
 The single audit correction (`LLMSettings.api_key` excluded
 from repr) is the only behavior-neutral change.
 
+## Phase 9 — Frontend Redesign Pass C (Complete, 2026-09-25)
+
+- Verification pass with minimal corrections:
+  responsive static audit (no browser engine available,
+  honestly reported), journey trace, 9-state audit,
+  contradiction semantics resolved against backend
+  source (rollup ≡ finding-level metric; filter honors
+  either + wording clarified), empty/loading/error and
+  accessibility audits, artifact consistency audit.
+  Fixes: Requirements terminal gate, filter-group note,
+  chip touch target, one new test.
+- Verification: `npx tsc --noEmit` clean; `npx vitest run`
+  27 files / 140 tests passing (139 carried, 1 new);
+  `npm run build` succeeds. Backend untouched. See
+  `docs/phases/phase-9-frontend-redesign-pass-c.md`.
+
+## Phase 9 — Frontend Redesign Pass B (Complete, 2026-09-25)
+
+- Detail-screen recomposition: requirements ledger
+  (joined breakdown + findings), three-area evidence
+  workspace, information-needed gap blocks, analysis
+  intro, findings group filters + evidence-linked
+  records, additional-evidence context strip,
+  final-review checkpoint. Package/Report/History and
+  backend untouched; no invented data or scores.
+- Verification: `npx tsc --noEmit` clean; `npx vitest run`
+  27 files / 139 tests passing (135 carried, 4 new);
+  `npm run build` succeeds; dev source-mode serves 200 on
+  all 13 routes with Pass B markers verified. Backend
+  untouched; no live integration claimed. See
+  `docs/phases/phase-9-frontend-redesign-pass-b.md`.
+
+## Phase 9 — Frontend Redesign Pass A (Complete, 2026-09-25)
+
+- Composition redesign of shell + workspace only:
+  application vs current-shipment navigation, `/workspace`
+  shipment overview (identity, five-area status strip,
+  attention/next-action, area index, technical details),
+  six-step diagram removed from the shell, operational
+  flat-hierarchy CSS. Detail screens, API layer, and
+  backend untouched; no invented attributes or scores.
+- Verification: `npx tsc --noEmit` clean; `npx vitest run`
+  27 files / 135 tests passing (125 carried, 10 new);
+  `npm run build` succeeds; dev source-mode serves 200 on
+  all checked routes with new-system markers verified.
+  Backend untouched; no live integration claimed. See
+  `docs/phases/phase-9-frontend-redesign-pass-a.md`.
+
 ## Phase 9.5 — Product UI Refinement (Complete, 2026-09-25)
 
 - Visual/UX-only recomposition of the Phase 9 frontend:

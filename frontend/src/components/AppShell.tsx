@@ -1,7 +1,7 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
 import { useWorkflow } from "../app/WorkflowContext";
-import { workflowStateLabel } from "../lib/workflow";
+import { isTerminalState, workflowStateLabel } from "../lib/workflow";
 
 /**
  * Persistent application shell: brand, workflow context,
@@ -16,6 +16,7 @@ export function AppShell({ title, actions, children }: {
   const auth = useAuth();
   const { record, clear } = useWorkflow();
   const navigate = useNavigate();
+  const closed = record !== null && isTerminalState(record.state);
 
   const startOver = () => {
     clear();
@@ -50,6 +51,50 @@ export function AppShell({ title, actions, children }: {
             Workspace
           </NavLink>
         </nav>
+        {record ? (
+          <nav className="shipment-nav" aria-label="Current shipment">
+            <span className="shipment-nav__label" aria-hidden="true">
+              Current shipment
+            </span>
+            <NavLink
+              to="/workspace"
+              end
+              className={({ isActive }) => (isActive ? "active" : undefined)}
+            >
+              Overview
+            </NavLink>
+            <NavLink
+              to="/workspace/info"
+              className={({ isActive }) => (isActive ? "active" : undefined)}
+            >
+              Information
+            </NavLink>
+            <NavLink
+              to="/workspace/requirements"
+              className={({ isActive }) => (isActive ? "active" : undefined)}
+            >
+              Requirements
+            </NavLink>
+            <NavLink
+              to="/workspace/evidence"
+              className={({ isActive }) => (isActive ? "active" : undefined)}
+            >
+              Evidence
+            </NavLink>
+            <NavLink
+              to="/workspace/analysis"
+              className={({ isActive }) => (isActive ? "active" : undefined)}
+            >
+              Analysis
+            </NavLink>
+            <NavLink
+              to={closed ? "/workspace/package" : "/workspace/final-review"}
+              className={({ isActive }) => (isActive ? "active" : undefined)}
+            >
+              Assessment
+            </NavLink>
+          </nav>
+        ) : null}
         <div className="session-area">
           {record ? (
             <span className="session-context" title={`Workflow ${record.id}`}>

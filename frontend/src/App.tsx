@@ -6,6 +6,7 @@ import { AssessmentProvider } from "./app/AssessmentContext";
 import { SessionPage } from "./features/shipment/SessionPage";
 import { NewShipmentPage } from "./features/shipment/NewShipmentPage";
 import { WorkspacePage } from "./features/shipment/WorkspacePage";
+import { WorkspaceOverview } from "./features/shipment/WorkspaceOverview";
 import { ShipmentInfoPage } from "./features/shipment/ShipmentInfoPage";
 import { RequirementsPage } from "./features/requirements/RequirementsPage";
 import { EvidencePage } from "./features/evidence/EvidencePage";
@@ -39,7 +40,7 @@ export function App() {
               <Route path="/" element={<NewShipmentPage />} />
               <Route path="/session" element={<SessionPage />} />
               <Route path="/workspace" element={<WorkspacePage />}>
-                <Route index element={<Navigate to="info" replace />} />
+                <Route index element={<WorkspaceOverview />} />
                 <Route path="info" element={<ShipmentInfoPage />} />
                 <Route path="requirements" element={<RequirementsPage />} />
                 <Route path="evidence" element={<EvidencePage />} />

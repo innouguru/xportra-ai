@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import type { AnalysisFinding } from "../types/api";
 import { applicabilityTone } from "../lib/workflow";
 import { contradictionTone } from "../lib/evidence";
@@ -68,7 +69,10 @@ export function FindingCard({
       <section className="finding-section" aria-label="Evidence">
         <h4>Evidence</h4>
         {finding.supporting_evidence.length === 0 && finding.conflicting_evidence.length === 0 ? (
-          <p className="muted">No evidence references recorded for this finding.</p>
+          <p className="muted">
+            No evidence references recorded for this finding.{" "}
+            <Link to="../evidence">Open the evidence workspace</Link>.
+          </p>
         ) : (
           <>
             {finding.supporting_evidence.length > 0 ? (

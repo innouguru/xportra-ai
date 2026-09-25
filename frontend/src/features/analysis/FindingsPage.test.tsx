@@ -1,6 +1,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { useEffect } from "react";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
@@ -148,5 +149,26 @@ describe("FindingsPage", () => {
     expect(screen.getByText(/not a finding of non-compliance/i)).toBeInTheDocument();
     const text = document.body.textContent?.toLowerCase() ?? "";
     expect(text).not.toMatch(/\bfailed\b/);
+  });
+
+  it("filters findings by recorded group without inventing categories", async () => {
+    const user = userEvent.setup();
+    renderWithReport(REPORT);
+    await screen.findByText("File form X before export.");
+    // Group counts come straight from the stored report.
+    expect(screen.getByRole("button", { name: "All findings (2)" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Needs information (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Uncertain (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Contradictions (1)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Unresolved (1)" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Uncertain (1)" }));
+    expect(screen.getByText("File form X before export.")).toBeInTheDocument();
+    expect(screen.queryByText("Label goods in English.")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Contradictions (1)" }));
+    expect(screen.getByText("Label goods in English.")).toBeInTheDocument();
+    expect(screen.queryByText("File form X before export.")).toBeNull();
   });
 });

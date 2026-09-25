@@ -246,41 +246,66 @@ export function FinalReviewPage() {
         <>
           <section aria-label="What the package will contain">
             <h2>What the finalized package will contain</h2>
-            <dl className="field-grid">
-              <Field label="Findings under review">{report.findings.length}</Field>
-              <Field label="Requirements with missing information">
-                {report.requirements_with_missing_information.length}
-              </Field>
-              <Field label="Uncertain requirements">
-                {report.uncertain_requirement_ids.length}
-              </Field>
-              <Field label="Requirements with conflicting evidence">
-                {report.requirements_with_conflicting_evidence.length}
-              </Field>
-              <Field label="Conflicting evidence items">
-                {report.conflicting_evidence_count}
-              </Field>
-              <Field label="Needing attention">{attentionCount}</Field>
-              <Field label="Evidence supplied to this workflow">
-                {record.supplied_evidence_ids.length} reference
-                {record.supplied_evidence_ids.length === 1 ? "" : "s"}
-              </Field>
-              <Field label="Open requirements recorded">
-                {record.open_requirements.length === 0 ? (
-                  <span className="muted">None recorded on this workflow.</span>
-                ) : (
-                  <ul className="reference-list reference-list--plain">
-                    {record.open_requirements.map((id) => (
-                      <li key={id}>
-                        <Identifier value={id} short={36} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Field>
+            <p className="muted">
+              The decision finalization asks of you: that you have reviewed
+              the assessment below and are ready to create the final package.
+              Counts describe the latest report as received — not a score.
+            </p>
+            <dl className="checkpoint-list">
+              <div>
+                <dt>Findings</dt>
+                <dd>
+                  {report.findings.length} under review —{" "}
+                  <Link to={`../report/${encodeURIComponent(report.report_id)}`}>
+                    open the stored report
+                  </Link>
+                </dd>
+              </div>
+              <div>
+                <dt>Evidence supplied</dt>
+                <dd>
+                  {record.supplied_evidence_ids.length} reference
+                  {record.supplied_evidence_ids.length === 1 ? "" : "s"} —{" "}
+                  <Link to="../evidence">evidence workspace</Link>
+                </dd>
+              </div>
+              <div>
+                <dt>Open information needs</dt>
+                <dd>
+                  {record.open_requirements.length === 0 ? (
+                    <span className="muted">None recorded on this workflow.</span>
+                  ) : (
+                    <ul className="reference-list reference-list--plain">
+                      {record.open_requirements.map((id) => (
+                        <li key={id}>
+                          <Identifier value={id} short={36} />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>Requirements with missing information</dt>
+                <dd>{report.requirements_with_missing_information.length}</dd>
+              </div>
+              <div>
+                <dt>Uncertain requirements</dt>
+                <dd>{report.uncertain_requirement_ids.length}</dd>
+              </div>
+              <div>
+                <dt>Conflicting evidence</dt>
+                <dd>
+                  {report.requirements_with_conflicting_evidence.length} requirements ·{" "}
+                  {report.conflicting_evidence_count} items — recorded, not resolved
+                </dd>
+              </div>
+              <div>
+                <dt>Needing attention</dt>
+                <dd>{attentionCount}</dd>
+              </div>
             </dl>
             <p className="form-hint">
-              Counts describe the latest report as received. They are not a compliance score.
               Undecided states stay <code>unknown</code>, and missing evidence stays an
               information need — neither is presented as failure. The carried decision summary
               travels with the latest result and is shown in full on the package.

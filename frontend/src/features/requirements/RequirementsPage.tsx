@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { determineApplicability, recordApplicability } from "../../api/workflows";
+import { useAnalysis } from "../../app/AnalysisContext";
 import { useAuth } from "../../app/AuthContext";
 import { useWorkflow } from "../../app/WorkflowContext";
-import type { ApplicabilityResponse } from "../../types/api";
+import type { AnalysisFinding, AnalysisReport, ApplicabilityResponse } from "../../types/api";
 import {
   EmptyState,
   ErrorNotice,
   LoadingState,
   StatusBadge,
 } from "../../components/StatusBits";
-import { applicabilityLabel, applicabilityTone } from "../../lib/workflow";
+import { assessmentTone } from "../../lib/findings";
+import { applicabilityLabel, applicabilityTone, isTerminalState } from "../../lib/workflow";
 
 /**
  * Screen 3 — Requirements / applicability.
@@ -35,6 +37,7 @@ function newDraft(): DraftRequirement {
 export function RequirementsPage() {
   const auth = useAuth();
   const { record, setRecord } = useWorkflow();
+  const { report: analysisReport } = useAnalysis();
   const [drafts, setDrafts] = useState<DraftRequirement[]>([newDraft()]);
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
@@ -60,6 +63,7 @@ export function RequirementsPage() {
   const updateDraft = (index: number, patch: Partial<DraftRequirement>) => {
     setDrafts((current) => current.map((draft, i) => (i === index ? { ...draft, ...patch } : draft)));
   };
+  const closed = isTerminalState(record.state);
 
   const runBreakdown = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -117,12 +121,19 @@ export function RequirementsPage() {
           Mark the deterministic applicability outcome on the workflow once the
           requirement set below is understood.
         </p>
+        {closed ? (
+          <p className="muted">
+            This workflow is finalized and permanently closed: the outcome can
+            no longer be recorded, and the backend rejects any
+            post-finalization mutation.
+          </p>
+        ) : null}
         {error ? <ErrorNotice error={error} /> : null}
         <div className="action-row">
           <button
             type="button"
             className="primary-button"
-            disabled={pending !== null}
+            disabled={pending !== null || closed}
             onClick={recordOutcome}
           >
             {pending === "record" ? "Recording…" : "Record applicability outcome"}
@@ -232,45 +243,120 @@ export function RequirementsPage() {
         {report ? (
           <div className="results-block">
             <h3>Determination</h3>
-            <dl className="field-grid">
-              {Object.entries(report.counts).map(([name, count]) => (
-                <div className="field" key={name}>
-                  <dt>{name.replace(/_/g, " ")}</dt>
-                  <dd>{count}</dd>
-                </div>
-              ))}
-            </dl>
+            <p className="muted">
+              {report.results.length} result{report.results.length === 1 ? "" : "s"} received
+              {Object.entries(report.counts).map(([name, count]) => ` · ${name.replace(/_/g, " ")}: ${count}`).join("")}.
+              Counts describe the determination as received — not a score.
+            </p>
             {report.results.length === 0 ? (
               <p className="muted">No requirement results returned.</p>
             ) : (
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Requirement</th>
-                    <th scope="col">Outcome</th>
-                    <th scope="col">Reason</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.results.map((result) => (
-                    <tr key={result.requirement_id}>
-                      <td>
-                        <code className="identifier" title={result.requirement_id}>
-                          {result.requirement_id.slice(0, 8)}…
-                        </code>
-                      </td>
-                      <td>
-                        <StatusBadge value={applicabilityLabel(result.outcome)} tone={applicabilityTone(result.outcome)} />
-                      </td>
-                      <td>{result.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <ol className="ledger">
+                {ledgerRows(report, analysisReport, record.open_requirements).map((row) => (
+                  <li key={row.requirement_id} className="ledger-row">
+                    {row.open ? <p className="eyebrow">Open requirement</p> : null}
+                    <p className="ledger-title">{row.requirement_text}</p>
+                    <p className="reference-id">
+                      <code className="identifier" title={row.requirement_id}>
+                        {row.requirement_id.length > 36
+                          ? `${row.requirement_id.slice(0, 36)}…`
+                          : row.requirement_id}
+                      </code>
+                    </p>
+                    <dl className="ledger-status">
+                      <div>
+                        <dt>Applicability</dt>
+                        <dd>
+                          <StatusBadge value={applicabilityLabel(row.outcome)} tone={applicabilityTone(row.outcome)} />
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Evidence</dt>
+                        <dd>
+                          {row.finding ? (
+                            <>
+                              {row.finding.supporting_evidence.length} reference
+                              {row.finding.supporting_evidence.length === 1 ? "" : "s"}
+                            </>
+                          ) : (
+                            <span className="muted">None recorded</span>
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Assessment</dt>
+                        <dd>
+                          {row.finding ? (
+                            <StatusBadge value={row.finding.assessment} tone={assessmentTone(row.finding.assessment)} />
+                          ) : (
+                            <span className="muted">Not yet analyzed</span>
+                          )}
+                        </dd>
+                      </div>
+                    </dl>
+                    {row.reason ? <p className="ledger-reason">{row.reason}</p> : null}
+                    <p className="ledger-actions">
+                      {row.finding ? <Link to="../review">View finding</Link> : null}
+                      {row.finding ? <span aria-hidden="true"> · </span> : null}
+                      <Link to="../evidence">Evidence workspace</Link>
+                    </p>
+                  </li>
+                ))}
+              </ol>
             )}
           </div>
         ) : null}
       </section>
     </div>
   );
+}
+
+/**
+ * Ledger rows join the just-run breakdown with any recorded
+ * analysis findings by requirement identity, so each row
+ * shows where the requirement stands across evidence and
+ * analysis. Findings without a breakdown row are appended;
+ * nothing is inferred beyond these two recorded sources.
+ */
+interface LedgerRow {
+  requirement_id: string;
+  requirement_text: string;
+  outcome: string;
+  reason: string;
+  finding: AnalysisFinding | null;
+  open: boolean;
+}
+
+function ledgerRows(
+  breakdown: ApplicabilityResponse,
+  analysis: AnalysisReport | null,
+  openRequirements: string[],
+): LedgerRow[] {
+  const open = new Set(openRequirements);
+  const findings = new Map<string, AnalysisFinding>(
+    (analysis?.findings ?? []).map((finding) => [finding.requirement_id, finding]),
+  );
+  const rows: LedgerRow[] = breakdown.results.map((result) => {
+    const finding = findings.get(result.requirement_id) ?? null;
+    findings.delete(result.requirement_id);
+    return {
+      requirement_id: result.requirement_id,
+      requirement_text: finding?.requirement_text ?? result.requirement_id,
+      outcome: result.outcome,
+      reason: result.reason,
+      finding,
+      open: open.has(result.requirement_id),
+    };
+  });
+  for (const finding of findings.values()) {
+    rows.push({
+      requirement_id: finding.requirement_id,
+      requirement_text: finding.requirement_text,
+      outcome: finding.applicability,
+      reason: "",
+      finding,
+      open: open.has(finding.requirement_id),
+    });
+  }
+  return rows;
 }

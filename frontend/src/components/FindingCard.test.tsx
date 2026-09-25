@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { FindingCard } from "./FindingCard";
 import type { AnalysisFinding } from "../types/api";
 function finding(overrides: Partial<AnalysisFinding> = {}): AnalysisFinding {
@@ -25,9 +26,19 @@ function finding(overrides: Partial<AnalysisFinding> = {}): AnalysisFinding {
   };
 }
 
+function renderCard(finding: AnalysisFinding, position?: { index: number; total: number }) {
+  // Finding records link to the evidence workspace, so they render
+  // inside a router. No assertion below depends on routing.
+  return render(
+    <MemoryRouter>
+      <FindingCard finding={finding} {...position} />
+    </MemoryRouter>,
+  );
+}
+
 describe("FindingCard", () => {
   it("renders every backend section verbatim", () => {
-    render(<FindingCard finding={finding()} />);
+    renderCard(finding());
     expect(screen.getByText("File form X before export.")).toBeInTheDocument();
     expect(screen.getByText("The evidence does not yet establish the filing.")).toBeInTheDocument();
     expect(screen.getByText("Certificate copy missing.")).toBeInTheDocument();
@@ -40,13 +51,13 @@ describe("FindingCard", () => {
   });
 
   it("preserves contradictions instead of resolving them", () => {
-    render(<FindingCard finding={finding()} />);
+    renderCard(finding());
     expect(screen.getByText(/shown as recorded, not resolved/i)).toBeInTheDocument();
     expect(screen.getByText("present")).toBeInTheDocument();
   });
 
   it("renders no score, verdict, confidence, or failure language", () => {
-    const { container } = render(<FindingCard finding={finding()} />);
+    const { container } = renderCard(finding());
     const text = container.textContent?.toLowerCase() ?? "";
     for (const marker of ["score", "percent", "verdict", "confidence"]) {
       expect(text).not.toContain(marker);
@@ -56,22 +67,20 @@ describe("FindingCard", () => {
   });
 
   it("handles empty evidence and sources gracefully", () => {
-    render(
-      <FindingCard
-        finding={finding({
-          supporting_evidence: [],
-          conflicting_evidence: [],
-          sources: [],
-          missing_information: [],
-        })}
-      />,
+    renderCard(
+      finding({
+        supporting_evidence: [],
+        conflicting_evidence: [],
+        sources: [],
+        missing_information: [],
+      }),
     );
     expect(screen.getByText(/no evidence references recorded/i)).toBeInTheDocument();
     expect(screen.getByText(/no sources recorded/i)).toBeInTheDocument();
   });
 
   it("structures the finding as a case record with labeled sections", () => {
-    const { container } = render(<FindingCard finding={finding()} />);
+    const { container } = renderCard(finding());
     expect(screen.getByText("Requirement")).toBeInTheDocument();
     const article = container.querySelector("article.finding-card");
     expect(article).not.toBeNull();
@@ -85,13 +94,13 @@ describe("FindingCard", () => {
   });
 
   it("numbers the finding within its report when position is given", () => {
-    const { container } = render(<FindingCard finding={finding()} index={0} total={3} />);
+    const { container } = renderCard(finding(), { index: 0, total: 3 });
     expect(screen.getByText("Finding 1 of 3")).toBeInTheDocument();
     expect(container.querySelector("article.finding-card")).not.toBeNull();
   });
 
   it("omits numbering when position is not given", () => {
-    render(<FindingCard finding={finding()} />);
+    renderCard(finding());
     expect(screen.queryByText(/Finding \d+ of \d+/)).toBeNull();
   });
 });

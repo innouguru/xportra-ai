@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAnalysis } from "../../app/AnalysisContext";
 import { useWorkflow } from "../../app/WorkflowContext";
@@ -16,6 +17,14 @@ import { EmptyState, Field, Identifier } from "../../components/StatusBits";
 export function FindingsPage() {
   const { record } = useWorkflow();
   const { report } = useAnalysis();
+
+  type FindingGroup =
+    | "all"
+    | "needs-information"
+    | "uncertain"
+    | "contradictions"
+    | "unresolved";
+  const [group, setGroup] = useState<FindingGroup>("all");
 
   if (!record) {
     return (
@@ -52,6 +61,54 @@ export function FindingsPage() {
   const latestRound = record.rounds.length > 0 ? record.rounds[record.rounds.length - 1] : null;
   const reviewingNewRound =
     round !== undefined && latestRound !== null && round.round_index === latestRound.round_index;
+
+  const missing = new Set(report.requirements_with_missing_information);
+  const uncertain = new Set(report.uncertain_requirement_ids);
+  const conflicting = new Set(report.requirements_with_conflicting_evidence);
+  // A finding contradicts when the report rollup names it or when the
+  // finding itself carries conflicting references — both are recorded
+  // facts, and either deserves reviewer inspection.
+  const contradicts = (requirementId: string) =>
+    conflicting.has(requirementId) ||
+    (report.findings.find((finding) => finding.requirement_id === requirementId)
+      ?.conflicting_evidence.length ?? 0) > 0;
+  const visible = report.findings.filter((finding) => {
+    switch (group) {
+      case "needs-information":
+        return missing.has(finding.requirement_id);
+      case "uncertain":
+        return uncertain.has(finding.requirement_id);
+      case "contradictions":
+        return contradicts(finding.requirement_id);
+      case "unresolved":
+        return finding.assessment === "unknown";
+      default:
+        return true;
+    }
+  });
+  const groups: Array<{ id: FindingGroup; label: string; count: number }> = [
+    { id: "all", label: "All findings", count: report.findings.length },
+    {
+      id: "needs-information",
+      label: "Needs information",
+      count: report.findings.filter((finding) => missing.has(finding.requirement_id)).length,
+    },
+    {
+      id: "uncertain",
+      label: "Uncertain",
+      count: report.findings.filter((finding) => uncertain.has(finding.requirement_id)).length,
+    },
+    {
+      id: "contradictions",
+      label: "Contradictions",
+      count: report.findings.filter((finding) => contradicts(finding.requirement_id)).length,
+    },
+    {
+      id: "unresolved",
+      label: "Unresolved",
+      count: report.findings.filter((finding) => finding.assessment === "unknown").length,
+    },
+  ];
 
   return (
     <div>
@@ -93,11 +150,32 @@ export function FindingsPage() {
           compliance score and this screen renders no verdict.
         </p>
       </section>
-      {report.findings.map((finding, position) => (
+      <div className="filter-chips" role="group" aria-label="Filter findings">
+        {groups.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className="chip"
+            aria-pressed={group === option.id}
+            onClick={() => setGroup(option.id)}
+          >
+            {option.label} ({option.count})
+          </button>
+        ))}
+      </div>
+      <p className="form-hint">
+        Groups reflect the stored report: recorded missing information,
+        recorded uncertainty, recorded conflicting references, and undecided
+        assessments. Selecting a group filters this list only.
+      </p>
+      {visible.length === 0 ? (
+        <p className="muted">No findings in this group.</p>
+      ) : null}
+      {visible.map((finding) => (
         <FindingCard
           key={finding.analysis_id}
           finding={finding}
-          index={position}
+          index={report.findings.indexOf(finding)}
           total={report.findings.length}
         />
       ))}

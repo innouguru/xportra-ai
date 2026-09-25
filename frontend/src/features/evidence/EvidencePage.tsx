@@ -100,6 +100,7 @@ export function EvidencePage() {
   };
 
   const supplied = new Set(record.supplied_evidence_ids);
+  const registeredUnsupplied = recorded.filter((row) => !supplied.has(row.id));
 
   return (
     <div>
@@ -131,6 +132,89 @@ export function EvidencePage() {
         {pending && !pending.startsWith("supply-") && pending !== "register" ? (
           <LoadingState text="Updating workflow…" />
         ) : null}
+      </section>
+      <section aria-label="Needed evidence">
+        <h2>Needed ({record.open_requirements.length})</h2>
+        <p className="muted">
+          Requirements flagged open on this workflow — information still
+          needed, not non-compliance. Absence alone decides nothing.
+        </p>
+        {record.open_requirements.length === 0 ? (
+          <p className="muted">No requirements are currently flagged open.</p>
+        ) : (
+          <ul className="reference-list">
+            {record.open_requirements.map((id) => (
+              <li key={id}>
+                <p className="eyebrow">Open requirement</p>
+                <p className="reference-id">
+                  <Identifier value={id} short={36} />
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="action-row">
+          <Link className="secondary-button" to="../gaps">
+            What information is missing
+          </Link>
+          <Link className="secondary-button" to="../additional-evidence">
+            Supply requested evidence
+          </Link>
+        </div>
+      </section>
+      <section aria-label="Evidence attention">
+        <h2>Attention</h2>
+        {closed ? (
+          <p className="muted">
+            This workflow is finalized — the evidence record is read-only.
+          </p>
+        ) : (
+          <ul className="attention-list">
+            {record.state === "additional_evidence_requested" ? (
+              <li className="attention-item attention-item--attention">
+                <div>
+                  <p className="attention-item__title">Additional evidence was requested</p>
+                  <p className="muted">
+                    Review what is open, register a reference below, and supply it.
+                  </p>
+                </div>
+                <Link className="secondary-button" to="../additional-evidence">
+                  Open request
+                </Link>
+              </li>
+            ) : null}
+            {registeredUnsupplied.length > 0 ? (
+              <li className="attention-item attention-item--attention">
+                <div>
+                  <p className="attention-item__title">
+                    {registeredUnsupplied.length} registered, not yet supplied
+                  </p>
+                  <p className="muted">
+                    These references exist but analysis cannot consider them until supplied.
+                  </p>
+                </div>
+                <a className="secondary-button" href="#registered-evidence">
+                  Review list
+                </a>
+              </li>
+            ) : null}
+            {record.state !== "additional_evidence_requested" &&
+            registeredUnsupplied.length === 0 ? (
+              <li className="attention-item attention-item--neutral">
+                <div>
+                  <p className="attention-item__title">
+                    {recorded.length === 0 ? "No references yet" : "Nothing needs attention"}
+                  </p>
+                  <p className="muted">
+                    {recorded.length === 0
+                      ? "Register a reference below to get started."
+                      : "Every reference registered this session has been supplied."}
+                  </p>
+                </div>
+              </li>
+            ) : null}
+          </ul>
+        )}
       </section>
       <section aria-label="Register evidence reference">
         <h2>Register evidence reference</h2>
@@ -204,7 +288,7 @@ export function EvidencePage() {
           </button>
         </form>
       </section>
-      <section aria-label="Registered evidence">
+      <section aria-label="Registered evidence" id="registered-evidence">
         <h2>Registered this session</h2>
         {recorded.length === 0 ? (
           <p className="muted">No evidence references registered yet in this session.</p>
