@@ -29,6 +29,8 @@ from xportra.domain.errors import (
     VectorStoreError,
 )
 
+from .runtime import is_production_environment
+
 logger = logging.getLogger(__name__)
 
 
@@ -155,6 +157,14 @@ async def _handle_application_error(
     no prompts, secrets, provider internals, or tracebacks.
     Readiness reasons ride in ``details`` so a future
     frontend can render them without new calls.
+
+    Production safety (Phase 10.1): 5xx responses carry no
+    dynamic detail. ``InfrastructureError`` details derive
+    from stringified driver/provider exceptions, which can
+    embed table/constraint names, SQL fragments, or endpoint
+    URLs — safe for local diagnostics, not for production
+    clients. The stable ``code`` is always preserved so
+    legitimate clients keep their error semantics.
     """
     status_code, code = 500, "application_error"
     for error_type, mapped_status, mapped_code in (
@@ -163,6 +173,21 @@ async def _handle_application_error(
         if isinstance(exc, error_type):
             status_code, code = mapped_status, mapped_code
             break
+    headers = (
+        {"WWW-Authenticate": "Bearer"}
+        if status_code == 401 else None
+    )
+    if status_code >= 500 and is_production_environment():
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "error": {
+                    "code": code,
+                    "message": code.replace("_", " "),
+                }
+            },
+            headers=headers,
+        )
     content: dict[str, Any] = {
         "error": {
             "code": code,
@@ -177,10 +202,6 @@ async def _handle_application_error(
                 for reason_code, reason_detail in reasons
             ]
         }
-    headers = (
-        {"WWW-Authenticate": "Bearer"}
-        if status_code == 401 else None
-    )
     return JSONResponse(
         status_code=status_code, content=content, headers=headers
     )

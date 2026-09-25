@@ -414,25 +414,6 @@ class FinalizeWorkflowResponse(BaseModel):
     package: FinalPackageResponse
 
 
-class FinalPackageResponse(BaseModel):
-    """Stored final assessment package (terminal, by reference)."""
-
-    workflow_id: UUID
-    tenant_id: UUID
-    case_id: UUID
-    shipment_id: UUID | None = None
-    state: str
-    round_count: int
-    open_requirements: list[UUID]
-    report: AnalysisReportResponse
-    decision_summary: dict | None = None
-
-
-class FinalizeWorkflowResponse(BaseModel):
-    workflow: WorkflowRecordSchema
-    package: FinalPackageResponse
-
-
 class HistoryEntryResponse(BaseModel):
     sequence: int
     kind: str

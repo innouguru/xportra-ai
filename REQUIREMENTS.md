@@ -177,10 +177,85 @@
   provenance, and supersession tracking without conflating status with
   authority.
 
-## R-1..R-10: Future Phases — Not Yet Scoped
+## R-10.1: Production Security & Configuration Hardening (Phase 10.1) — Approved
+
+Phase 10.1 establishes a production-safe security and configuration
+baseline for the existing application without changing product behavior
+or introducing deployment infrastructure. This is a
+hardening phase, not a feature phase. Product behavior, deterministic
+ compliance authority, workflow semantics, and application/API boundaries
+ are unchanged.
+
+- R-10.1.1 (Production configuration boundary): application environment
+  handling shall distinguish production from development/test; required
+  production settings shall be validated at startup; unsafe defaults
+  (including debug behavior) shall be impossible in production; and the
+  development/test tenant mechanism (`X-Development-Tenant-ID`) shall
+  remain available where already supported in development/test but shall
+  be impossible to use as an authorization/tenant-selection mechanism in
+  production.
+- R-10.1.2 (Authentication/authorization audit): the existing
+  API/application authorization boundary shall be reviewed to verify
+  that authenticated identity is authoritative, tenant membership is
+  required where appropriate, role checks occur at the established
+  boundary, clients cannot select arbitrary tenants through request
+  data, development-only tenant injection cannot bypass production
+  authentication, unauthorized roles cannot reach protected operations,
+  finalized-workflow restrictions remain enforced, and tenant/actor
+  validation happens before sensitive operations where required.
+  Discovered security invariants shall receive regression tests. The
+  authorization architecture shall not be redesigned unless a concrete
+  security defect requires it.
+- R-10.1.3 (Tenant-isolation matrix): focused tests shall prove, for
+  representative cross-tenant attempts against existing protected
+  operations (workflow, evidence, analysis/result, report, final
+  package, history, and any other persisted Phase 8 tenant-owned
+  resource), that tenant A cannot read, mutate, finalize, or otherwise
+  operate on tenant B's resources. No second authorization system shall
+  be created.
+- R-10.1.4 (Production error-surface hardening): production API
+  responses shall not expose stack traces, SQL/database internals,
+  provider credentials, API keys, environment secrets, raw exception
+  internals, or sensitive tenant data belonging to another tenant,
+  while preserving useful structured error semantics for legitimate
+  clients. Errors shall not silently disappear.
+- R-10.1.5 (Logging/sensitive-data audit): structured logging and error
+  paths shall not unintentionally contain secrets, authorization
+  credentials, API keys, raw document/evidence contents, unnecessary
+  personally identifying information, or full provider responses that
+  may contain sensitive content, while preserving required operational
+  identifiers and provenance.
+- R-10.1.6 (HTTP/API security configuration): the FastAPI HTTP boundary
+  shall be audited for production-safe configuration (CORS, debug
+  exposure, security-sensitive headers, trusted-host behavior,
+  development-only routes/behavior, authorization-bypassing request
+  handling). Only controls justified by the existing architecture shall
+  be introduced.
+- R-10.1.7 (Secrets/configuration hygiene): secrets shall not be
+  committed, `.env` shall remain excluded, example configuration shall
+  contain placeholders only, production-required secrets shall be
+  explicitly documented, no hard-coded credentials/tokens shall exist
+  in application source, and error messages shall not leak secret
+  values. No real credentials are rotated by this phase.
+- R-10.1.8 (Security regression tests): every concrete security defect
+  fixed shall receive a focused regression test, plus a compact
+  production-safety matrix covering authentication, authorization,
+  tenant isolation, production configuration, error exposure, and
+  finalized-workflow protection.
+- R-10.1.9 (Out of scope): deployment, Docker/containerization,
+  Kubernetes, cloud infrastructure, CI/CD redesign, database backup
+  strategy, disaster recovery, performance optimization, load testing,
+  Qdrant production hosting, OpenRouter/provider migration,
+  observability redesign, dashboards, notifications, new frontend
+  features, new product workflows, new compliance rules, LLM behavior
+  changes, changes to deterministic compliance authority, and
+  reopening/versioning finalized assessments are explicitly excluded.
+
+## R-1..R-10: Future Phases — Partially Scoped
 
 Phases 1–10 (see `ROADMAP.md`) have no approved detailed functional
-requirements at this time. Requirements for each phase will be added here
+requirements at this time, except for Phase 10.1 (`R-10.1` above).
+Requirements for each remaining phase will be added here
 when defined and approved. In particular, no regulatory requirements and
 no detailed product functionality beyond the sections above have been
 approved.

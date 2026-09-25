@@ -1,7 +1,6 @@
 """Dependency wiring for the API boundary."""
 
 from dataclasses import dataclass, field
-import os
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -45,6 +44,7 @@ from .auth import (
 )
 from .authorization import OWNER_ROLE, authorize, require_permission
 from .errors import APIError, AuthenticationError
+from .runtime import is_production_environment
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,29 +206,6 @@ def get_result_store(request: Request):
 ResultStoreDependency = Annotated[Any, Depends(get_result_store)]
 
 
-def get_result_store(request: Request):
-    """Resolve the Phase 8.4 result store for the request.
-
-    Repositories are injected through the service container,
-    so tests can replace them with deterministic doubles.
-    Fails closed when the migration 010 tables are not
-    provisioned for the environment.
-    """
-    services = get_services(request)
-    store = getattr(services, "result_store", None)
-    if store is None:
-        raise APIError(
-            503,
-            "result_store_not_configured",
-            "The compliance result store is not configured "
-            "for this deployment",
-        )
-    return store
-
-
-ResultStoreDependency = Annotated[Any, Depends(get_result_store)]
-
-
 def get_development_tenant_context(
     x_development_tenant_id: Annotated[
         str | None,
@@ -241,7 +218,7 @@ def get_development_tenant_context(
     as an isolated development/test pathway that cannot be enabled in
     production. Production deployments must use authenticated identity.
     """
-    if os.environ.get("APP_ENV", "development").lower() == "production":
+    if is_production_environment():
         raise APIError(
             503,
             "development_tenant_context_disabled",
@@ -265,7 +242,7 @@ def get_development_tenant_context(
 
 
 def _is_production() -> bool:
-    return os.environ.get("APP_ENV", "development").lower() == "production"
+    return is_production_environment()
 
 
 def _bearer_token(authorization: str | None) -> str:
@@ -320,18 +297,23 @@ def get_member_context(
         str | None, Header(alias=DEVELOPMENT_TENANT_HEADER)
     ] = None,
 ) -> MemberContext:
-    """Resolve the authenticated member context from identity and membership."""
+    """Resolve the authenticated member context from identity and membership.
+
+    The development tenant header is rejected unconditionally in
+    production — including when ``Authorization`` is also present — so
+    it can never act as a parallel tenant-selection mechanism there.
+    """
+    if x_development_tenant_id is not None and _is_production():
+        raise APIError(
+            503,
+            "development_tenant_context_disabled",
+            "Development tenant context is disabled in production",
+        )
     if authorization is not None:
         return _authenticated_member_context(
             request, authorization, x_xportra_tenant_id
         )
     if _is_production():
-        if x_development_tenant_id is not None:
-            raise APIError(
-                503,
-                "development_tenant_context_disabled",
-                "Development tenant context is disabled in production",
-            )
         raise AuthenticationError("authentication_required", "Authentication is required")
     if x_development_tenant_id is not None:
         tenant = get_development_tenant_context(x_development_tenant_id)
@@ -357,16 +339,16 @@ def get_request_actor(
     boundary; malformed Bearer tokens still fail closed via
     the existing verifier.
     """
-    if authorization is not None:
-        token = _bearer_token(authorization)
-        settings = SupabaseAuthSettings.from_environment()
-        return SupabaseTokenVerifier(settings).verify(token).subject
-    if _is_production() and x_development_tenant_id is not None:
+    if x_development_tenant_id is not None and _is_production():
         raise APIError(
             503,
             "development_tenant_context_disabled",
             "Development tenant context is disabled in production",
         )
+    if authorization is not None:
+        token = _bearer_token(authorization)
+        settings = SupabaseAuthSettings.from_environment()
+        return SupabaseTokenVerifier(settings).verify(token).subject
     return None
 
 

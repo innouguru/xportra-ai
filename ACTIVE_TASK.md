@@ -1,36 +1,19 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: Phase 9 Frontend Redesign Pass C — Complete
+## Task: Phase 10.1 — Production Security & Configuration Hardening
 
-**Status:** Complete and verified (2026-09-25).
+**Status:** Complete (2026-09-25).
 
-## Scope delivered
+Phase 10.1 scope (user/product-approved, `REQUIREMENTS.md` R-10.1,
+resolving OQ-10.1) is implemented and verified. Task record:
+`tasks/completed/phase-10-1-production-security-hardening.md`.
 
-Verification only: responsive static audit (no browser
-engine in this environment — pixel verification
-explicitly not claimed), full journey trace, all-9-state
-audit, contradiction semantics resolved (backend rollup
-≡ finding-level metric; no defect; filter + wording
-clarified), empty/loading/error audit, accessibility
-audit (chip touch-target fix), artifact consistency
-audit (no changes needed). Minimal frontend fixes only:
-Requirements terminal gate (+1 test), filter-group
-clarification, chip min-height.
+Verification: 44/44 new focused tests (+24 subtests); 217/217 related
+security/auth/tenant tests; full backend suite 1784 passed + 44 skipped
+(gated live services, not executed), 0 failures.
 
-## Verification
-
-- `npx tsc --noEmit`: 0 errors.
-- `npx vitest run --testTimeout=20000`: 27 files /
-  140 tests passing (139 carried, 1 new).
-- `npm run build`: succeeds.
-- Backend untouched (verified via git status).
-- No live backend integration; no pixel/device
-  inspection (unavailable here).
-
-## Next
-
-Phase 9 frontend is ready for the commit/push
-checkpoint when instructed. Do not commit or push. Do
-not start Phase 10. See
-`docs/phases/phase-9-frontend-redesign-pass-c.md` and
-`tasks/completed/phase-9-frontend-redesign-pass-c.md`.
+No active task remains. The conversational product architecture design
+(task record: `tasks/completed/conversational-product-architecture.md`)
+was delivered 2026-09-25 as a completed design task. Do not start Phase 10.2
+until its scope is defined in `REQUIREMENTS.md` and scheduled via
+`tasks/`.

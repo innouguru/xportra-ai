@@ -245,6 +245,40 @@ requirements, and Phase 5 is formally closed (see
 The single audit correction (`LLMSettings.api_key` excluded
 from repr) is the only behavior-neutral change.
 
+## Phase 10.1 — Production Security & Configuration Hardening (Complete, 2026-09-25)
+
+- Scope explicitly approved by user/product and recorded as
+  `REQUIREMENTS.md` R-10.1; OQ-10.1 resolved in `ACTIVE_TASK.md`;
+  task completed at
+  `tasks/completed/phase-10-1-production-security-hardening.md`;
+  scope/audit baseline and implementation record in
+  `docs/phases/phase-10-1-production-security-hardening.md`;
+  cross-cutting decisions in
+  `docs/decisions/ADR-0008-production-security-hardening.md`.
+- Hardening only: no product-behavior change, no deployment
+  infrastructure (per R-10.1.9). Changes confined to `xportra/api/`
+  (`runtime.py` new; `app.py`, `dependencies.py`, `errors.py`,
+  `schemas.py` hardened) plus `.env.example` comments.
+- Verification: 44/44 new focused tests (+24 subtests); 217/217
+  related auth/API/compliance/stored/boundary tests; full suite
+  1784 passed + 44 skipped (gated Postgres/Qdrant/OpenRouter-live,
+  not executed), 0 failures. Frontend untouched.
+
+## Conversational Product Architecture (Design only, 2026-09-25)
+
+- Canonical design doc:
+  `docs/phases/conversational-product-architecture.md` (product value,
+  product model, two conversational modes, model MAY/MUST-NOT,
+  chat→system action boundary, grounding, tenant/shipment context,
+  UX recommendation, MVP vs later, diagram, future phase impact,
+  OQ-C1–OQ-C5). No code written, no behavior exists.
+- Constraining decision:
+  `docs/decisions/ADR-0009-conversational-boundary.md`.
+- Task record:
+  `tasks/completed/conversational-product-architecture.md`.
+- No implementation task is active; no Phase 10.2 started. Future
+  chat work needs `REQUIREMENTS.md` entries and scheduled tasks.
+
 ## Phase 9 — Frontend Redesign Pass C (Complete, 2026-09-25)
 
 - Verification pass with minimal corrections:

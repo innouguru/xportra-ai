@@ -4,7 +4,7 @@ This directory holds Architecture Decision Records. Per `INVARIANTS.md`,
 any change to structure, boundaries, data flow, storage, or cross-cutting
 concerns requires an ADR here **before** implementation.
 
-- Status: 4 decisions recorded as of 2026-09-19.
+- Status: 9 decisions recorded as of 2026-09-25.
 - Naming: `ADR-0001-short-title.md`, incrementing.
 - Each ADR must record: context, decision, alternatives considered,
   consequences, and linked requirements/tasks.
@@ -16,3 +16,7 @@ concerns requires an ADR here **before** implementation.
 - `ADR-0003-source-authority-framework.md`
 - `ADR-0004-psycopg-persistence-boundary.md`
 - `ADR-0005-fastapi-application-boundary.md`
+- `ADR-0006-supabase-authenticated-tenant-boundary.md`
+- `ADR-0007-tenant-role-authorization-boundary.md`
+- `ADR-0008-production-security-hardening.md`
+- `ADR-0009-conversational-boundary.md`
