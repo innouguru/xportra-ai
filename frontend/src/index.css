@@ -1,0 +1,1374 @@
+/* Xportra AI — export compliance intelligence workspace.
+ *
+ * Phase 9.5 product refinement. Warm-neutral paper, charcoal
+ * ink, one deep-teal accent; editorial document hierarchy
+ * carried by typography, rules and whitespace — not by
+ * boxes. Status is never color alone: badges, flags and
+ * explicit state text accompany every tone.
+ *
+ * Class contract (queried by tests — do not rename):
+ * .finding-card, .finding-section, .session-dot,
+ * .step-number, li.step, .step--terminal, .badge,
+ * .badge--attention, .history-entry .eyebrow.
+ */
+
+:root {
+  --paper: #faf8f3;
+  --surface: #ffffff;
+  --surface-warm: #f4efe4;
+  --ink: #1c1917;
+  --ink-soft: #44403c;
+  --muted: #78716c;
+  --line: #e7e0d3;
+  --line-strong: #cfc4ab;
+  --rule-dark: #292524;
+  --accent: #0e6e62;
+  --accent-deep: #0a544b;
+  --accent-ink: #ffffff;
+  --accent-wash: #e6f2ef;
+  --info: #1d4ed8;
+  --info-wash: #e8effc;
+  --attention: #b45309;
+  --attention-wash: #fef3e2;
+  --error: #b91c1c;
+  --error-wash: #fdecec;
+  --success: #166534;
+  --success-wash: #e9f5ec;
+  --radius: 6px;
+  --radius-small: 4px;
+  --shadow: 0 1px 2px rgb(28 25 23 / 0.06);
+  --font-body: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-display: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
+  --control-height: 2.75rem;
+  --measure: 72ch;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15.5px;
+  line-height: 1.6;
+}
+
+h1,
+h2,
+h3,
+.brand-mark {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+
+h1 {
+  font-size: 1.7rem;
+  line-height: 1.2;
+  margin: 0;
+  font-weight: 600;
+}
+
+h2 {
+  font-size: 1.3rem;
+  line-height: 1.3;
+  margin: 2rem 0 0.6rem;
+  font-weight: 600;
+}
+
+h3 {
+  font-size: 1.05rem;
+  margin: 1.5rem 0 0.5rem;
+  font-weight: 600;
+}
+
+p {
+  margin: 0.55rem 0;
+}
+
+/* Small-caps kickers carry the document hierarchy. */
+.eyebrow,
+.kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--muted);
+  margin: 0 0 0.4rem;
+}
+
+.meta {
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.lede {
+  max-width: var(--measure);
+  color: var(--ink-soft);
+  font-size: 1.02rem;
+}
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  background: var(--ink);
+  color: #fff;
+  padding: 0.5rem 1rem;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  left: 0.5rem;
+  top: 0.5rem;
+}
+
+/* ------------------------------------------------------------------
+ * Application shell.
+ * ------------------------------------------------------------------ */
+
+.shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 0.85rem 2rem;
+  background: var(--surface);
+  border-bottom: 2px solid var(--rule-dark);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  white-space: nowrap;
+}
+
+.brand-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-small);
+  background: var(--accent-deep);
+  color: var(--accent-ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.brand-stack {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.brand-mark {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-decoration: none;
+  letter-spacing: 0.01em;
+}
+
+.brand-sub,
+.brand-tagline {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent-deep);
+}
+
+.primary-nav {
+  display: flex;
+  gap: 0.25rem;
+  align-self: stretch;
+  align-items: stretch;
+}
+
+.primary-nav a,
+.section-nav a {
+  color: var(--ink-soft);
+  text-decoration: none;
+  padding: 0.4rem 0.75rem;
+  border-radius: var(--radius);
+}
+
+.primary-nav a {
+  display: inline-flex;
+  align-items: center;
+  font-weight: 600;
+  font-size: 0.92rem;
+  border-radius: 0;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -2px;
+}
+
+.primary-nav a:hover,
+.section-nav a:hover {
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+.primary-nav a.active {
+  color: var(--accent-deep);
+  border-bottom-color: var(--accent);
+  background: none;
+}
+
+.section-nav a.active {
+  background: var(--accent-wash);
+  color: var(--accent-deep);
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.session-area {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.session-context {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.session-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  border: 1px solid var(--muted);
+  background: transparent;
+  flex-shrink: 0;
+}
+
+.session-dot--signed-in {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.main {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 2rem 2rem 5rem;
+}
+
+/* Page masthead: title with a rule, actions right-aligned. */
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 2px solid var(--rule-dark);
+  flex-wrap: wrap;
+}
+
+.page-actions {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+/* Page intro: kicker + title + lede for workspace sections.
+ * Kickers are paragraphs (never headings) so document
+ * outline stays with the section titles. */
+.page-intro {
+  margin: 0 0 1.25rem;
+  max-width: 880px;
+}
+
+.page-intro .page-kicker,
+.page-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--accent-deep);
+  margin: 0 0 0.3rem;
+}
+
+.page-intro h2 {
+  margin-top: 0;
+  font-size: 1.55rem;
+}
+
+.page-intro .lede {
+  margin-bottom: 0;
+}
+
+/* Document running head for terminal artifacts. */
+.doc-head {
+  border-bottom: 2px solid var(--rule-dark);
+  padding-bottom: 0.9rem;
+  margin-bottom: 1.5rem;
+  max-width: 880px;
+}
+
+.doc-head .page-kicker {
+  margin-bottom: 0.25rem;
+}
+
+.doc-head h2 {
+  margin-top: 0;
+}
+
+/* ------------------------------------------------------------------
+ * Shipment workspace identity: the shipment is the visual
+ * anchor — oversized serif reference, state line, counts.
+ * ------------------------------------------------------------------ */
+
+.shipment-hero {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--accent-deep);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.4rem 1.6rem 1.2rem;
+}
+
+.shipment-hero__reference {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 0.15rem 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.shipment-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 2rem;
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+}
+
+.shipment-hero__meta dt {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.shipment-hero__meta dd {
+  margin: 0;
+}
+
+.workspace-header {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1rem 1.25rem;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.7rem 1.75rem;
+  margin: 0;
+}
+
+.field {
+  display: grid;
+  gap: 0.2rem;
+  align-content: start;
+}
+
+.field dt {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.field dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.identifier {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.85em;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.state-label {
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------------
+ * Journey spine: numbered editorial progress, not a pill bar.
+ * ------------------------------------------------------------------ */
+
+.stepper {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0;
+  margin: 1.5rem 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+  counter-reset: journey-step;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.8rem 0.9rem 0.9rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  border-top: 3px solid transparent;
+  border-left: 1px solid var(--line);
+  counter-increment: journey-step;
+  min-width: 0;
+}
+
+.step:first-child {
+  border-left: none;
+}
+
+.step-number {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--line-strong);
+  flex-shrink: 0;
+}
+
+.step-number::before {
+  content: "0" counter(journey-step);
+}
+
+.step-marker {
+  display: none;
+}
+
+.step-label {
+  font-weight: 700;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+}
+
+.step-detail {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.step--complete {
+  color: var(--ink-soft);
+}
+
+.step--complete .step-number {
+  color: var(--accent-deep);
+}
+
+.step--current {
+  color: var(--ink);
+  background: var(--accent-wash);
+  border-top-color: var(--accent);
+}
+
+.step--current .step-number {
+  color: var(--accent-deep);
+}
+
+.step--current .step-label {
+  color: var(--ink);
+}
+
+.step--action-required {
+  border-top-color: var(--attention);
+}
+
+.step--action-required .step-number,
+.step--action-required .step-label {
+  color: var(--attention);
+}
+
+.step--terminal {
+  background: var(--ink);
+  border-top-color: var(--ink);
+}
+
+.step--terminal .step-number,
+.step--terminal .step-label,
+.step--terminal .step-detail {
+  color: var(--paper);
+}
+
+.step-flag {
+  font-weight: 400;
+  font-size: 0.78rem;
+}
+
+/* ------------------------------------------------------------------
+ * Section navigation: two labeled groups (Workspace /
+ * Assessment) instead of one undifferentiated link row.
+ * ------------------------------------------------------------------ */
+
+.section-nav {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.75rem;
+  border-bottom: 1px solid var(--line-strong);
+  padding-bottom: 0;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.section-nav__group {
+  display: flex;
+  gap: 0.25rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding-bottom: 0.55rem;
+}
+
+.section-nav__group + .section-nav__group {
+  border-left: 1px solid var(--line-strong);
+  padding-left: 1.5rem;
+}
+
+.section-nav__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-right: 0.35rem;
+  padding-bottom: 0.55rem;
+}
+
+.section-nav__divider {
+  display: none;
+}
+
+/* ------------------------------------------------------------------
+ * Forms: professional intake documents.
+ * ------------------------------------------------------------------ */
+
+.form {
+  display: grid;
+  gap: 1.1rem;
+  max-width: 760px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+fieldset {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.25rem 1.25rem;
+  margin: 0;
+  background: var(--surface);
+}
+
+legend {
+  padding: 0 0.6rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.form-row {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+}
+
+.form-row label {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.form-row input {
+  font: inherit;
+  min-height: var(--control-height);
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--ink);
+  width: 100%;
+}
+
+.form-row select {
+  font: inherit;
+  min-height: var(--control-height);
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--ink);
+  width: 100%;
+}
+
+.form-row input::placeholder {
+  color: var(--muted);
+  opacity: 0.8;
+}
+
+.form-hint {
+  font-size: 0.87rem;
+  color: var(--muted);
+  margin: 0.2rem 0 0;
+  max-width: var(--measure);
+}
+
+.form-row input:focus-visible,
+.form-row select:focus-visible,
+button:focus-visible,
+a:focus-visible,
+summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--attention);
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  white-space: nowrap;
+}
+
+.form-error {
+  color: var(--error);
+  font-weight: 700;
+}
+
+/* Intake checklist: what the workspace establishes. */
+.checklist {
+  list-style: none;
+  margin: 1rem 0 1.5rem;
+  padding: 0;
+  max-width: var(--measure);
+  border-top: 1px solid var(--line);
+}
+
+.checklist > li {
+  padding: 0.55rem 0 0.55rem 1.75rem;
+  border-bottom: 1px solid var(--line);
+  position: relative;
+}
+
+.checklist > li::before {
+  content: "";
+  position: absolute;
+  left: 0.25rem;
+  top: 1.05rem;
+  width: 0.6rem;
+  height: 0.6rem;
+  background: var(--accent-wash);
+  border: 2px solid var(--accent-deep);
+}
+
+/* ------------------------------------------------------------------
+ * Buttons: strict hierarchy, deliberate hover, honest disabled.
+ * ------------------------------------------------------------------ */
+
+.primary-button,
+.secondary-button,
+.ghost-button {
+  font: inherit;
+  border-radius: var(--radius);
+  padding: 0.6rem 1.2rem;
+  min-height: var(--control-height);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.3;
+  transition: background-color 120ms ease-in, border-color 120ms ease-in, color 120ms ease-in;
+}
+
+.primary-button {
+  background: var(--accent-deep);
+  color: var(--accent-ink);
+  border: 1px solid var(--accent-deep);
+  font-weight: 700;
+}
+
+.primary-button:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.primary-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.secondary-button:disabled,
+.ghost-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.secondary-button {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule-dark);
+  font-weight: 600;
+}
+
+.secondary-button:hover:not(:disabled) {
+  border-color: var(--accent-deep);
+  color: var(--accent-deep);
+  background: var(--accent-wash);
+}
+
+.ghost-button {
+  background: transparent;
+  color: var(--ink-soft);
+  border: 1px solid transparent;
+  padding: 0.4rem 0.6rem;
+  min-height: 0;
+}
+
+.ghost-button:hover:not(:disabled) {
+  color: var(--accent-deep);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.action-row {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin-top: 1.1rem;
+  align-items: center;
+}
+
+/* ------------------------------------------------------------------
+ * Badges, notices, states.
+ * ------------------------------------------------------------------ */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 0.15em 0.65em;
+  background: var(--surface);
+  white-space: nowrap;
+}
+
+.badge-dot {
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.badge--info {
+  color: var(--info);
+  border-color: currentColor;
+}
+
+.badge--muted {
+  color: var(--muted);
+}
+
+.badge--attention {
+  color: var(--attention);
+  border-color: currentColor;
+  background: var(--attention-wash);
+}
+
+.badge--neutral {
+  color: var(--ink-soft);
+}
+
+.notice {
+  border: 1px solid var(--line-strong);
+  border-left-width: 4px;
+  border-radius: var(--radius-small);
+  padding: 0.85rem 1.1rem;
+  background: var(--surface);
+  margin: 1.1rem 0;
+  max-width: 760px;
+}
+
+.notice--error {
+  border-left-color: var(--error);
+  background: var(--error-wash);
+}
+
+.empty-state {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  padding: 2.5rem 2rem;
+  text-align: center;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  max-width: 640px;
+}
+
+.empty-state h2 {
+  margin-top: 0;
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink-soft);
+}
+
+.spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+  }
+
+  .primary-button,
+  .secondary-button,
+  .ghost-button {
+    transition: none;
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Data tables: regulatory-ledger rows, requirement first.
+ * ------------------------------------------------------------------ */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+  font-size: 0.93rem;
+}
+
+.data-table caption {
+  caption-side: top;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--muted);
+  padding: 0 0 0.35rem;
+}
+
+.data-table th,
+.data-table td {
+  text-align: left;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.data-table thead th {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-soft);
+  background: var(--surface-warm);
+  border-bottom: 2px solid var(--rule-dark);
+}
+
+.data-table tbody tr:last-child th,
+.data-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover {
+  background: var(--accent-wash);
+}
+
+.data-table td.numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table td:first-child {
+  font-weight: 600;
+}
+
+.collapsible {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  margin: 0.85rem 0;
+  max-width: 880px;
+}
+
+.collapsible summary {
+  cursor: pointer;
+  padding: 0.65rem 1rem;
+  font-weight: 600;
+}
+
+.collapsible-body {
+  padding: 0 1rem 1rem;
+}
+
+.results-block {
+  margin-top: 1.75rem;
+  border-top: 2px solid var(--rule-dark);
+  padding-top: 0.5rem;
+}
+
+.results-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  align-items: baseline;
+  margin: 0.75rem 0;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+}
+
+.results-summary strong {
+  color: var(--ink);
+}
+
+/* Secondary technical sections: subordinate to the action. */
+.technical-details {
+  margin-top: 1.75rem;
+  border-top: 1px solid var(--line-strong);
+  padding-top: 1.1rem;
+  max-width: 760px;
+}
+
+.technical-details > h2 {
+  font-size: 0.95rem;
+  margin-top: 0;
+  font-family: var(--font-body);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+}
+
+.case-builder fieldset {
+  margin-bottom: 1rem;
+}
+
+/* ------------------------------------------------------------------
+ * Evidence ledger: document/reference rows, title first.
+ * ------------------------------------------------------------------ */
+
+.reference-list {
+  list-style: none;
+  margin: 0.75rem 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+  max-width: 880px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.reference-list > li {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-top: none;
+  border-radius: 0;
+  padding: 0.85rem 1.1rem;
+}
+
+.reference-list > li:first-child {
+  border-top: 1px solid var(--line-strong);
+  border-top-left-radius: var(--radius);
+  border-top-right-radius: var(--radius);
+}
+
+.reference-list > li:last-child {
+  border-bottom-left-radius: var(--radius);
+  border-bottom-right-radius: var(--radius);
+}
+
+/* Plain variant: dividers instead of boxes. */
+.reference-list--plain {
+  gap: 0.4rem;
+  margin: 0.35rem 0 0;
+  border-top: none;
+}
+
+.reference-list--plain > li {
+  background: none;
+  border: none;
+  border-left: 2px solid var(--line-strong);
+  border-radius: 0;
+  padding: 0.1rem 0 0.1rem 0.7rem;
+}
+
+.reference-list--plain > li:first-child {
+  border-top: none;
+  border-radius: 0;
+}
+
+.reference-list--plain > li:last-child {
+  border-radius: 0;
+}
+
+.reference-id {
+  margin: 0.15rem 0 0.3rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.reference-requirement {
+  margin: 0.15rem 0 0.4rem;
+  font-weight: 600;
+  max-width: var(--measure);
+}
+
+.reference-value {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* ------------------------------------------------------------------
+ * Findings as an interactive assessment report: dividers and
+ * typography, not nested containers.
+ * ------------------------------------------------------------------ */
+
+.finding-card {
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 1.5rem 1.75rem 1.25rem;
+  margin: 0 0 1.25rem;
+  max-width: 880px;
+}
+
+.finding-count {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--muted);
+  margin: 0 0 0.15rem;
+}
+
+.finding-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--accent-deep);
+  margin: 0 0 0.2rem;
+}
+
+.finding-requirement {
+  margin-top: 0;
+  font-size: 1.35rem;
+  line-height: 1.3;
+  max-width: 60ch;
+}
+
+.finding-meta {
+  margin: 1rem 0 0;
+  border-top: 1px solid var(--line);
+  padding-top: 0.9rem;
+}
+
+.finding-section {
+  border-top: 1px solid var(--line);
+  margin-top: 1.1rem;
+  padding-top: 0.2rem;
+}
+
+.finding-section > h4 {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink-soft);
+  margin: 0.9rem 0 0.4rem;
+}
+
+.finding-section > h5 {
+  font-size: 0.88rem;
+  margin: 0.8rem 0 0.3rem;
+  color: var(--ink-soft);
+}
+
+.finding-section p {
+  margin: 0.35rem 0;
+  max-width: var(--measure);
+}
+
+/* Explicit-confirmation panel: bordered region, calm copy. */
+.confirm-panel {
+  border: 1px solid var(--line-strong);
+  border-top: 3px solid var(--attention);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 1.25rem 1.5rem;
+  margin: 1rem 0;
+  max-width: 760px;
+}
+
+/* Terminal banner: text + structure, never color alone. */
+.terminal-banner {
+  border: 1px solid var(--line-strong);
+  border-top: 3px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--surface-warm);
+  padding: 1.1rem 1.4rem;
+  margin: 1rem 0 1.75rem;
+  max-width: 880px;
+}
+
+.terminal-banner p {
+  margin: 0.3rem 0;
+}
+
+.terminal-banner__title {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 0.4rem;
+}
+
+/* Workflow history projection: grouped recorded order, no
+ * timeline decoration and no timestamps (none exist). */
+.history-projection {
+  list-style: none;
+  margin: 1rem 0;
+  padding: 0;
+  max-width: 880px;
+  border-top: 1px solid var(--line-strong);
+}
+
+.history-entry {
+  border-left: 3px solid var(--line-strong);
+  padding: 0.7rem 0 1.1rem 1.1rem;
+  margin-left: 0.3rem;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-entry:last-child {
+  padding-bottom: 0.4rem;
+}
+
+.history-entry .eyebrow {
+  margin-bottom: 0.15rem;
+}
+
+.history-entry p {
+  margin: 0.25rem 0;
+}
+
+.history-references {
+  gap: 0.35rem 1.25rem;
+  margin-top: 0.4rem;
+}
+
+.history-references .field dt {
+  font-size: 0.72rem;
+}
+
+/* Inline text action (prefill affordances inside hints). */
+.link-button {
+  font: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  min-height: 0;
+  color: var(--accent-deep);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.link-button:disabled {
+  color: var(--muted);
+  text-decoration: none;
+  cursor: not-allowed;
+}
+
+/* Long UUIDs, URIs and serialized references wrap instead of
+ * overflowing narrow viewports. */
+dd,
+.reference-list li,
+.finding-section,
+.notice,
+.terminal-banner,
+.confirm-panel,
+.history-projection {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------
+ * Responsive: collapse, stack, keep actions reachable.
+ * ------------------------------------------------------------------ */
+
+@media (max-width: 960px) {
+  .stepper {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .step {
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+
+  .step:nth-child(odd) {
+    border-right: 1px solid var(--line);
+  }
+}
+
+@media (max-width: 860px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.6rem 1rem;
+    padding: 0.7rem 1rem;
+  }
+
+  .session-area {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-start;
+    border-top: 1px solid var(--line);
+    padding-top: 0.55rem;
+  }
+
+  .section-nav {
+    gap: 0.75rem;
+  }
+
+  .section-nav__group + .section-nav__group {
+    border-left: none;
+    padding-left: 0;
+    border-top: 1px solid var(--line);
+    padding-top: 0.55rem;
+    width: 100%;
+  }
+
+  .stepper {
+    grid-template-columns: 1fr;
+  }
+
+  .step:nth-child(odd) {
+    border-right: none;
+  }
+
+  .main {
+    padding: 1.25rem 1rem 3rem;
+  }
+
+  .shipment-hero__reference {
+    font-size: 1.35rem;
+  }
+
+  .finding-card {
+    padding: 1.1rem 1.1rem 1rem;
+  }
+
+  .finding-requirement {
+    font-size: 1.15rem;
+  }
+
+  .terminal-banner,
+  .confirm-panel {
+    padding: 0.9rem 1rem;
+  }
+
+  .data-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  .data-table,
+  .data-table tbody,
+  .data-table tr,
+  .data-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .data-table tr {
+    border-bottom: 2px solid var(--line-strong);
+  }
+}

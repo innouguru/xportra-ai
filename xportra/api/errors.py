@@ -7,6 +7,19 @@ from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from xportra.application.errors import (
+    ApplicationAuthenticationError,
+    ApplicationAuthorizationError,
+    ApplicationError,
+    ApplicationNotFoundError,
+    ApplicationValidationError,
+    InfrastructureError,
+    InvalidTransitionError,
+    StaleAnalysisError,
+    TenantMismatchError,
+    TerminalWorkflowError,
+    WorkflowNotReadyError,
+)
 from xportra.domain.answer_validation import AnswerValidationError
 from xportra.domain.errors import (
     DomainNotFoundError,
@@ -56,6 +69,9 @@ def register_exception_handlers(application) -> None:
     application.add_exception_handler(APIError, _handle_api_error)
     application.add_exception_handler(AuthenticationError, _handle_authentication_error)
     application.add_exception_handler(RequestValidationError, _handle_validation_error)
+    application.add_exception_handler(StaleAnalysisError, _handle_application_error)
+    application.add_exception_handler(WorkflowNotReadyError, _handle_application_error)
+    application.add_exception_handler(ApplicationError, _handle_application_error)
     application.add_exception_handler(DomainNotFoundError, _handle_not_found)
     application.add_exception_handler(AnswerValidationError, _handle_answer_validation)
     application.add_exception_handler(LLMProviderError, _handle_llm_provider)
@@ -106,6 +122,67 @@ async def _handle_validation_error(
                 "details": details,
             }
         },
+    )
+
+
+#: Phase 8.2 mapping from application-error type to
+#: (HTTP status, response code). Dispatched by exception
+#: type — never by parsing messages. Subclasses are
+#: registered explicitly (e.g. ``StaleAnalysisError``
+#: before ``WorkflowNotReadyError``) so the stable
+#: sub-category survives handler lookup.
+_APPLICATION_ERROR_STATUS = (
+    (ApplicationAuthenticationError, 401, "authentication_failed"),
+    (ApplicationAuthorizationError, 403, "permission_denied"),
+    (TenantMismatchError, 403, "tenant_mismatch"),
+    (ApplicationNotFoundError, 404, "not_found"),
+    (ApplicationValidationError, 400, "invalid_input"),
+    (StaleAnalysisError, 409, "stale_analysis"),
+    (WorkflowNotReadyError, 409, "not_ready"),
+    (TerminalWorkflowError, 409, "terminal_workflow"),
+    (InvalidTransitionError, 409, "invalid_transition"),
+    (InfrastructureError, 503, "infrastructure_failure"),
+)
+
+
+async def _handle_application_error(
+    _request: Request, exc: ApplicationError
+) -> JSONResponse:
+    """Map application errors to stable HTTP responses.
+
+    Only identifiers, states, and reason codes travel in
+    the body — application details by construction carry
+    no prompts, secrets, provider internals, or tracebacks.
+    Readiness reasons ride in ``details`` so a future
+    frontend can render them without new calls.
+    """
+    status_code, code = 500, "application_error"
+    for error_type, mapped_status, mapped_code in (
+        _APPLICATION_ERROR_STATUS
+    ):
+        if isinstance(exc, error_type):
+            status_code, code = mapped_status, mapped_code
+            break
+    content: dict[str, Any] = {
+        "error": {
+            "code": code,
+            "message": exc.detail or code.replace("_", " "),
+        }
+    }
+    reasons = getattr(exc, "reasons", ())
+    if reasons:
+        content["error"]["details"] = {
+            "reasons": [
+                {"code": reason_code, "detail": reason_detail}
+                for reason_code, reason_detail in reasons
+            ]
+        }
+    headers = (
+        {"WWW-Authenticate": "Bearer"}
+        if status_code == 401 else None
+    )
+    return JSONResponse(
+        status_code=status_code, content=content, headers=headers
     )
 
 

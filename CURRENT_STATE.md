@@ -1,9 +1,11 @@
 # CURRENT_STATE.md — Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-09-23
-> Phase: Phase 5 — Retrieval & RAG — COMPLETE (Phases 5.1–5.16 verified;
-> live gates NOT EXECUTED, see below)
+> Updated: 2026-09-24
+> Phase: Phase 8 — API & Application Integration
+> (Phase 8.5 complete; Phase 8.4 complete; Phase 8.3 complete;
+> Phase 8.2 complete; Phase 8.1 complete; Phase 7 COMPLETE;
+> Phase 6 COMPLETE; Phase 5 COMPLETE)
 
 ## Status
 
@@ -43,19 +45,26 @@ retrieval boundary, the retrieval quality / query semantics boundary,
 the evidence scope / metadata filtering boundary, and the hybrid
 retrieval boundary.
 No production environment is configured.
-Current verified test state: 1189/1189 unit tests passing (32 PostgreSQL
-integration tests skipped without `DATABASE_URL`; Qdrant smoke,
+Current verified test state: 1740/1740 unit tests passing, 44 skipped
+(39 PostgreSQL integration tests skipped without `DATABASE_URL`,
+including 7 DB-gated result-store tests; Qdrant smoke,
 OpenRouter live, and combined live RAG tests skipped without
-`QDRANT_URL` / `OPENROUTER_LIVE_TEST` + credentials), 0 failures,
-0 errors.
-This is the verified Phase 5.16 closure state (25 focused Phase 5.16
-audit/matrix tests plus the 1164-test Phase 5.15 baseline).
+`QDRANT_URL` / `OPENROUTER_LIVE_TEST` + credentials),
+0 failures, 0 errors.
+This is the verified Phase 8.5 implementation state (25 focused Phase 8.5
+API tests plus the 1715-test Phase 8.4 baseline).
+**Phase 7 — User Workflow: COMPLETE.** The domain workflow
+contract is closed (7.1 process machine, 7.2 shipment/
+evidence intake, 7.3 readiness gate, 7.4 history
+projection, 7.5 permanent closure); Phase 8 may proceed
+to API/application exposure.
 Phase 4.5, Phase 5.1 through Phase 5.16 are complete.
 **Phase 5 — RAG Retrieval, Generation & Validation: COMPLETE.**
 Live Qdrant, live OpenRouter, and combined live RAG verification
 are explicitly NOT EXECUTED (no environment) and remain available
 as gated tests; neither the roadmap nor the requirements define
 live execution as a completion gate.
+Phase 6.1 (deterministic compliance reasoning contract) is complete.
 
 ## Current Domain Pipeline (through Phase 3.5)
 
@@ -234,7 +243,558 @@ live gates are recorded NOT EXECUTED with exact missing
 requirements, and Phase 5 is formally closed (see
 `docs/phases/phase-5-16-production-rag-verification.md`).
 The single audit correction (`LLMSettings.api_key` excluded
-from repr) is the only behavior-neutral change. Any next step
+from repr) is the only behavior-neutral change.
+
+## Phase 9.5 — Product UI Refinement (Complete, 2026-09-25)
+
+- Visual/UX-only recomposition of the Phase 9 frontend:
+  stacked brand shell, grouped Workspace/Assessment nav
+  with latest-report link, editorial journey spine with
+  stage descriptions, shipment hero, establishment
+  checklist, ledger tables, supplied-first evidence
+  layout, numbered report-style findings, artifact
+  running heads, wider measure, responsive collapse.
+  No contract, semantic, or behavior change.
+- Verification: `npx tsc --noEmit` clean; `npx vitest run`
+  26 files / 125 tests passing (119 carried, 6 new);
+  `npm run build` succeeds; dev source-mode serves 200 on
+  all 12 workspace routes with new-system markers
+  verified in served modules. Backend untouched. See
+  `docs/phases/phase-9-5-frontend-product-refinement.md`.
+
+## Phase 9 — Frontend Pass 3 (Complete, 2026-09-25)
+
+- Terminal workflow, frontend only, on the Pass 2.5
+  visual baseline: additional-evidence loop (request →
+  reference intake → supply → explicit re-run, no
+  uploads, no auto-analysis), final review (read-only,
+  no verdicts/scores), two-step `POST
+  /compliance/workflows/finalize` with permanent-closure
+  copy and 409 blocker rendering, `FinalPackageResponse`
+  package artifact, `GET /compliance/reports/{report_id}`
+  report view, and grouped history projection (no
+  invented timestamps). Journey nav extended with an
+  assessment tail (Final review · Assessment package ·
+  History); UUID/URI wrapping fixed; `useAuth` no longer
+  throws when unconfigured (was crashing the shell for
+  signed-out users).
+- Verification: `npx tsc --noEmit` clean; `npx vitest run`
+  26 files / 119 tests passing (82 carried, 37 new);
+  `npm run build` succeeds; dev serves 200 on all
+  Pass 3 routes. Backend untouched; no live backend
+  integration performed. See
+  `docs/phases/phase-9-frontend-pass-3.md`.
+
+## Phase 9 — Frontend Pass 2.5 (Complete, 2026-09-24)
+
+- Visual/product refinement only across the Pass 1–2
+  tree: teal-on-warm-neutral system, editorial type
+  scale, brand/session/nav polish, shipment hero
+  identity, numbered stepper with terminal state,
+  restructured New Shipment hierarchy, case-record
+  findings, consistent controls, responsive tightening.
+  No new capabilities, no backend changes.
+- Verification: `npx tsc --noEmit` clean; `npx vitest run`
+  19 files / 82 tests passing (73 carried, 9 new);
+  `npm run build` succeeds; dev + preview serve 200.
+- Next: Pass 3 (Additional Evidence, Finalize, Package,
+  Report, History). See
+  `docs/phases/phase-9-frontend-pass-2-5.md`.
+
+## Phase 9 — Frontend Pass 2 (Complete, 2026-09-24)
+
+- `frontend/` routes `/workspace/{evidence,gaps,analysis,review}`:
+  reference-based evidence intake (no uploader — none
+  exists server-side), supplied-evidence tracking,
+  case-readiness gaps rendered verbatim, analysis
+  run/re-run with single-flight guard, and the Findings
+  Review centerpiece (requirement, applicability,
+  assessment, explanation, evidence, sufficiency,
+  missing information, sources, uncertainty;
+  contradictions preserved). Reports in memory only;
+  identifiers + process state in sessionStorage.
+- Verification: `npx tsc --noEmit` clean; `npx vitest run`
+  18 files / 73 tests passing (35 carried, 38 new);
+  `npm run build` succeeds. Backend untouched.
+- Next: Pass 3 (Additional Evidence, Finalize, Package,
+  Report, History). See
+  `docs/phases/phase-9-frontend-pass-2.md`.
+
+## Phase 9 — Frontend Pass 1 (Complete, 2026-09-24)
+
+- `frontend/` — Vite + React + TypeScript SPA foundation
+  (strict, 0 errors), app shell, centralized typed API
+  client, auth/context plumbing, shipment workspace, New
+  Shipment, Shipment Information, Requirements. Presentation
+  only: no compliance logic, no verdicts, backend statuses
+  rendered verbatim. Backend untouched.
+- Verification: `npx tsc --noEmit` clean; `npx vitest run`
+  7 files / 35 tests passing; `npm run build` succeeds.
+- Next: Pass 2 (Evidence, Gaps, Analysis, Findings Review),
+  then Pass 3 (Additional Evidence, Finalize, Package,
+  Report, History). See
+  `docs/phases/phase-9-frontend-pass-1.md`.
+
+## UI / Product Architecture (Spec, 2026-09-24)
+
+- `docs/phases/ui-product-architecture.md` (specification
+  only — no frontend code, no backend changes): 10-screen
+  exporter journey contract verified endpoint-by-endpoint
+  against the production API, with role model, state
+  vocabularies, evidence/analysis/finalization UX rules,
+  full API matrix, auth assumptions, responsive IA, and
+  six documented backend gaps (no file upload; no
+  workflow listing/resume; no standalone readiness read;
+  no role introspection; no notifications/dashboards;
+  no reopen/versioning).
+- Frontend implementation may proceed strictly within
+  that contract; no backend change is required to start.
+
+## Phase 8.5 — Stored-Path HTTP Exposure (Complete, 2026-09-24)
+
+- `POST /compliance/workflows/finalize` (201),
+  `POST /compliance/workflows/package` (200),
+  `GET /compliance/reports/{report_id}` (200): thin
+  routes over the 8.4 stored use cases, one use case
+  each. Finalize resolves the server-known latest
+  (review-gated, stale/terminal enforced); reads are
+  tenant-scoped by membership identity.
+- Additive only: store container field + real wiring +
+  passthrough + 503 dependency (`dependencies.py`);
+  `FinalPackageResponse` / `FinalizeWorkflowResponse`
+  (`schemas.py`); analyze passes the optional store
+  (unwired behavior unchanged). Existing error/status
+  mapping reused; no compound endpoint; history
+  endpoint unchanged (round→report references already
+  present).
+- Verification: focused 25/25; Phase 8.1–8.4 + 7.1–7.5
+  + Phase 6 + Phase 2–5 regressions pass; full suite
+  1740 passed + 44 skipped (gated), 0 failures. No
+  Phase 1–7 behavior change; no prior test touched.
+  No UI or evaluation built.
+
+## Phase 8.4 — Normalized Phase 6 Result Store (Complete, 2026-09-24)
+
+- Migration `010` (reversible, schema-only): 5 tables —
+  `compliance_analysis_reports` (counts carried, summary
+  as carried JSONB reference), `compliance_analyses`
+  (scalar/state columns; fixed-schema typed reference
+  lists as JSONB per `evidence_ids` precedent),
+  `compliance_analysis_traces` (+ fingerprints/steps),
+  `compliance_workflow_rounds` (composite PK
+  tenant/workflow/round_index; linkage anchor, not a
+  second history), `final_assessment_packages`
+  (linkage only; UNIQUE per workflow makes second
+  finalization structural). Tenant FKs, composite
+  tenant-safe FKs (CASCADE for composition, RESTRICT
+  for links), CHECKs, indexes, triggers.
+- `ComplianceResultStore` (`application/result_store.py`):
+  atomic single-transaction writes, idempotent retry by
+  content-derived keys (first-writer-wins round slots),
+  exact reconstruction with tenant/case/report/analysis
+  linkage validation, fail-closed corruption handling.
+- App integration: persist-on-analysis (optional store),
+  stored finalize/package/report/current-result use
+  cases. No new endpoints in 8.4 (8.5 decides exposure).
+- Verification: 24 store unit + 12 migration structural
+  focused tests; 7 DB-gated live tests skip without
+  `DATABASE_URL` (apply/rollback/repo coverage written
+  and gated, not claimed). Phase 8.1–8.3 + 7.1–7.5 +
+  Phase 6 + Phase 2–5 regressions pass; full suite 1715
+  passed + 44 skipped, 0 failures. One 8.1
+  collaborator-set assertion extended (same strictness;
+  documented). No Phase 1–7 behavior change. No UI or
+  evaluation built.
+
+## Phase 8.3 — Workflow/Result Transfer-or-Store Contract (Complete, 2026-09-24)
+
+- Lifecycle answer: workflow records transfer
+  client-side today (server revalidates); deterministic
+  inputs reconstruct from authoritative records; live
+  Phase 6 results are in-session only — reconstruction
+  unsafe (IDs derive from model text), client round-trip
+  / globals / sessions / blobs / answer storage all
+  prohibited, normalized Phase 6 tables disproportionate
+  and DB-untestable here → result persistence specified
+  but deferred; finalize/package/report endpoints remain
+  blocked (reported, not worked around).
+- Stale safety via round linkage; terminal closure and
+  tenant isolation hold across transfers; concurrency
+  safe through server statelessness (all updates are
+  `replace()` on caller-held records).
+- Actor threading: additive `get_request_actor`
+  (Bearer subject, else `None`) threaded through all 13
+  compliance routes into `ApplicationContext.actor_id`;
+  tenant/role still server-derived; bodies cannot forge
+  it; domain still takes only `TenantContext`; no audit
+  logging added.
+- Verification: focused 32/32; Phase 8.1 (31) +
+  8.2 (29) + 7.1–7.5 (151) + Phase 6 (247) + Phase 2–5
+  regressions pass; full suite 1679 passed + 37 skipped
+  (gated), 0 failures. No domain/application-core/
+  persistence behavior change; no prior test touched.
+  No UI or evaluation built.
+
+## Phase 8.2 — HTTP Endpoint Exposure (Complete, 2026-09-24)
+
+- `xportra/api/compliance.py` (new, 13 thin endpoints):
+  workflow progression/status/history/closure/analyze
+  plus applicability and case-readiness reads; each
+  handler does auth → authorize → ApplicationContext →
+  one use case → DTO serialization. Per-request service
+  construction; no container surgery; no session or
+  process-global state.
+- Additive only: 2 owner-only permissions
+  (`authorization.py`), centralized type-based app-error
+  → HTTP mapping reusing the existing error shape
+  (`errors.py`: 401/403/400/404/409/422/503/500),
+  compliance request/response models (`schemas.py`,
+  incl. fingerprint-free round shape), router include
+  (`app.py`).
+- Application wire translation (mechanical, in-session
+  behavior unchanged): UUID coercion for
+  JSON-transported case views incl. provenance and
+  summary scope (`_guards.py`, `analysis.py`,
+  `assessments.py`).
+- Result-dependent operations (finalize, package/report
+  reads, result-attached history) deliberately unexposed:
+  live Phase 6 results cannot cross HTTP and no
+  transfer/store contract exists — reported gap, no
+  fake persistence. Compound analyze-and-finalize
+  rejected (would skip required human review).
+  Recommended next: Phase 8.3 result/workflow
+  transfer-or-store contract (+ subject threading).
+- Verification: focused 29/29; Phase 8.1 (31) +
+  7.1–7.5 (151) + Phase 6 (247) + Phase 2–5 regressions
+  pass; full suite 1647 passed + 37 skipped (gated),
+  0 failures. No Phase 1–7 behavior change; no prior
+  test touched. No UI or evaluation built.
+
+## Phase 8.1 — Application Boundary & Use-Case Contract (Complete, 2026-09-24)
+
+- `xportra/application/` (new package, 33 exports):
+  `ApplicationContext` (actor, effective tenant, role —
+  API-built from server-resolved membership, never from
+  client IDs); HTTP-free error taxonomy (auth
+  passthrough, tenant mismatch, transition,
+  not-ready/stale, terminal, not-found, validation,
+  infrastructure); 16 frozen allow-listed DTOs
+  (workflow, shipment, evidence, rounds, findings,
+  report, readiness, history, package, applicability,
+  case readiness — fingerprints, prompts, model
+  internals, and secrets excluded; Phase 6 provenance
+  selected not remodeled; Phase 3.5 summary carried by
+  reference in the package DTO only).
+- Use cases (stateless, record-in/record-out, live
+  results in-session, no new persistence):
+  `WorkflowApplicationService` (7.x journey incl.
+  finalize/history/closure), `AnalysisApplicationService`
+  (run/re-run with injected RAG), `AssessmentApplicationService`
+  (applicability + evidence-coverage reads),
+  `EvidenceApplicationService` (recording over the
+  injected existing service). Tenant pre-checks,
+  terminal pre-checks, and structured readiness are
+  deterministic, never message-parsed.
+- Verification: focused 31/31; Phase 7.1–7.5 (151) +
+  Phase 6 (247) + Phase 2–5 regressions pass; full
+  suite 1618 passed + 37 skipped (gated), 0 failures.
+  No domain/API/persistence/infrastructure file touched;
+  no prior test touched. No endpoints, UI, persistence,
+  or evaluation built.
+
+## Phase 7.5 — Workflow Closure/Reopening Policy (Complete, 2026-09-24)
+
+- Decision: `assessment_package_ready` is permanently
+  closed — no reopen transition, no second finalization,
+  no package versioning. Iteration belongs
+  pre-finalization (7.1 loop); continuation is a fresh
+  progression, never mutation. Finding-neutral; no
+  verdict/score introduced.
+- Contract: `WORKFLOW_TERMINAL_STATES` constant plus
+  tenant-validated `ComplianceWorkflowService.is_closed`
+  predicate (one additive export). Zero behavior change:
+  terminal already had no outgoing edges and every
+  mutating op (7.1 transitions, re-analysis with
+  zero-call, second finalize, 7.2 supply/switch handoff)
+  already failed closed — now explicitly locked.
+- Prior packages stay valid; 7.4 history model unchanged.
+- Verification: focused 19/19; Phase 7.1 (32) + 7.2 (32)
+  + 7.3 (33) + 7.4 (35) + Phase 6 (247) + Phase 2–5
+  regressions pass; full suite 1587 passed + 37 skipped
+  (gated), 0 failures. No prior test touched.
+- With 7.5 the workflow contract is closed:
+  **Phase 7 COMPLETE** — Phase 8 may proceed.
+
+## Phase 7.4 — Workflow History & Audit View (Complete, 2026-09-24)
+
+- `xportra/domain/workflow_history.py` (new):
+  `WorkflowHistoryService.project` (pure, stateless) plus
+  frozen `WorkflowHistoryView` / `WorkflowHistoryEntry` /
+  `FinalPackageReference`, five entry kinds
+  (`workflow_created`, `shipment_bound`,
+  `evidence_supplied`, `analysis_completed`,
+  `final_package_ready`), and fail-closed
+  `WorkflowHistoryError`. Derives only from retained
+  workflow state: creation identity, shipment
+  association, supplies in append order, rounds in round
+  order, current state/requirements, plus re-validated
+  optional result/package shown by reference (readiness
+  computed on demand via Phase 7.3, never stored).
+  Grouped presentation order; cross-group interleaving
+  and timestamps explicitly not claimed (none exist).
+  Reasoning content never copied; output is identifiers
+  only. Eleven additive `xportra/domain` exports.
+- Verification: focused 35/35; Phase 7.1 (32) + 7.2 (32)
+  + 7.3 (33) + Phase 6 (247) + Phase 2–5 regressions
+  pass; full suite 1568 passed + 37 skipped (gated),
+  0 failures. No Phase 1–7.3 behavior file modified; no
+  prior test touched. No API, UI, events, persistence,
+  or evaluation built. No open prerequisite blocks
+  Phase 7.5.
+
+## Phase 7.3 — Workflow-to-Assessment Readiness & Final Packaging Trigger (Complete, 2026-09-24)
+
+- `xportra/domain/assessment_readiness.py` (new):
+  `AssessmentReadinessService.check` (pure, deterministic)
+  plus frozen `AssessmentReadiness` / `ReadinessIssue` and
+  seven issue codes (`tenant/case_mismatch`,
+  `invalid_workflow_state`, `missing_shipment_reference`,
+  `no_analysis`, `analysis_stale`,
+  `analysis_integrity_failure`). Gates what `finalize()`
+  left implicit: bound shipment, latest-round freshness,
+  and analysis/report/trace linkage (ids, fingerprints,
+  trace report/analysis references, tenant scope). Absent
+  decision summaries and unresolved findings (missing,
+  unknown, not-satisfied, contradiction, uncertainty)
+  never block — readiness is process completion, not
+  regulatory truth. Trace `case_id` intentionally
+  uncompared (Phase 6.5 scopes traces to
+  requirement-level case views).
+- `compliance_workflow.py` (minimal): `finalize()`
+  validates via the gate (structured
+  `ComplianceWorkflowError`, no package, state untouched
+  when not ready); package construction unchanged;
+  optional `readiness_service` seam. Ten additive
+  `xportra/domain` exports.
+- Verification: focused 33/33; Phase 7.1 (32) + 7.2 (32)
+  + Phase 6 (247) + Phase 2–5 regressions pass; full
+  suite 1533 passed + 37 skipped (gated), 0 failures.
+  No prior test touched. No API, UI, verdict, score,
+  persistence, or evaluation built. No open prerequisite
+  blocks Phase 7.4.
+
+## Phase 7.2 — Shipment & Evidence Intake Formalization (Complete, 2026-09-24)
+
+- `xportra/domain/shipment_intake.py` (new):
+  `ShipmentIntakeService` plus frozen `ShipmentReference`
+  (tenant + shipment + case, identity only — no shipment
+  table/object exists to reuse) and
+  `SuppliedEvidenceReference` (existing evidence identity +
+  scope, never bytes). Once-early shipment binding
+  (identical rebind idempotent; switches, late binding, and
+  tenant/case mismatches fail closed); supply handoff
+  re-checks tenant/case and delegates transitions to the
+  unchanged 7.1 service. Recording and requirement linking
+  stay authoritative outside (`ComplianceEvidenceService`);
+  upload/record vs supply separated; no second
+  persistence/assessment system. Four additive
+  `xportra/domain` exports.
+- Verification: focused 32/32; Phase 7.1 (32) + Phase 6
+  (247) + Phase 2–5 regressions pass; full suite 1500
+  passed + 37 skipped (gated), 0 failures.
+  `compliance_workflow.py` untouched; no prior test
+  touched. No API, UI, persistence, verdict, or evaluation
+  built. No open prerequisite blocks Phase 7.3.
+
+## Phase 7.1 — Compliance User Workflow Contract (Complete, 2026-09-24)
+
+- `xportra/domain/compliance_workflow.py` (new):
+  `ComplianceWorkflowService` — pure nine-state process
+  machine (`created` → … → `assessment_package_ready`,
+  terminal) over existing Phase 1–6 contracts. Coordinates
+  without reimplementing: no applicability/assessment/risk/
+  action/reasoning/retrieval/LLM/provenance logic of its own.
+  Explicit evidence loop (`request_additional_evidence` →
+  `supply_evidence` → `run_analysis`) with non-mutating,
+  ID-distinguishable rounds; `run_analysis` delegates to
+  `ComplianceReasoningApplication` after state/tenant
+  validation; `finalize` aggregates the latest Phase 6
+  result plus the untouched decision summary into a
+  verdict-free `AssessmentPackage`. Fail-closed tenant/case
+  isolation and deterministic-first failure behavior.
+  Fifteen additive `xportra/domain` exports.
+- Verification: focused 32/32; Phase 6 (247) + Phase 2–5
+  regressions pass; full suite 1468 passed + 37 skipped
+  (gated), 0 failures. No prior test touched. No Phase 1–6
+  behavior modified. No API, UI, persistence, verdict, or
+  evaluation built. No open prerequisite blocks Phase 7.2.
+
+## Phase 6.6 — End-to-End Compliance Reasoning Composition (Complete, 2026-09-24)
+
+- `xportra/domain/reasoning_application.py` (new):
+  `ComplianceReasoningApplication` — pure orchestration over
+  the five existing Phase 6 services plus the RAG boundary
+  (deterministic-first validation with zero provider calls
+  on defect, requirement-ID-ordered processing, fail-closed
+  partial semantics: failures propagate, never convert to
+  compliance states, no partial result) and verdict-free
+  `ComplianceReasoningResult` (ordered analyses + report +
+  per-analysis traces + referenced decision summary; fixed
+  serialization keys). Determines nothing; parses no prose;
+  constructs no provenance. Three additive `xportra/domain`
+  exports.
+- Additive 6.3 accessor `analyze_with_reasoning_and_answer`
+  (existing method delegates, behavior identical) so traces
+  reuse the validated answer without duplicating the
+  single-call orchestration.
+- Verification: focused 49/49; Phase 6.1–6.5 (198) + Phase
+  2–5 regressions pass; full suite 1436 passed + 37 skipped
+  (gated), 0 failures. No prior test touched. No API,
+  workflow, UI, verdict, or evaluation built.
+- **Phase 6 — Compliance Reasoning & Decision Support is
+  COMPLETE**: composition exists; deterministic truth
+  authoritative; retrieval grounded; reasoning bounded and
+  validated; uncertainty/conflicts/missing explicit;
+  case-level composition and decision trace exist; failure
+  semantics safe; isolation preserved; serializable result
+  ready for Phase 7/8; no unresolved prerequisite remains.
+
+## Phase 6.5 — Compliance Reasoning Decision Trace (Complete, 2026-09-24)
+
+- `xportra/domain/decision_trace.py` (new): canonical six-step
+  vocabulary (`deterministic_state_established` →
+  `analysis_constructed`), frozen `TraceStep` / `DecisionTrace`
+  reusing the existing typed evidence/knowledge/source
+  references (contents never copied), and pure
+  `DecisionTraceService.trace` — records which authoritative
+  inputs and evidence contributed to an analysis, never
+  decides. Fail-closed tenant/case/evidence/source/citation
+  checks; answer fingerprint recomputed and canonical input
+  fingerprint on the reused `content_fingerprint` scheme
+  (exact-input change detection, not correctness proof); no
+  chain-of-thought, prompts, provider internals, secrets,
+  timestamps, or raw unvalidated output. No infra imports
+  (AST-verified). Twelve additive `xportra/domain` exports.
+- Integration boundary `Analysis → Trace`: no Phase 6.1–6.4
+  behavior modified, no Phase 5 change, no LLM call, report
+  interop verified, serializable with an exact fixed key set.
+- Verification: focused 36/36; Phase 6.1 (35) + 6.2 (39) +
+  6.3 (37) + 6.4 (51) + Phase 2–5 regressions pass; full
+  suite 1387 passed + 37 skipped (gated), 0 failures. No
+  prior test touched. No verdict/risk/action engine, API,
+  workflow, UI, or evaluation framework built. Phase 6
+  remains open.
+
+## Phase 6.4 — Evidence Sufficiency, Contradiction & Uncertainty Reasoning (Complete, 2026-09-24)
+
+- `xportra/domain/evidence_sufficiency.py` (new):
+  sufficiency (`supported`/`insufficient`/`missing`/`unknown`)
+  + contradiction (`none`/`present`) + missing-kind vocabularies,
+  frozen `MissingInformationItem` /
+  `EvidenceSufficiencyAssessment`, pure
+  `EvidenceSufficiencyService` derivation mirroring the existing
+  `RequirementAssessmentService` semantics (no new algorithm), and
+  a narrow numeric-confidence guard for model-sourced text only.
+  No infra imports (AST-verified); no retrieval/LLM/DB calls.
+- Minimal 6.1 adaptation: `ComplianceAnalysis` gains four
+  defaulted fields (`evidence_sufficiency`,
+  `contradiction_state`, `sufficiency_explanation`,
+  `missing_items`); `analyze()` derives them by fixed rules from
+  the trusted state and rejects numeric confidence claims in
+  model text as `ComplianceReasoningError`. All 6.1–6.3 tests
+  pass unmodified; `compliance_report.py` and
+  `reasoning_generation.py` untouched.
+- Trust boundary enforced: conflicts preserved with provenance
+  (described, never resolved, no precedence invented);
+  categorical uncertainty unchanged (guard only); missing items
+  typed and grounded (no invented documents); hostile evidence
+  stays data. Twenty-one additive `xportra/domain` exports.
+- Verification: focused 51/51; Phase 6.1 (35) + 6.2 (39) +
+  6.3 (37) + Phase 2–5 regressions pass; full suite 1351 passed
+  + 37 skipped (gated), 0 failures. No prior test touched. No
+  verdict engine, ranking algorithm, risk score, API, workflow,
+  or UI built. Phase 6 remains open.
+
+## Phase 6.3 — Structured Compliance Reasoning Generation Boundary (Complete, 2026-09-24)
+
+- `xportra/domain/reasoning_generation.py` (new):
+  `ReasoningGenerationError`, `ReasoningPromptContext` (+
+  case extractor), `ReasoningQuery`/`ReasoningQueryBuilder`
+  (deterministic FACTS + untrusted-DATA notice + explain-only
+  TASK + exact FORMAT), `ReasoningValidationContext` (+
+  case/answer allow-list builder),
+  `StructuredReasoning` (explanation, suggested missing,
+  categorical uncertainty + statement, answer-fingerprint
+  binding), `StructuredReasoningParser` (strict section
+  protocol with legacy plain-text compatibility; rejects
+  unknown citations, invented UUIDs, non-categorical
+  confidence, stray/verdict headers, malformed sections),
+  `StructuredReasoningService` (single-call orchestration via
+  injected RAG service). Fifteen additive domain exports.
+- Minimal 6.1 adaptation: `ComplianceAnalysis` gains
+  `uncertainty_explanation: str = ""`;
+  `analyze(..., reasoning=None)` defaults to exact 6.1
+  behavior, otherwise binds fingerprints, prefixes model
+  items as observations, and carries the uncertainty
+  statement. All 6.1/6.2 tests pass unmodified.
+- Trust boundary enforced: deterministic state trusted;
+  model text untrusted until validated; validated content
+  usable only in permitted fields. Single RAG call; full
+  Phase 5 boundary reuse; no parallel system.
+- Verification: focused 37/37; Phase 6.1 + 6.2 + Phase 2–5
+  regressions pass; full suite 1300 passed + 37 skipped
+  (gated), 0 failures. No prior test touched. API,
+  workflow, UI, verdict engines explicitly deferred. Phase 6
+  remains open.
+
+## Phase 6.2 — Compliance Analysis Report Composition (Complete, 2026-09-24)
+
+- `xportra/domain/compliance_report.py` (new):
+  `ComplianceReportError`, frozen
+  `RequirementMissingInformation` /
+  `ComplianceAnalysisReport` (ordered analyses, exact aggregate
+  counts, association-preserving missing/uncertainty/conflict
+  rollups, referenced decision summary, deterministic identity,
+  `to_record()`, `is_empty`), and stateless
+  `ComplianceReportService.compose`. Four additive
+  `xportra/domain` exports.
+- Composition only: no overall verdict field exists (a new
+  verdict algorithm is structurally unrepresentable); the
+  Phase 3.5 decision summary is carried by reference and its
+  content never alters aggregates; counts derive from analysis
+  outcomes alone (never prose); ordering by stringified
+  requirement ID; duplicates/cross-tenant/malformed fail
+  closed; empty input yields a valid verdict-free report.
+- Verification: focused 39/39; Phase 6.1 + Phase 2–5
+  regression 592/592; full suite 1263 passed + 37 skipped
+  (gated), 0 failures. No prior test touched; no Phase 1–6.1
+  behavior modified. API, workflow, UI, verdict engines, and
+  calibration explicitly deferred. Phase 6 remains open.
+
+## Phase 6.1 — Deterministic Compliance Reasoning Contract (Complete, 2026-09-24)
+
+- `xportra/domain/compliance_reasoning.py` (new):
+  `ComplianceReasoningError`, frozen `EvidenceReference` /
+  `KnowledgeReference` / `SourceReference` /
+  `ComplianceAnalysis` (requirement, applicability, assessment,
+  verbatim explanation, supporting/conflicting evidence,
+  knowledge refs, sources, missing information, categorical
+  uncertainty, deterministic identity, `to_record()`), and
+  stateless `ComplianceReasoningService` (`analyze` pure +
+  `analyze_with_knowledge` thin RAG delegation). Twelve
+  additive `xportra/domain` exports.
+- Deterministic truth authoritative: state copied from the
+  Phase 2.7 case view, contradictions fail closed, `unknown`
+  never converted, model verdict text changes nothing,
+  citations only from the validated mapping,
+  `invalid_citations` rejected, tenant execution-level.
+- LLM boundary fully reused (injected `RAGApplicationService`;
+  no second client/prompt/citation/validation system).
+- Verification: focused 35/35; Phase 2–5 regression 621/621;
+  full suite 1224 passed + 37 skipped (gated), 0 failures.
+  No prior test touched; no Phase 1–5 behavior modified.
+  API, workflow, UI, verdict engines, and calibration
+  explicitly deferred. Any next step
 must first be defined in `REQUIREMENTS.md` and scheduled
 through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
 

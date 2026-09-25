@@ -7,6 +7,7 @@ from uuid import UUID
 
 from fastapi import Depends, Header, Request
 
+from xportra.application.result_store import ComplianceResultStore
 from xportra.domain.services import (
     CertificationService,
     ComplianceEvidenceService,
@@ -18,10 +19,15 @@ from xportra.persistence.database import Database, DatabaseSettings
 from xportra.persistence.repositories import (
     AuthorityRepository,
     CertificationPermitLicenseRepository,
+    ComplianceAnalysisReportRepository,
+    ComplianceAnalysisRepository,
+    ComplianceAnalysisTraceRepository,
     ComplianceEvidenceRepository,
+    ComplianceWorkflowRoundRepository,
     DestinationMarketRepository,
     EvidenceRequirementRepository,
     ExporterRepository,
+    FinalAssessmentPackageRepository,
     ProductRepository,
     RequirementRepository,
     UserRepository,
@@ -54,6 +60,12 @@ class ApplicationServices:
     #: infrastructure is wired for an environment — the RAG route then
     #: fails closed with 503 instead of serving an unwired chain.
     rag: Any = field(default=None)
+    #: Phase 8.4 result store (or a test fake implementing the
+    #: repository interface). ``None`` until the migration 010
+    #: tables are provisioned for an environment — stored-path
+    #: routes then fail closed with 503 instead of serving
+    #: unretained results.
+    result_store: Any = field(default=None)
 
     @classmethod
     def from_environment(cls) -> "ApplicationServices":
@@ -79,6 +91,14 @@ class ApplicationServices:
                 exporter_repository,
                 AuthorityRepository(database),
                 CertificationPermitLicenseRepository(database),
+            ),
+            result_store=ComplianceResultStore(
+                database=database,
+                reports=ComplianceAnalysisReportRepository(database),
+                analyses=ComplianceAnalysisRepository(database),
+                traces=ComplianceAnalysisTraceRepository(database),
+                rounds=ComplianceWorkflowRoundRepository(database),
+                packages=FinalAssessmentPackageRepository(database),
             ),
         )
 
@@ -125,6 +145,7 @@ class ApplicationServices:
             evidence=base.evidence,
             certifications=base.certifications,
             rag=stack.service,
+            result_store=base.result_store,
         )
 
 
@@ -160,6 +181,52 @@ def get_rag_service(request: Request):
 
 
 RAGServiceDependency = Annotated[Any, Depends(get_rag_service)]
+
+
+def get_result_store(request: Request):
+    """Resolve the Phase 8.4 result store for the request.
+
+    Repositories are injected through the service container,
+    so tests can replace them with deterministic doubles.
+    Fails closed when the migration 010 tables are not
+    provisioned for the environment.
+    """
+    services = get_services(request)
+    store = getattr(services, "result_store", None)
+    if store is None:
+        raise APIError(
+            503,
+            "result_store_not_configured",
+            "The compliance result store is not configured "
+            "for this deployment",
+        )
+    return store
+
+
+ResultStoreDependency = Annotated[Any, Depends(get_result_store)]
+
+
+def get_result_store(request: Request):
+    """Resolve the Phase 8.4 result store for the request.
+
+    Repositories are injected through the service container,
+    so tests can replace them with deterministic doubles.
+    Fails closed when the migration 010 tables are not
+    provisioned for the environment.
+    """
+    services = get_services(request)
+    store = getattr(services, "result_store", None)
+    if store is None:
+        raise APIError(
+            503,
+            "result_store_not_configured",
+            "The compliance result store is not configured "
+            "for this deployment",
+        )
+    return store
+
+
+ResultStoreDependency = Annotated[Any, Depends(get_result_store)]
 
 
 def get_development_tenant_context(
@@ -270,6 +337,37 @@ def get_member_context(
         tenant = get_development_tenant_context(x_development_tenant_id)
         return MemberContext(tenant, OWNER_ROLE)
     raise AuthenticationError("authentication_required", "Authentication is required")
+
+
+def get_request_actor(
+    authorization: Annotated[str | None, Header()] = None,
+    x_development_tenant_id: Annotated[
+        str | None, Header(alias=DEVELOPMENT_TENANT_HEADER)
+    ] = None,
+) -> UUID | None:
+    """Resolve the caller's authenticated subject, if any.
+
+    Phase 8.3 actor threading: Bearer credentials verify to
+    their subject UUID; the development header (which carries
+    no identity by design) and anonymous non-production
+    requests yield ``None``. Production development-header
+    use stays disabled. This dependency never authorizes —
+    ``require_permission`` owns that unchanged — and it never
+    raises 401 itself, so it cannot shadow the membership
+    boundary; malformed Bearer tokens still fail closed via
+    the existing verifier.
+    """
+    if authorization is not None:
+        token = _bearer_token(authorization)
+        settings = SupabaseAuthSettings.from_environment()
+        return SupabaseTokenVerifier(settings).verify(token).subject
+    if _is_production() and x_development_tenant_id is not None:
+        raise APIError(
+            503,
+            "development_tenant_context_disabled",
+            "Development tenant context is disabled in production",
+        )
+    return None
 
 
 def get_tenant_context(

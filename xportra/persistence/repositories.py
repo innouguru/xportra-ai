@@ -1009,3 +1009,443 @@ class EvidenceDocumentRepository:
                WHERE tenant_id = %s ORDER BY created_at, id""",
             (tenant.tenant_id,),
         )
+
+
+class ComplianceAnalysisReportRepository:
+    """Tenant-scoped persistence for composed analysis reports.
+
+    Stores the already-composed report representation: counts
+    are carried, never recomputed. The decision summary is the
+    caller-supplied Phase 3.5 reference carried verbatim.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        report_id: UUID,
+        case_id: UUID,
+        workflow_id: UUID,
+        context_fingerprint: str | None,
+        counts: dict[str, int],
+        requirements_with_missing_information: list[str],
+        uncertain_requirement_ids: list[str],
+        requirements_with_conflicting_evidence: list[str],
+        missing_information: list[Any],
+        conflicting_evidence_count: int,
+        decision_summary: Any | None,
+    ) -> Row:
+        return _insert_in_transaction(
+            connection,
+            "compliance analysis report creation",
+            """
+            INSERT INTO xportra.compliance_analysis_reports
+                (id, tenant_id, case_id, workflow_id,
+                 context_fingerprint, total_requirements,
+                 applicable_count, satisfied_count,
+                 not_satisfied_count, unknown_count,
+                 not_applicable_count, conflicting_evidence_count,
+                 requirements_with_missing_information,
+                 uncertain_requirement_ids,
+                 requirements_with_conflicting_evidence,
+                 missing_information, decision_summary)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                report_id,
+                tenant.tenant_id,
+                case_id,
+                workflow_id,
+                context_fingerprint,
+                counts["total_requirements"],
+                counts["applicable_count"],
+                counts["satisfied_count"],
+                counts["not_satisfied_count"],
+                counts["unknown_count"],
+                counts["not_applicable_count"],
+                conflicting_evidence_count,
+                Jsonb(requirements_with_missing_information),
+                Jsonb(uncertain_requirement_ids),
+                Jsonb(requirements_with_conflicting_evidence),
+                Jsonb(missing_information),
+                Jsonb(decision_summary)
+                if decision_summary is not None else None,
+            ),
+        )
+
+    def get(
+        self, tenant: TenantContext, report_id: UUID
+    ) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.compliance_analysis_reports
+               WHERE tenant_id = %s AND id = %s""",
+            (tenant.tenant_id, report_id),
+        )
+
+
+class ComplianceAnalysisRepository:
+    """Tenant-scoped persistence for per-requirement analyses.
+
+    Stores the already-composed analysis representation.
+    Typed reference lists keep their fixed domain schemas
+    as JSONB (the established evidence_ids convention);
+    every identity, state, and ordering field is a column.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        analysis_id: UUID,
+        report_id: UUID,
+        case_id: UUID,
+        workflow_id: UUID,
+        requirement_id: UUID,
+        position: int,
+        requirement_text: str,
+        applicability: str,
+        assessment: str,
+        explanation: str,
+        uncertainty: str,
+        uncertainty_explanation: str,
+        evidence_sufficiency: str,
+        contradiction_state: str,
+        sufficiency_explanation: str,
+        missing_information: list[str],
+        supporting_evidence: list[Any],
+        conflicting_evidence: list[Any],
+        knowledge_references: list[Any],
+        sources: list[Any],
+        missing_items: list[Any],
+    ) -> Row:
+        return _insert_in_transaction(
+            connection,
+            "compliance analysis creation",
+            """
+            INSERT INTO xportra.compliance_analyses
+                (id, tenant_id, report_id, case_id, workflow_id,
+                 requirement_id, position, requirement_text,
+                 applicability, assessment, explanation,
+                 uncertainty, uncertainty_explanation,
+                 evidence_sufficiency, contradiction_state,
+                 sufficiency_explanation, missing_information,
+                 supporting_evidence, conflicting_evidence,
+                 knowledge_references, sources, missing_items)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s)
+            RETURNING *
+            """,
+            (
+                analysis_id,
+                tenant.tenant_id,
+                report_id,
+                case_id,
+                workflow_id,
+                requirement_id,
+                position,
+                requirement_text,
+                applicability,
+                assessment,
+                explanation,
+                uncertainty,
+                uncertainty_explanation,
+                evidence_sufficiency,
+                contradiction_state,
+                sufficiency_explanation,
+                Jsonb(missing_information),
+                Jsonb(supporting_evidence),
+                Jsonb(conflicting_evidence),
+                Jsonb(knowledge_references),
+                Jsonb(sources),
+                Jsonb(missing_items),
+            ),
+        )
+
+    def get(
+        self, tenant: TenantContext, analysis_id: UUID
+    ) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.compliance_analyses
+               WHERE tenant_id = %s AND id = %s""",
+            (tenant.tenant_id, analysis_id),
+        )
+
+    def list_for_report(
+        self, tenant: TenantContext, report_id: UUID
+    ) -> list[Row]:
+        return _fetch_all(
+            self._database,
+            """SELECT * FROM xportra.compliance_analyses
+               WHERE tenant_id = %s AND report_id = %s
+               ORDER BY position, id""",
+            (tenant.tenant_id, report_id),
+        )
+
+
+class ComplianceAnalysisTraceRepository:
+    """Tenant-scoped persistence for record-only decision traces.
+
+    Stores the already-constructed trace representation:
+    identifier linkage, copied deterministic state, and the
+    structured pipeline steps. No deliberation, prompts, or
+    provider internals are representable here.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        trace_id: UUID,
+        report_id: UUID,
+        analysis_id: UUID,
+        case_id: UUID,
+        workflow_id: UUID,
+        requirement_id: UUID,
+        position: int,
+        context_fingerprint: str | None,
+        applicability: str,
+        assessment: str,
+        explanation: str,
+        evidence_sufficiency: str,
+        contradiction_state: str,
+        sufficiency_explanation: str,
+        uncertainty: str,
+        missing_information: list[str],
+        answer_fingerprint: str,
+        input_fingerprint: str,
+        steps: list[Any],
+        supporting_evidence: list[Any],
+        conflicting_evidence: list[Any],
+        knowledge_references: list[Any],
+        sources: list[Any],
+    ) -> Row:
+        return _insert_in_transaction(
+            connection,
+            "compliance analysis trace creation",
+            """
+            INSERT INTO xportra.compliance_analysis_traces
+                (id, tenant_id, report_id, analysis_id, case_id,
+                 workflow_id, requirement_id, position,
+                 context_fingerprint, applicability, assessment,
+                 explanation, evidence_sufficiency,
+                 contradiction_state, sufficiency_explanation,
+                 uncertainty, missing_information,
+                 answer_fingerprint, input_fingerprint, steps,
+                 supporting_evidence, conflicting_evidence,
+                 knowledge_references, sources)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                trace_id,
+                tenant.tenant_id,
+                report_id,
+                analysis_id,
+                case_id,
+                workflow_id,
+                requirement_id,
+                position,
+                context_fingerprint,
+                applicability,
+                assessment,
+                explanation,
+                evidence_sufficiency,
+                contradiction_state,
+                sufficiency_explanation,
+                uncertainty,
+                Jsonb(missing_information),
+                answer_fingerprint,
+                input_fingerprint,
+                Jsonb(steps),
+                Jsonb(supporting_evidence),
+                Jsonb(conflicting_evidence),
+                Jsonb(knowledge_references),
+                Jsonb(sources),
+            ),
+        )
+
+    def get(
+        self, tenant: TenantContext, trace_id: UUID
+    ) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.compliance_analysis_traces
+               WHERE tenant_id = %s AND id = %s""",
+            (tenant.tenant_id, trace_id),
+        )
+
+    def list_for_report(
+        self, tenant: TenantContext, report_id: UUID
+    ) -> list[Row]:
+        return _fetch_all(
+            self._database,
+            """SELECT * FROM xportra.compliance_analysis_traces
+               WHERE tenant_id = %s AND report_id = %s
+               ORDER BY position, id""",
+            (tenant.tenant_id, report_id),
+        )
+
+
+class ComplianceWorkflowRoundRepository:
+    """Tenant-scoped server-side round linkage per workflow.
+
+    Records which report each authoritative round index
+    points to. This is linkage, not a second workflow
+    history: states and transitions stay client-held and
+    domain-owned; these rows are the anti-forgery anchor
+    that lets later requests verify claimed round history
+    and resolve the current result. First writer wins per
+    (workflow, round_index); divergent concurrent analyses
+    keep their own client records but only the recorded
+    linkage finalizes.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        workflow_id: UUID,
+        round_index: int,
+        case_id: UUID,
+        shipment_id: UUID | None,
+        report_id: UUID,
+        analysis_ids: list[str],
+        trace_ids: list[str],
+        input_fingerprints: list[str],
+    ) -> Row:
+        return _insert_in_transaction(
+            connection,
+            "compliance workflow round creation",
+            """
+            INSERT INTO xportra.compliance_workflow_rounds
+                (tenant_id, workflow_id, round_index, case_id,
+                 shipment_id, report_id, analysis_ids, trace_ids,
+                 input_fingerprints)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                tenant.tenant_id,
+                workflow_id,
+                round_index,
+                case_id,
+                shipment_id,
+                report_id,
+                Jsonb(analysis_ids),
+                Jsonb(trace_ids),
+                Jsonb(input_fingerprints),
+            ),
+        )
+
+    def get(
+        self,
+        tenant: TenantContext,
+        workflow_id: UUID,
+        round_index: int,
+    ) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.compliance_workflow_rounds
+               WHERE tenant_id = %s AND workflow_id = %s
+                 AND round_index = %s""",
+            (tenant.tenant_id, workflow_id, round_index),
+        )
+
+    def list_for_workflow(
+        self, tenant: TenantContext, workflow_id: UUID
+    ) -> list[Row]:
+        return _fetch_all(
+            self._database,
+            """SELECT * FROM xportra.compliance_workflow_rounds
+               WHERE tenant_id = %s AND workflow_id = %s
+               ORDER BY round_index""",
+            (tenant.tenant_id, workflow_id),
+        )
+
+    def latest_for_workflow(
+        self, tenant: TenantContext, workflow_id: UUID
+    ) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.compliance_workflow_rounds
+               WHERE tenant_id = %s AND workflow_id = %s
+               ORDER BY round_index DESC LIMIT 1""",
+            (tenant.tenant_id, workflow_id),
+        )
+
+
+class FinalAssessmentPackageRepository:
+    """Tenant-scoped linkage for produced final packages.
+
+    Stores linkage only — workflow/case/report/round
+    identities plus the open-requirement snapshot. All
+    compliance content lives in the result tables; the
+    decision summary stays carried by the stored report.
+    At most one row per workflow ever exists, which is
+    what makes cross-request second-finalization
+    structurally impossible.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        workflow_id: UUID,
+        case_id: UUID,
+        shipment_id: UUID | None,
+        report_id: UUID,
+        round_index: int,
+        open_requirements: list[str],
+    ) -> Row:
+        return _insert_in_transaction(
+            connection,
+            "final assessment package creation",
+            """
+            INSERT INTO xportra.final_assessment_packages
+                (tenant_id, workflow_id, case_id, shipment_id,
+                 report_id, round_index, open_requirements)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                tenant.tenant_id,
+                workflow_id,
+                case_id,
+                shipment_id,
+                report_id,
+                round_index,
+                Jsonb(open_requirements),
+            ),
+        )
+
+    def get(
+        self, tenant: TenantContext, workflow_id: UUID
+    ) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.final_assessment_packages
+               WHERE tenant_id = %s AND workflow_id = %s""",
+            (tenant.tenant_id, workflow_id),
+        )

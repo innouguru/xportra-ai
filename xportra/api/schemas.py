@@ -241,3 +241,247 @@ class RAGQueryResponse(BaseModel):
     extracted_references: list[str]
     invalid_references: list[str]
     citations: list[RAGCitationResponse]
+
+
+#: Phase 8.2 compliance-workflow schemas. Request bodies carry
+#: workflow records (the wire-stable surface — no workflow
+#: store exists) plus operation primitives only. Tenant
+#: identity is never part of any body; it comes from the
+#: authenticated member context. Responses mirror the
+#: application DTO contracts without exposing domain objects.
+
+
+class WorkflowRoundSchema(BaseModel):
+    """One recorded analysis round (references only)."""
+
+    round_index: int
+    report_id: UUID
+    analysis_ids: list[UUID]
+    trace_ids: list[UUID]
+    input_fingerprints: list[str]
+
+
+class WorkflowRoundResponse(BaseModel):
+    """One recorded round for clients (no implementation fingerprints)."""
+
+    round_index: int
+    report_id: UUID
+    analysis_ids: list[UUID]
+    trace_ids: list[UUID]
+
+
+class WorkflowRecordSchema(APIRequest):
+    """Client-held workflow state passed per request.
+
+    The server holds no workflow session: callers send the
+    record returned by the previous call and receive the
+    updated record back. Records are validated structurally
+    here; all ownership and transition rules stay in the
+    application/domain boundary.
+    """
+
+    id: UUID
+    tenant_id: UUID
+    case_id: UUID
+    shipment_id: UUID | None = None
+    state: str
+    rounds: list[WorkflowRoundSchema] = Field(default_factory=list)
+    supplied_evidence_ids: list[UUID] = Field(default_factory=list)
+    open_requirements: list[UUID] = Field(default_factory=list)
+
+
+class StartWorkflowRequest(APIRequest):
+    case_id: UUID
+    shipment_id: UUID | None = None
+
+
+class WorkflowActionRequest(APIRequest):
+    workflow: WorkflowRecordSchema
+
+
+class SupplyEvidenceRequest(APIRequest):
+    workflow: WorkflowRecordSchema
+    evidence_id: UUID
+    requirement_id: UUID | None = None
+
+
+class RequestEvidenceRequest(APIRequest):
+    workflow: WorkflowRecordSchema
+    requirement_ids: list[UUID] = Field(min_length=1)
+
+
+class AnalyzeWorkflowRequest(APIRequest):
+    """Run (or re-run) analysis; the state machine routes passes."""
+
+    workflow: WorkflowRecordSchema
+    cases: list[dict] = Field(min_length=1)
+    mode: RAGRetrievalMode = "hybrid"
+    max_context_characters: StrictInt = Field(
+        default=DEFAULT_RAG_CONTEXT_CHARACTERS, gt=0
+    )
+    top_k: StrictInt | None = Field(default=None, gt=0)
+    candidate_pool: StrictInt | None = Field(default=None, gt=0)
+    decision_summary: dict | None = None
+
+
+class ApplicabilityRequest(APIRequest):
+    """Determine applicability over caller-supplied records."""
+
+    requirements: list[dict] = Field(min_length=1)
+    exporter: dict | None = None
+    product: dict | None = None
+    destination: dict | None = None
+    actor_role: str | None = None
+    business_characteristics: dict | None = None
+
+
+class CaseReadinessRequest(APIRequest):
+    cases: list[dict] = Field(min_length=1)
+
+
+class WorkflowSummaryResponse(BaseModel):
+    """Workflow progression state for clients."""
+
+    workflow_id: UUID
+    tenant_id: UUID
+    case_id: UUID
+    shipment_id: UUID | None = None
+    state: str
+    is_closed: bool
+    round_count: int
+    rounds: list[WorkflowRoundResponse]
+    supplied_evidence_ids: list[UUID]
+    open_requirements: list[UUID]
+
+
+class WorkflowActionResponse(BaseModel):
+    workflow: WorkflowRecordSchema
+    summary: WorkflowSummaryResponse
+
+
+class RequirementFindingResponse(BaseModel):
+    analysis_id: UUID
+    requirement_id: UUID
+    requirement_text: str
+    applicability: str
+    assessment: str
+    explanation: str
+    uncertainty: str
+    uncertainty_explanation: str
+    evidence_sufficiency: str
+    sufficiency_explanation: str
+    contradiction_state: str
+    missing_information: list[str]
+    supporting_evidence: list[dict]
+    conflicting_evidence: list[dict]
+    knowledge_references: list[dict]
+    sources: list[dict]
+    missing_items: list[dict]
+
+
+class AnalysisReportResponse(BaseModel):
+    report_id: UUID
+    case_id: UUID
+    counts: dict[str, int]
+    requirements_with_missing_information: list[UUID]
+    uncertain_requirement_ids: list[UUID]
+    requirements_with_conflicting_evidence: list[UUID]
+    conflicting_evidence_count: int
+    findings: list[RequirementFindingResponse]
+
+
+class AnalyzeWorkflowResponse(BaseModel):
+    workflow: WorkflowRecordSchema
+    report: AnalysisReportResponse
+
+
+class FinalPackageResponse(BaseModel):
+    """Stored final assessment package (terminal, by reference)."""
+
+    workflow_id: UUID
+    tenant_id: UUID
+    case_id: UUID
+    shipment_id: UUID | None = None
+    state: str
+    round_count: int
+    open_requirements: list[UUID]
+    report: AnalysisReportResponse
+    decision_summary: dict | None = None
+
+
+class FinalizeWorkflowResponse(BaseModel):
+    workflow: WorkflowRecordSchema
+    package: FinalPackageResponse
+
+
+class FinalPackageResponse(BaseModel):
+    """Stored final assessment package (terminal, by reference)."""
+
+    workflow_id: UUID
+    tenant_id: UUID
+    case_id: UUID
+    shipment_id: UUID | None = None
+    state: str
+    round_count: int
+    open_requirements: list[UUID]
+    report: AnalysisReportResponse
+    decision_summary: dict | None = None
+
+
+class FinalizeWorkflowResponse(BaseModel):
+    workflow: WorkflowRecordSchema
+    package: FinalPackageResponse
+
+
+class HistoryEntryResponse(BaseModel):
+    sequence: int
+    kind: str
+    detail: str
+    references: list[dict[str, str]]
+
+
+class HistoryResponse(BaseModel):
+    workflow_id: UUID
+    tenant_id: UUID
+    case_id: UUID
+    shipment_id: UUID | None = None
+    state: str
+    entries: list[HistoryEntryResponse]
+    round_count: int
+    latest_report_id: UUID | None = None
+    decision_summary_present: bool
+    readiness: dict | None = None
+    final_package: dict | None = None
+
+
+class ClosureResponse(BaseModel):
+    workflow_id: UUID
+    is_closed: bool
+
+
+class ApplicabilityResultResponse(BaseModel):
+    requirement_id: UUID
+    outcome: str
+    reason: str
+
+
+class ApplicabilityResponse(BaseModel):
+    counts: dict[str, int]
+    results: list[ApplicabilityResultResponse]
+
+
+class ReadinessGapResponse(BaseModel):
+    requirement_id: UUID
+    kind: str
+    reason: str
+
+
+class CaseReadinessResponse(BaseModel):
+    readiness_state: str
+    required_information: int
+    known_information: int
+    missing_information_count: int
+    gaps: list[ReadinessGapResponse]
+    missing_evidence_requirements: list[UUID]
+    unknown_applicability_requirements: list[UUID]
+    unknown_assessment_requirements: list[UUID]

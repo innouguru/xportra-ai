@@ -7,6 +7,7 @@ import os
 from fastapi import FastAPI
 
 from .auth import SupabaseAuthSettings
+from .compliance import router as compliance_router
 from .dependencies import ApplicationServices
 from .errors import register_exception_handlers
 from .router import router
@@ -26,6 +27,7 @@ def create_app(services: ApplicationServices | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     application.include_router(router)
+    application.include_router(compliance_router)
     register_exception_handlers(application)
     if os.environ.get("APP_ENV", "development").lower() == "production":
         SupabaseAuthSettings.from_environment()

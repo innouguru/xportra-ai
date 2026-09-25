@@ -13,6 +13,14 @@ CREATE_DESTINATION_MARKET = "create_destination_market"
 CREATE_COMPLIANCE_EVIDENCE = "create_compliance_evidence"
 ASSOCIATE_EVIDENCE_REQUIREMENT = "associate_evidence_requirement"
 CREATE_CERTIFICATION = "create_certification"
+#: Phase 8.2: progress a compliance workflow (transitions,
+#: evidence supply, closure-affecting operations). Owner-only
+#: by default — member evidence recording keeps its existing
+#: Phase 1 permission above; no existing rule is altered.
+PROGRESS_COMPLIANCE_WORKFLOW = "progress_compliance_workflow"
+#: Phase 8.2: run compliance analysis (retrieval/LLM cost).
+#: Owner-only by default, like workflow progression.
+RUN_COMPLIANCE_ANALYSIS = "run_compliance_analysis"
 
 _MEMBER_PERMISSIONS = frozenset(
     {
