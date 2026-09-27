@@ -47,3 +47,20 @@ ownership, persistence boundaries, and service-owned transactions.
 ## Verification
 
 Pending.
+
+## Reconciliation note (2026-09-27, post-Phase-10 audit)
+
+This file was a stale mirror under `tasks/active/`
+(untouched since the initial commit; status "In
+progress", boxes unchecked). The work itself is
+verified complete: see `CURRENT_STATE.md` (Phase 1.1–
+1.10 complete),
+`docs/phases/phase-1-10-authorization-tenant-role-boundary.md`,
+`docs/decisions/ADR-0007-tenant-role-authorization-boundary.md`,
+and the implemented policy in `xportra/api/authorization.py`.
+Moved to `tasks/completed/` during state reconciliation
+to restore the single-active-task convention. Original
+content above is preserved unaltered; the unchecked
+boxes and "Pending" reflect the mirror's age, not the
+work's state. No re-verification was performed by this
+move.

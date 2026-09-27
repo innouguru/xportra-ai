@@ -357,12 +357,53 @@ are reused, never replaced; compliance semantics are unchanged.
   changes, Phase 5 retrieval redesign, Phase 6
   reasoning redesign, provider migration, and
   deployment infrastructure are excluded.
+- Note (2026-09-27): the "frontend upload UI"
+  exclusion above was scoped to Phase 10.4 only. It
+  is superseded for that UI surface by completed
+  Phase 10.5 (`R-10.5` below), which was explicitly
+  assigned and built as the follow-on. All other
+  R-10.4.8 exclusions stand.
+
+## R-10.5: Evidence Upload UX & Workflow Integration (Phase 10.5) — Approved
+
+Phase 10.5 makes the Phase 10.4 upload backend a real
+user-facing capability. The frontend is a client of
+the existing backend; no backend behavior changes and
+no compliance, retrieval, reasoning, or workflow
+semantics change.
+
+- R-10.5.1 (upload workspace): a real Upload Evidence
+  action calling the existing upload endpoint with
+  the exact backend contract; honest
+  Selected → Uploading → Processing → Ready | Failed
+  states; supported-format and 10 MB guidance; ready
+  never implies satisfied, failed never reads as usable.
+- R-10.5.2 (supplied/needed views and download):
+  supplied-evidence resolution through the existing
+  record endpoint; authorized download through the
+  existing download endpoint with immediately-used
+  signed URLs; each information need paths to upload,
+  supply, and explicit re-run.
+- R-10.5.3 (workflow integration): finalized
+  workflows disable upload with the closure reason
+  stated and no reopen action; post-analysis uploads
+  surface the existing re-analysis path without
+  claiming assessment change; supplying evidence and
+  running analysis stay separate explicit steps.
+- R-10.5.4 (Out of scope): conversational upload,
+  chat UI, evidence deletion, retention policy,
+  workflow reopening, background queue,
+  notifications, new RAG behavior, new compliance
+  rules, new analysis logic, provider migration,
+  deployment infrastructure, and unrelated redesign
+  are excluded.
 
 ## R-1..R-10: Future Phases — Partially Scoped
 
 Phases 1–10 (see `ROADMAP.md`) have no approved detailed functional
 requirements at this time, except for Phase 10.1 (`R-10.1` above),
-Phase 10.2 (`R-10.2` above), and Phase 10.4 (`R-10.4` above).
+Phase 10.2 (`R-10.2` above), Phase 10.4 (`R-10.4` above),
+and Phase 10.5 (`R-10.5` above).
 Requirements for each remaining phase will be added here
 when defined and approved. In particular, no regulatory requirements and
 no detailed product functionality beyond the sections above have been

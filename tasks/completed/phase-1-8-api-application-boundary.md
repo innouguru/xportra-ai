@@ -39,3 +39,18 @@ deferred requirement tenancy. No transaction logic in route handlers.
 ## Verification
 
 Pending.
+
+## Reconciliation note (2026-09-27, post-Phase-10 audit)
+
+This file was a stale mirror under `tasks/active/`
+(untouched since the initial commit; status "In
+progress", boxes unchecked). The work itself is
+verified complete: see `CURRENT_STATE.md` (Phase 1.1–
+1.10 complete), `docs/phases/phase-1-8-api-application-boundary.md`,
+and the implemented boundary in `xportra/api/`. Moved
+to `tasks/completed/` during state reconciliation to
+restore the single-active-task convention. Original
+content above is preserved unaltered; the unchecked
+boxes and "Pending" reflect the mirror's age, not the
+work's state. No re-verification was performed by this
+move.

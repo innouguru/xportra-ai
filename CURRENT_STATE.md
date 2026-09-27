@@ -1,11 +1,13 @@
 # CURRENT_STATE.md — Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-09-24
-> Phase: Phase 8 — API & Application Integration
-> (Phase 8.5 complete; Phase 8.4 complete; Phase 8.3 complete;
-> Phase 8.2 complete; Phase 8.1 complete; Phase 7 COMPLETE;
-> Phase 6 COMPLETE; Phase 5 COMPLETE)
+> Updated: 2026-09-27
+> Phase: Phase 10 complete through 10.5 (hardening,
+> conversational backend foundation, evidence upload
+> backend + UX); post-Phase-10 scope audit complete.
+> Checkpoint: 9249544 (origin/main aligned).
+> No active implementation task. No live infrastructure
+> verified (44 gated skips).
 
 ## Status
 
@@ -391,6 +393,30 @@ from repr) is the only behavior-neutral change.
   `tasks/completed/phase-10-5-evidence-upload-ux.md`;
   implementation record:
   `docs/phases/phase-10-5-evidence-upload-ux.md`.
+- No active task remains. Next phases need
+  `REQUIREMENTS.md` entries and scheduling via `tasks/`.
+
+## Post-Phase-10 Product & Scope Audit (Complete, 2026-09-27)
+
+- Documentation-only audit at checkpoint `9249544`
+  (origin/main aligned; no behavior changed; no phase
+  started). Findings:
+  `docs/phases/post-phase-10-product-scope-audit.md`;
+  task record:
+  `tasks/completed/post-phase-10-product-scope-audit.md`.
+- Headline: journey operational end-to-end in code but
+  zero percent live-verified (44 gates); blocking gaps
+  are live validation, deployment/ops substrate, OCR,
+  conversational persistence + UI, evidence listing,
+  and archive/supersede path. OQ-C1/C2 still blocked;
+  C3 avoidance holds; C4 out; C5 deferred. U1–U7
+  code-complete, none live-verified.
+- Roadmap inconsistencies flagged without rewriting:
+  stale ROADMAP.md checkboxes/labels and "not scoped"
+  statement, stale state header (2026-09-24/Phase 8),
+  missing R-10.5 entry, superseded R-10.4.8 UI
+  exclusion, three stale files in tasks/active/,
+  historical "no commit/push" lines.
 - No active task remains. Next phases need
   `REQUIREMENTS.md` entries and scheduling via `tasks/`.
 

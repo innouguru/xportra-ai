@@ -6,6 +6,13 @@
   resolved by approved product decisions
   (`REQUIREMENTS.md` R-10.4); the boundary below is
   unchanged and now implementable as Phase 10.4.
+- Status note (2026-09-27, post-Phase-10 audit): the
+  "conceptual (not yet written) persistence extension"
+  named in Decision 7 and Consequences was implemented
+  as migration 011 in Phase 10.4
+  (`docs/phases/phase-10-4-evidence-upload-implementation.md`
+  §4). This note records that follow-through; the
+  boundary decisions above are unchanged.
 - Scope: Future tenant evidence upload; constrains the
   implementation phase that follows
   (`docs/phases/phase-10-3-evidence-upload-ingestion-boundary.md`)
