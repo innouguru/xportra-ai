@@ -1,6 +1,10 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { recordEvidence } from "../../api/evidence";
+import {
+  fetchEvidence,
+  fetchEvidenceDownload,
+  uploadEvidenceFile,
+} from "../../api/evidence";
 import { supplyEvidence } from "../../api/workflows";
 import { useAuth } from "../../app/AuthContext";
 import { useWorkflow } from "../../app/WorkflowContext";
@@ -10,30 +14,99 @@ import {
   Field,
   Identifier,
   LoadingState,
+  StatusBadge,
+  TerminalNotice,
 } from "../../components/StatusBits";
-import type { EvidenceRecord } from "../../types/api";
+import {
+  MAX_UPLOAD_BYTES,
+  SUPPORTED_UPLOAD_TEXT,
+  UPLOAD_ACCEPT,
+  describeUnsupportedFile,
+  formatFileSize,
+  processingStateLabel,
+  processingStateNote,
+  processingStateTone,
+} from "../../lib/evidence";
 import { isTerminalState } from "../../lib/workflow";
+import type {
+  EvidenceRecord,
+  EvidenceUploadResult,
+} from "../../types/api";
 
 /**
- * Screen 4 — Evidence intake (reference-based).
+ * Screen 4 — Evidence workspace with real file upload.
  *
- * There is NO file-upload endpoint: intake registers a
- * reference (title, type, URI, optional requirement
- * links) and then supplies the recorded evidence ID to
- * the workflow. The form states this explicitly so the
- * UI never pretends to upload bytes.
+ * Uploads go to `POST /compliance-evidence/uploads`
+ * (base64 JSON transport, exactly the backend contract);
+ * the backend stays authoritative on type/size/content
+ * validation, processing, and associations. The UI only
+ * presents the lifecycle honestly:
+ *
+ *   Selected → Uploading → Processing → Ready | Failed
+ *
+ * Uploading or processing a document never implies
+ * compliance, and a ready document never implies a
+ * satisfied requirement. Supplying evidence to the
+ * workflow and running analysis stay separate, explicit
+ * steps. Downloads use the authorized backend endpoint
+ * and signed URLs are used immediately, never stored.
  */
 export function EvidencePage() {
   const auth = useAuth();
   const { record, setRecord } = useWorkflow();
-  const [title, setTitle] = useState("");
-  const [docType, setDocType] = useState("");
-  const [reference, setReference] = useState("");
-  const [requirementIds, setRequirementIds] = useState("");
-  const [recorded, setRecorded] = useState<EvidenceRecord[]>([]);
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [uploads, setUploads] = useState<EvidenceUploadResult[]>([]);
+  const [suppliedDetails, setSuppliedDetails] = useState<
+    Record<string, EvidenceRecord | null>
+  >({});
+  const [loadingSupplied, setLoadingSupplied] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [pending, setPending] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const suppliedIds = record?.supplied_evidence_ids ?? [];
+  const suppliedKey = suppliedIds.join(",");
+
+  useEffect(() => {
+    if (!record || suppliedIds.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    const missing = suppliedIds.filter((id) => !(id in suppliedDetails));
+    if (missing.length === 0) {
+      return;
+    }
+    setLoadingSupplied(true);
+    void (async () => {
+      const entries = await Promise.all(
+        missing.map(async (id): Promise<[string, EvidenceRecord | null]> => {
+          try {
+            const row = await fetchEvidence(auth, id);
+            return [id, row];
+          } catch {
+            return [id, null];
+          }
+        }),
+      );
+      if (!cancelled) {
+        setSuppliedDetails((current) => {
+          const next = { ...current };
+          for (const [id, row] of entries) {
+            next[id] = row;
+          }
+          return next;
+        });
+        setLoadingSupplied(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suppliedKey]);
 
   if (!record) {
     return (
@@ -49,40 +122,55 @@ export function EvidencePage() {
     );
   }
 
-  const parseIds = (value: string): string[] =>
-    value
-      .split(/[\s,]+/)
-      .map((part) => part.trim())
-      .filter((part) => part.length > 0);
-
   const closed = isTerminalState(record.state);
-  const locked = pending !== null || closed;
+  const busy = uploading || pending !== null;
+  const locked = busy || closed;
+  const hasAnalysisRounds = record.rounds.length > 0;
+  const supplied = new Set(record.supplied_evidence_ids);
+  const uploadedById = new Map(uploads.map((item) => [item.evidence_id, item]));
+  const unsuppliedUploads = uploads.filter((item) => !supplied.has(item.evidence_id));
 
-  const register = async (event: React.FormEvent) => {
+  const chooseFile = (file: File | null) => {
+    setSelectedFile(file);
+    setUploadNotice(null);
+    setFileError(file ? describeUnsupportedFile(file) : null);
+  };
+
+  const upload = async (event: React.FormEvent) => {
     event.preventDefault();
-    setFieldError(null);
-    setError(null);
-    if (!title.trim() || !docType.trim() || !reference.trim()) {
-      setFieldError("Document title, document type, and file reference are all required.");
+    if (locked || uploading || !selectedFile) {
       return;
     }
-    setPending("register");
+    const blocker = describeUnsupportedFile(selectedFile);
+    if (blocker) {
+      setFileError(blocker);
+      return;
+    }
+    setFileError(null);
+    setError(null);
+    setUploadNotice(null);
+    setUploading(true);
     try {
-      const row = await recordEvidence(auth, {
-        document_title: title.trim(),
-        document_type: docType.trim(),
-        file_reference_or_uri: reference.trim(),
-        requirement_ids: parseIds(requirementIds),
+      const result = await uploadEvidenceFile(auth, {
+        file: selectedFile,
+        workflow: record,
       });
-      setRecorded((current) => [...current, row]);
-      setTitle("");
-      setDocType("");
-      setReference("");
-      setRequirementIds("");
+      setUploads((current) => [result, ...current]);
+      setSelectedFile(null);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      setUploadNotice(
+        result.processing_status === "ready"
+          ? `“${result.original_filename ?? result.document_title ?? "Document"}” is ready as evidence. This does not mean any requirement is satisfied.`
+          : result.processing_status === "failed"
+            ? `“${result.original_filename ?? result.document_title ?? "Document"}” was received but processing failed, so it cannot be used as evidence.`
+            : `“${result.original_filename ?? result.document_title ?? "Document"}” was received and is still processing.`,
+      );
     } catch (err) {
       setError(err);
     } finally {
-      setPending(null);
+      setUploading(false);
     }
   };
 
@@ -99,40 +187,102 @@ export function EvidencePage() {
     }
   };
 
-  const supplied = new Set(record.supplied_evidence_ids);
-  const registeredUnsupplied = recorded.filter((row) => !supplied.has(row.id));
+  const download = async (evidenceId: string) => {
+    setError(null);
+    setPending(`download-${evidenceId}`);
+    try {
+      const grant = await fetchEvidenceDownload(auth, evidenceId);
+      window.open(grant.download_url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      setError(err);
+    } finally {
+      setPending(null);
+    }
+  };
 
   return (
     <div>
       <header className="page-intro">
         <p className="page-kicker">Evidence workspace</p>
         <p className="lede">
-          Xportra currently records evidence references. Document upload is
-          not enabled in this workflow — references you register below are
-          what analysis can consider.
+          Upload the documents behind this shipment, see what Xportra is
+          doing with each one, and supply evidence so analysis can consider
+          it. Uploading a document never decides compliance — only a
+          backend analysis round can weigh evidence.
         </p>
       </header>
+
       <section aria-label="Supplied evidence">
         <h2>Supplied to this workflow ({record.supplied_evidence_ids.length})</h2>
         {record.supplied_evidence_ids.length === 0 ? (
           <p className="muted">
-            No evidence has been supplied to this workflow yet. Register a
-            reference below, then supply it so analysis can consider it.
+            No evidence has been supplied to this workflow yet. Upload a
+            document below, then supply it so analysis can consider it.
           </p>
         ) : (
           <ul className="reference-list">
-            {record.supplied_evidence_ids.map((id) => (
-              <li key={id}>
-                <Identifier value={id} />
-              </li>
-            ))}
+            {record.supplied_evidence_ids.map((id) => {
+              const uploaded = uploadedById.get(id);
+              const fetched = suppliedDetails[id];
+              const title =
+                uploaded?.document_title ??
+                uploaded?.original_filename ??
+                fetched?.document_title ??
+                null;
+              const docType = uploaded?.document_type ?? fetched?.document_type ?? null;
+              const reviewStatus = uploaded?.status ?? fetched?.status ?? null;
+              const processing =
+                uploaded?.processing_status ?? fetched?.processing_status ?? null;
+              return (
+                <li key={id}>
+                  {title ? (
+                    <p className="ledger-title">{title}</p>
+                  ) : (
+                    <p className="reference-id">
+                      <Identifier value={id} />
+                    </p>
+                  )}
+                  <dl className="field-grid">
+                    {docType ? <Field label="Type">{docType}</Field> : null}
+                    {reviewStatus ? (
+                      <Field label="Evidence status">
+                        <StatusBadge value={reviewStatus} tone="neutral" />
+                      </Field>
+                    ) : null}
+                    {processing ? (
+                      <Field label="Processing">
+                        <StatusBadge
+                          value={processingStateLabel(processing)}
+                          tone={processingStateTone(processing)}
+                        />{" "}
+                        <span className="muted">{processingStateNote(processing)}</span>
+                      </Field>
+                    ) : null}
+                    {title ? (
+                      <Field label="Evidence ID">
+                        <Identifier value={id} short={36} />
+                      </Field>
+                    ) : null}
+                    <Field label="Document">
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        disabled={pending !== null}
+                        onClick={() => void download(id)}
+                      >
+                        {pending === `download-${id}` ? "Preparing…" : "Download document"}
+                      </button>
+                    </Field>
+                  </dl>
+                </li>
+              );
+            })}
           </ul>
         )}
+        {loadingSupplied ? <LoadingState text="Loading supplied evidence…" /> : null}
         {error ? <ErrorNotice error={error} /> : null}
-        {pending && !pending.startsWith("supply-") && pending !== "register" ? (
-          <LoadingState text="Updating workflow…" />
-        ) : null}
       </section>
+
       <section aria-label="Needed evidence">
         <h2>Needed ({record.open_requirements.length})</h2>
         <p className="muted">
@@ -145,7 +295,7 @@ export function EvidencePage() {
           <ul className="reference-list">
             {record.open_requirements.map((id) => (
               <li key={id}>
-                <p className="eyebrow">Open requirement</p>
+                <p className="eyebrow">Information needed</p>
                 <p className="reference-id">
                   <Identifier value={id} short={36} />
                 </p>
@@ -162,6 +312,79 @@ export function EvidencePage() {
           </Link>
         </div>
       </section>
+
+      <section aria-label="Upload evidence">
+        <h2>Upload evidence</h2>
+        {closed ? (
+          <TerminalNotice title="Upload is unavailable — this assessment has been finalized and can no longer be changed.">
+            <p>
+              The assessment package is final and the workflow is permanently
+              closed. No new evidence can be uploaded and there is no way to
+              reopen it. The stored package and its report stay readable.
+            </p>
+          </TerminalNotice>
+        ) : (
+          <>
+            <p className="muted">
+              Choose {SUPPORTED_UPLOAD_TEXT} (max 10 MB per file). Xportra
+              checks the file, reads it, and indexes it as evidence — a
+              ready document is available for analysis, not a satisfied
+              requirement.
+            </p>
+            <form className="form" onSubmit={(event) => void upload(event)}>
+              <div className="form-row">
+                <label htmlFor="evidence-file">Choose a file to upload</label>
+                <input
+                  ref={fileInputRef}
+                  id="evidence-file"
+                  type="file"
+                  accept={UPLOAD_ACCEPT}
+                  disabled={locked}
+                  aria-describedby="evidence-file-hint evidence-file-error"
+                  onChange={(event) => chooseFile(event.target.files?.[0] ?? null)}
+                />
+                <p id="evidence-file-hint" className="form-hint">
+                  Supported: {SUPPORTED_UPLOAD_TEXT}. Maximum{" "}
+                  {formatFileSize(MAX_UPLOAD_BYTES)} per file.
+                </p>
+              </div>
+              {selectedFile ? (
+                <dl className="field-grid" aria-label="Selected file">
+                  <Field label="File name">{selectedFile.name}</Field>
+                  <Field label="File size">{formatFileSize(selectedFile.size)}</Field>
+                </dl>
+              ) : null}
+              {fileError ? (
+                <p id="evidence-file-error" className="form-error" role="alert">
+                  {fileError}
+                </p>
+              ) : (
+                <p id="evidence-file-error" className="form-hint">
+                  {selectedFile ? "This file is ready to upload." : "No file selected yet."}
+                </p>
+              )}
+              <div>
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={locked || !selectedFile || fileError !== null}
+                >
+                  {uploading ? "Uploading…" : "Upload evidence"}
+                </button>
+              </div>
+            </form>
+            {uploading ? (
+              <LoadingState text="Uploading — Xportra is receiving and processing the document…" />
+            ) : null}
+            {uploadNotice && !uploading ? (
+              <p className="form-hint" role="status" aria-live="polite">
+                {uploadNotice}
+              </p>
+            ) : null}
+          </>
+        )}
+      </section>
+
       <section aria-label="Evidence attention">
         <h2>Attention</h2>
         {closed ? (
@@ -175,7 +398,7 @@ export function EvidencePage() {
                 <div>
                   <p className="attention-item__title">Additional evidence was requested</p>
                   <p className="muted">
-                    Review what is open, register a reference below, and supply it.
+                    Review what is open, upload a document above, and supply it.
                   </p>
                 </div>
                 <Link className="secondary-button" to="../additional-evidence">
@@ -183,32 +406,49 @@ export function EvidencePage() {
                 </Link>
               </li>
             ) : null}
-            {registeredUnsupplied.length > 0 ? (
+            {hasAnalysisRounds && uploads.length > 0 ? (
               <li className="attention-item attention-item--attention">
                 <div>
                   <p className="attention-item__title">
-                    {registeredUnsupplied.length} registered, not yet supplied
+                    New evidence is available — analysis may need to be rerun
                   </p>
                   <p className="muted">
-                    These references exist but analysis cannot consider them until supplied.
+                    Recent uploads change nothing already assessed. Run analysis
+                    again when you are ready; nothing runs automatically.
                   </p>
                 </div>
-                <a className="secondary-button" href="#registered-evidence">
+                <Link className="secondary-button" to="../analysis">
+                  Run analysis again
+                </Link>
+              </li>
+            ) : null}
+            {unsuppliedUploads.length > 0 ? (
+              <li className="attention-item attention-item--attention">
+                <div>
+                  <p className="attention-item__title">
+                    {unsuppliedUploads.length} uploaded, not yet supplied
+                  </p>
+                  <p className="muted">
+                    These documents exist but analysis cannot consider them until supplied.
+                  </p>
+                </div>
+                <a className="secondary-button" href="#uploaded-evidence">
                   Review list
                 </a>
               </li>
             ) : null}
             {record.state !== "additional_evidence_requested" &&
-            registeredUnsupplied.length === 0 ? (
+            unsuppliedUploads.length === 0 &&
+            !(hasAnalysisRounds && uploads.length > 0) ? (
               <li className="attention-item attention-item--neutral">
                 <div>
                   <p className="attention-item__title">
-                    {recorded.length === 0 ? "No references yet" : "Nothing needs attention"}
+                    {uploads.length === 0 ? "No uploads yet" : "Nothing needs attention"}
                   </p>
                   <p className="muted">
-                    {recorded.length === 0
-                      ? "Register a reference below to get started."
-                      : "Every reference registered this session has been supplied."}
+                    {uploads.length === 0
+                      ? "Upload a document above to get started."
+                      : "Every upload this session has been supplied."}
                   </p>
                 </div>
               </li>
@@ -216,108 +456,90 @@ export function EvidencePage() {
           </ul>
         )}
       </section>
-      <section aria-label="Register evidence reference">
-        <h2>Register evidence reference</h2>
-        <p className="muted">
-          Xportra records a <strong>reference</strong> to your document — its
-          title, type, and where it can be found — rather than uploading
-          file bytes. No file upload is available.
-        </p>
-        {closed ? (
-          <p className="muted">
-            This workflow is finalized and permanently closed: evidence can no longer be
-            registered or supplied, and the backend rejects any post-finalization mutation.
-          </p>
-        ) : null}
-        <form className="form" onSubmit={register}>
-          <div className="form-grid">
-            <div className="form-row">
-              <label htmlFor="evidence-title">Document title</label>
-              <input
-                id="evidence-title"
-                type="text"
-                value={title}
-                disabled={closed}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="e.g. Phytosanitary certificate NG-2024-118"
-              />
-            </div>
-            <div className="form-row">
-              <label htmlFor="evidence-type">Document type</label>
-              <input
-                id="evidence-type"
-                type="text"
-                value={docType}
-                disabled={closed}
-                onChange={(event) => setDocType(event.target.value)}
-                placeholder="e.g. certificate"
-              />
-            </div>
-            <div className="form-row">
-              <label htmlFor="evidence-reference">File reference or URI</label>
-              <input
-                id="evidence-reference"
-                type="text"
-                value={reference}
-                disabled={closed}
-                onChange={(event) => setReference(event.target.value)}
-                placeholder="e.g. registry number or storage URI"
-              />
-            </div>
-            <div className="form-row">
-              <label htmlFor="evidence-requirements">
-                Requirement IDs <span className="muted">(optional, comma or space separated)</span>
-              </label>
-              <input
-                id="evidence-requirements"
-                type="text"
-                value={requirementIds}
-                disabled={closed}
-                onChange={(event) => setRequirementIds(event.target.value)}
-                placeholder="Associate at intake when known"
-              />
-            </div>
-          </div>
-          {fieldError ? (
-            <p className="form-error" role="alert">
-              {fieldError}
-            </p>
-          ) : null}
-          <button type="submit" className="primary-button" disabled={locked}>
-            {pending === "register" ? "Registering…" : "Register evidence reference"}
-          </button>
-        </form>
-      </section>
-      <section aria-label="Registered evidence" id="registered-evidence">
-        <h2>Registered this session</h2>
-        {recorded.length === 0 ? (
-          <p className="muted">No evidence references registered yet in this session.</p>
+
+      <section aria-label="Uploaded evidence" id="uploaded-evidence">
+        <h2>Uploaded this session ({uploads.length})</h2>
+        {uploads.length === 0 ? (
+          <p className="muted">No documents uploaded yet in this session.</p>
         ) : (
           <ul className="reference-list">
-            {recorded.map((row) => (
-              <li key={row.id}>
+            {uploads.map((item) => (
+              <li key={item.evidence_id}>
+                <p className="ledger-title">
+                  {item.document_title ?? item.original_filename ?? "Uploaded document"}
+                </p>
                 <dl className="field-grid">
-                  <Field label="Title">{row.document_title}</Field>
-                  <Field label="Type">{row.document_type}</Field>
-          <Field label="Reference">
-            <Identifier value={row.file_reference_or_uri} short={48} />
-          </Field>
-                  <Field label="Evidence ID">
-                    <Identifier value={row.id} short={36} />
+                  {item.document_type ? <Field label="Type">{item.document_type}</Field> : null}
+                  {item.original_filename ? (
+                    <Field label="File name">{item.original_filename}</Field>
+                  ) : null}
+                  {item.mime_type ? <Field label="Format">{item.mime_type}</Field> : null}
+                  <Field label="Processing">
+                    <StatusBadge
+                      value={processingStateLabel(item.processing_status)}
+                      tone={processingStateTone(item.processing_status)}
+                    />{" "}
+                    <span className="muted">
+                      {processingStateNote(item.processing_status)}
+                    </span>
                   </Field>
+                  {item.status ? (
+                    <Field label="Evidence status">
+                      <StatusBadge value={item.status} tone="neutral" />
+                    </Field>
+                  ) : null}
+                  <Field label="Requirement association">
+                    {item.linked_requirement_ids.length > 0 ? (
+                      <span>
+                        {item.linked_requirement_ids.map((id) => (
+                          <Identifier key={id} value={id} short={36} />
+                        ))}
+                      </span>
+                    ) : (
+                      <span className="muted">
+                        Requirement association will be determined from the compliance context.
+                      </span>
+                    )}
+                  </Field>
+                  {item.duplicate ? (
+                    <Field label="Note">
+                      <span className="muted">
+                        This document was already uploaded — the existing record is shown.
+                      </span>
+                    </Field>
+                  ) : null}
                   <Field label="Workflow status">
-                    {supplied.has(row.id) ? (
+                    {supplied.has(item.evidence_id) ? (
                       <span>Supplied to this workflow</span>
                     ) : (
                       <button
                         type="button"
                         className="secondary-button"
-                        disabled={locked}
-                        onClick={() => supply(row.id)}
+                        disabled={locked || item.processing_status === "failed"}
+                        title={
+                          item.processing_status === "failed"
+                            ? "Failed documents cannot be supplied"
+                            : undefined
+                        }
+                        onClick={() => void supply(item.evidence_id)}
                       >
-                        {pending === `supply-${row.id}` ? "Supplying…" : "Supply to workflow"}
+                        {pending === `supply-${item.evidence_id}`
+                          ? "Supplying…"
+                          : "Supply to workflow"}
                       </button>
                     )}
+                  </Field>
+                  <Field label="Document">
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={pending !== null}
+                      onClick={() => void download(item.evidence_id)}
+                    >
+                      {pending === `download-${item.evidence_id}`
+                        ? "Preparing…"
+                        : "Download document"}
+                    </button>
                   </Field>
                 </dl>
               </li>
@@ -325,14 +547,15 @@ export function EvidencePage() {
           </ul>
         )}
       </section>
+
       <div className="action-row">
-          <Link className="secondary-button" to="../gaps">
-            Review evidence gaps
-          </Link>
-          <Link className="secondary-button" to="../analysis">
-            Continue to analysis
-          </Link>
-        </div>
+        <Link className="secondary-button" to="../gaps">
+          Review evidence gaps
+        </Link>
+        <Link className="secondary-button" to="../analysis">
+          {hasAnalysisRounds ? "Run analysis again" : "Continue to analysis"}
+        </Link>
+      </div>
     </div>
   );
 }

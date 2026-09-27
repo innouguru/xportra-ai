@@ -25,9 +25,9 @@ import type { AnalysisFinding, EvidenceRecord } from "../../types/api";
  * Each action maps to exactly one existing backend use case, in journey
  * order. The screen shows why evidence was requested (open requirements
  * plus each finding's recorded missing information — never inferred),
- * accepts an evidence *reference* (there is no upload endpoint and none
- * is implied), associates it with a requirement when known, and supplies
- * it to the workflow.
+ * accepts an evidence *reference* on this screen (to upload a file
+ * instead, use Upload evidence on the Evidence page), associates it
+ * with a requirement when known, and supplies it to the workflow.
  *
  * Supplying evidence records a reference: it does not establish
  * compliance and it never triggers analysis. Re-running analysis stays an
@@ -329,9 +329,9 @@ export function AdditionalEvidencePage() {
       <section aria-label="Record an evidence reference">
         <h2>Record another evidence reference</h2>
         <p className="muted">
-          Xportra records a <strong>reference</strong> to the document — its title, type, and
-          where it can be found — rather than uploading file bytes. There is no file upload in
-          this workspace, and document content is never stored by this application.
+          This form records a <strong>reference</strong> to the document — its title, type, and
+          where it can be found. To upload a file instead, use{" "}
+          <Link to="../evidence">Upload evidence on the Evidence page</Link>.
         </p>
         <form className="form" onSubmit={register} aria-describedby="additional-intake-hint">
           <div className="form-grid">
@@ -387,8 +387,9 @@ export function AdditionalEvidencePage() {
             </div>
           </div>
           <p id="additional-intake-hint" className="form-hint">
-            Intake accepts an evidence reference/URI only. The application never receives or
-            stores document bytes.
+            This form accepts an evidence reference/URI only — it never receives document
+            bytes. To upload a file instead, use{" "}
+            <Link to="../evidence">Upload evidence on the Evidence page</Link>.
           </p>
           <button type="submit" className="primary-button" disabled={locked}>
             {pending === "register" ? "Recording…" : "Record evidence reference"}

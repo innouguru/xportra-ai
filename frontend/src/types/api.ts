@@ -81,6 +81,11 @@ export interface EvidenceRecord {
   uploaded_at: string;
   created_at: string;
   updated_at: string;
+  /** Phase 10.4 processing lifecycle (present on upload rows). */
+  processing_status?: string | null;
+  processing_step?: string | null;
+  original_filename?: string | null;
+  mime_type?: string | null;
 }
 
 /** One evidence-coverage gap, rendered verbatim. */
@@ -196,4 +201,59 @@ export interface ApiErrorBody {
     message: string;
     details?: unknown;
   };
+}
+
+/**
+ * File-upload request (mirrors `EvidenceUploadRequest`).
+ *
+ * The backend accepts base64 JSON transport exactly as
+ * shaped here — the frontend MUST NOT invent a different
+ * protocol. `workflow` reuses the client-held record the
+ * server revalidates per request.
+ */
+export interface EvidenceUploadPayload {
+  filename: string;
+  content_type: string;
+  content_base64: string;
+  document_title?: string | null;
+  document_type?: string | null;
+  requirement_ids?: string[];
+  workflow?: WorkflowRecord | null;
+}
+
+/**
+ * Uploaded evidence (mirrors `EvidenceUploadResponse`).
+ *
+ * Identifiers + lifecycle state only — never file bytes,
+ * document text, storage keys, or signed URLs.
+ * `processing_status` is pipeline progress (uploaded |
+ * processing | ready | failed); `status` is the separate
+ * human-review state. Neither implies compliance.
+ */
+export interface EvidenceUploadResult {
+  evidence_id: string;
+  tenant_id: string;
+  document_title: string | null;
+  document_type: string | null;
+  status: string | null;
+  processing_status: string | null;
+  processing_step: string | null;
+  processing_error: string | null;
+  content_hash: string | null;
+  original_filename: string | null;
+  mime_type: string | null;
+  duplicate: boolean;
+  linked_requirement_ids: string[];
+}
+
+/**
+ * Authorized download grant (mirrors
+ * `EvidenceDownloadResponse`). The signed URL is
+ * short-lived: use it immediately and never store it.
+ */
+export interface EvidenceDownloadGrant {
+  evidence_id: string;
+  tenant_id: string;
+  download_url: string;
+  expires_in_seconds: number;
 }

@@ -25,6 +25,15 @@ from xportra.infrastructure.rag_composition import (
     compose_rag_stack,
     compose_rag_stack_from_environment,
 )
+from xportra.infrastructure.evidence_storage import (
+    InMemoryEvidenceObjectStore,
+    SupabaseEvidenceObjectStore,
+    SupabaseStorageSettings,
+)
+from xportra.infrastructure.evidence_upload import (
+    compose_evidence_index_sync_from_environment,
+    compose_evidence_object_store_from_environment,
+)
 
 __all__ = [
     "DEFAULT_LLM_TIMEOUT_SECONDS",
@@ -37,6 +46,11 @@ __all__ = [
     "SentenceTransformerEmbeddingProvider",
     "VectorIndexConfig",
     "validate_qdrant_collection_config",
+    "InMemoryEvidenceObjectStore",
+    "SupabaseEvidenceObjectStore",
+    "SupabaseStorageSettings",
+    "compose_evidence_index_sync_from_environment",
+    "compose_evidence_object_store_from_environment",
     "LLMConfigurationError",
     "LLMSettings",
     "OPENROUTER_BASE_URL",

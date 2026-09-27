@@ -78,6 +78,12 @@ class ApplicationValidationError(ApplicationError):
     category = "invalid_input"
 
 
+class EvidenceUploadTooLargeError(ApplicationValidationError):
+    """An uploaded file exceeds the per-file size limit."""
+
+    category = "payload_too_large"
+
+
 class ApplicationNotFoundError(ApplicationError):
     """Referenced workflow/case/evidence/package identity unknown."""
 
@@ -135,6 +141,7 @@ __all__ = [
     "ApplicationError",
     "ApplicationNotFoundError",
     "ApplicationValidationError",
+    "EvidenceUploadTooLargeError",
     "InfrastructureError",
     "InvalidTransitionError",
     "StaleAnalysisError",

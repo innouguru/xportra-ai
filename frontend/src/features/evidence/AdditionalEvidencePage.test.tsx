@@ -115,10 +115,12 @@ describe("AdditionalEvidencePage", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("states that intake accepts a reference and offers no file upload", () => {
+  it("keeps reference intake on this screen and points uploads at the Evidence page", () => {
     renderPage();
-    expect(screen.getByText(/rather than uploading file bytes/i)).toBeInTheDocument();
-    expect(screen.getByText(/never receives or\s+stores document bytes/i)).toBeInTheDocument();
+    expect(screen.getByText(/where it can be found/i)).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("link", { name: "Upload evidence on the Evidence page" }).length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByLabelText(/upload/i)).toBeNull();
     expect(screen.queryByLabelText(/drag|choose file/i)).toBeNull();
     expect(screen.queryByText(/upload progress/i)).toBeNull();

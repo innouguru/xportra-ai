@@ -251,10 +251,118 @@ hardening phase, not a feature phase. Product behavior, deterministic
   changes, changes to deterministic compliance authority, and
   reopening/versioning finalized assessments are explicitly excluded.
 
+## R-10.2: Conversational Backend Foundation (Phase 10.2) — Approved
+
+Phase 10.2 converts the approved conversational architecture
+(`docs/phases/conversational-product-architecture.md`,
+`docs/decisions/ADR-0009-conversational-boundary.md`) into a
+stateless, read-only production backend contract. It builds no
+frontend chat UI and creates no conversation persistence. Binding
+decisions are recorded in
+`docs/decisions/ADR-0010-conversational-backend-foundation.md`.
+
+- R-10.2.1 (Domain contract): frozen conversation contracts shall
+  distinguish conversation identity from compliance-case, workflow,
+  and assessment-result identity, and shall cover tenant identity,
+  optional single shipment/workflow context, actor context, mode,
+  message role/type, user message, assistant response,
+  grounding/citation references, and response status.
+- R-10.2.2 (Modes): exactly two modes exist — `shipment_aware`
+  (one explicitly pinned workflow context, revalidated per request)
+  and `knowledge` (no shipment context, structurally forbidden).
+- R-10.2.3 (Application boundary): a dedicated stateless use case
+  shall own authenticated actor context, tenant isolation,
+  conversation access, context resolution, mode validation, and
+  DTO mapping, reusing existing authorization, tenant, workflow,
+  evidence, retrieval, and reasoning boundaries without
+  duplicating the compliance engine.
+- R-10.2.4 (Read-only intents): requests carry one allow-listed
+  intent (`explain_requirement_state`, `explain_evidence_gaps`,
+  `explain_finding`, `summarize_shipment_state`,
+  `answer_regulatory_question`); no intent is parsed from prose and
+  no conversational mutation exists (no upload/record/analysis/
+  finalize/applicability/state change).
+- R-10.2.5 (Grounding): shipment claims cite authoritative Xportra
+  identifiers; regulatory claims carry validated Phase 5 citations;
+  unsupported claims are refused as unknown, never fabricated; no
+  prompts, chain-of-thought, secrets, provider internals, raw
+  evidence content, or cross-tenant data is exposed.
+- R-10.2.6 (No persistence): Phase 10.2 creates no migration and
+  no transcript store; conversation identity is a validated
+  correlation identifier only. OQ-C1/OQ-C2 remain blocked.
+- R-10.2.7 (HTTP): one stateless endpoint (`POST
+  /conversations/messages`, member-readable) reusing existing
+  authentication, tenant resolution, permission checks, and
+  production error/security configuration. No second
+  authorization system.
+- R-10.2.8 (Out of scope): frontend chat UI, persistence,
+  proposal/confirmation execution, autonomous tool calling,
+  suggested evidence links, voice, notifications, analytics,
+  multi-shipment conversations, provider changes, deployment,
+  and the full OQ-C5 evaluation harness are excluded.
+
+## R-10.4: Evidence Upload Implementation (Phase 10.4) — Approved
+
+Phase 10.4 implements the Phase 10.3 boundary
+(`docs/phases/phase-10-3-evidence-upload-ingestion-boundary.md`,
+`docs/decisions/ADR-0011-evidence-upload-ingestion-boundary.md`)
+under the following approved product decisions (U1–U7).
+Existing ingestion/indexing/retrieval/reasoning components
+are reused, never replaced; compliance semantics are unchanged.
+
+- R-10.4.1 (U1 — MVP file types): PDF, DOCX, JPG/JPEG,
+  and PNG only. Validation uses declared content type AND
+  authoritative magic-byte/content inspection; the client
+  MIME type alone is never trusted. No additional formats
+  without an explicit product decision.
+- R-10.4.2 (U2 — maximum file size): 10 MB per file,
+  rejected before storage, enforced server-side.
+- R-10.4.3 (U3 — deletion/retention): users cannot
+  physically delete uploaded evidence; no MVP delete
+  endpoint. Evidence remains for provenance/audit; an
+  incorrect or superseded document is marked
+  inactive/superseded rather than destroyed, stays
+  out of new analysis, and keeps its historical
+  identity/provenance. No permanent retention period
+  is defined; physical deletion and retention policy
+  remain future decisions.
+- R-10.4.4 (U4 — download/access): private Supabase
+  Storage, server-authorized access, short-lived signed
+  URLs where appropriate. No public buckets, public
+  object URLs, client-controlled keys, or unrestricted
+  downloads. Tenant and evidence ownership/association
+  are verified before issuing access.
+- R-10.4.5 (U5 — audit): the lifecycle is recorded with
+  identifiers and status metadata (uploader, tenant,
+  workflow/shipment, upload identity, processing and
+  association status, superseded/inactive status,
+  supported timestamps). Never recorded: raw contents,
+  document text, secrets, signed URLs, file bytes. No
+  second audit system where existing history/audit
+  structures carry the references.
+- R-10.4.6 (U6 — corpus/source identity):
+  server-generated, deterministic where fitting the
+  architecture; the client never chooses source,
+  evidence, storage-key, or tenant identity. Phase 4/5
+  corpus and indexing contracts remain authoritative.
+- R-10.4.7 (U7 — processing state): a dedicated
+  lifecycle `uploaded → processing → ready | failed`,
+  separate from availability, applicability, and
+  assessment state. `ready` means ingestion/indexing
+  passed — never compliance.
+- R-10.4.8 (Out of scope): frontend upload UI,
+  conversational upload, autonomous chat actions,
+  delete endpoint, retention policy, background queue,
+  notifications, workflow reopening, compliance rule
+  changes, Phase 5 retrieval redesign, Phase 6
+  reasoning redesign, provider migration, and
+  deployment infrastructure are excluded.
+
 ## R-1..R-10: Future Phases — Partially Scoped
 
 Phases 1–10 (see `ROADMAP.md`) have no approved detailed functional
-requirements at this time, except for Phase 10.1 (`R-10.1` above).
+requirements at this time, except for Phase 10.1 (`R-10.1` above),
+Phase 10.2 (`R-10.2` above), and Phase 10.4 (`R-10.4` above).
 Requirements for each remaining phase will be added here
 when defined and approved. In particular, no regulatory requirements and
 no detailed product functionality beyond the sections above have been

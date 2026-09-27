@@ -114,6 +114,15 @@ class ComplianceEvidenceResponse(BaseModel):
     uploaded_at: datetime
     created_at: datetime
     updated_at: datetime
+    #: Phase 10.4 processing lifecycle (migration 011).
+    #: Optional so pre-migration rows and test doubles
+    #: without the columns still serialize.
+    processing_status: str | None = None
+    processing_step: str | None = None
+    processing_error: str | None = None
+    processed_at: datetime | None = None
+    original_filename: str | None = None
+    mime_type: str | None = None
 
 
 class ComplianceEvidenceWithRequirementsRequest(ComplianceEvidenceCreateRequest):
@@ -466,3 +475,133 @@ class CaseReadinessResponse(BaseModel):
     missing_evidence_requirements: list[UUID]
     unknown_applicability_requirements: list[UUID]
     unknown_assessment_requirements: list[UUID]
+
+
+#: Phase 10.2 conversational schemas. The request carries one
+#: allow-listed read-only intent plus the minimal context that
+#: intent needs; the workflow record travels in the body
+#: because no conversation/workflow store exists (the Phase 8.2
+#: precedent — the server revalidates per request and holds no
+#: session). Tenant identity is never part of any body; it
+#: comes from the authenticated member context. Client-supplied
+#: ``conversation_id`` is a correlation identifier only: it is
+#: validated for shape, echoed in the response, and never
+#: dereferenced. ``extra="forbid"`` (via ``APIRequest``)
+#: rejects tenant IDs, prompts, provider settings, and raw
+#: content fields.
+
+ConversationMode = Literal["shipment_aware", "knowledge"]
+
+ConversationIntent = Literal[
+    "explain_requirement_state",
+    "explain_evidence_gaps",
+    "explain_finding",
+    "summarize_shipment_state",
+    "answer_regulatory_question",
+]
+
+#: API-layer bound on conversation user text. The domain owns
+#: the contract bound (``MAX_USER_MESSAGE_CHARACTERS``); this
+#: mirrors it so oversized bodies fail fast with 422.
+MAX_CONVERSATION_MESSAGE_CHARACTERS = 2000
+
+
+class ConversationMessageRequest(APIRequest):
+    """One stateless, read-only conversation turn."""
+
+    conversation_id: UUID
+    mode: ConversationMode
+    intent: ConversationIntent
+    user_text: str = Field(
+        min_length=1, max_length=MAX_CONVERSATION_MESSAGE_CHARACTERS
+    )
+    workflow: dict | None = None
+    requirement_id: UUID | None = None
+    evidence_id: UUID | None = None
+    information_need: str | None = Field(default=None, min_length=1)
+    retrieval_mode: RAGRetrievalMode = "hybrid"
+    max_context_characters: StrictInt = Field(
+        default=DEFAULT_RAG_CONTEXT_CHARACTERS, gt=0
+    )
+    top_k: StrictInt | None = Field(default=None, gt=0)
+
+
+class ConversationShipmentCitationResponse(BaseModel):
+    """Identifier citation for one shipment/compliance claim."""
+
+    kind: str
+    id: UUID
+
+
+class ConversationMessageResponse(BaseModel):
+    """Grounded assistant turn: quoted state or cited knowledge."""
+
+    conversation_id: UUID
+    mode: str
+    intent: str
+    status: str
+    summary_text: str
+    shipment_references: list[ConversationShipmentCitationResponse]
+    citations: list[RAGCitationResponse]
+    refusal_reason: str | None = None
+
+
+#: Phase 10.4 evidence file-upload schemas. The transport
+#: carries base64-encoded bytes (no multipart dependency):
+#: the domain boundary validates the decoded bytes
+#: (10 MB cap, MVP types, magic bytes) and never trusts
+#: the declared content type or filename alone. Tenant
+#: identity is never part of any body; it comes from the
+#: authenticated member context. ``extra="forbid"`` (via
+#: ``APIRequest``) rejects tenant IDs, object keys, and
+#: storage internals.
+
+#: Transport bound on the base64 payload. The domain owns
+#: the exact 10 MB byte cap; this bound only rejects
+#: absurd bodies before decoding (~15 MB decoded).
+MAX_UPLOAD_BASE64_CHARACTERS = 20_000_000
+
+
+class EvidenceUploadRequest(APIRequest):
+    """One evidence file upload (JSON transport, base64 bytes)."""
+
+    filename: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    content_base64: str = Field(
+        min_length=1, max_length=MAX_UPLOAD_BASE64_CHARACTERS
+    )
+    document_title: str | None = Field(default=None, min_length=1)
+    document_type: str | None = Field(default=None, min_length=1)
+    requirement_ids: list[UUID] = Field(default_factory=list)
+    workflow: WorkflowRecordSchema | None = None
+
+
+class EvidenceUploadResponse(BaseModel):
+    """Uploaded evidence: identifiers + lifecycle state.
+
+    Never carries file bytes, document text, storage
+    keys, or signed URLs.
+    """
+
+    evidence_id: UUID
+    tenant_id: UUID
+    document_title: str | None = None
+    document_type: str | None = None
+    status: str | None = None
+    processing_status: str | None = None
+    processing_step: str | None = None
+    processing_error: str | None = None
+    content_hash: str | None = None
+    original_filename: str | None = None
+    mime_type: str | None = None
+    duplicate: bool = False
+    linked_requirement_ids: list[UUID] = Field(default_factory=list)
+
+
+class EvidenceDownloadResponse(BaseModel):
+    """Authorized download grant: one short-lived signed URL."""
+
+    evidence_id: UUID
+    tenant_id: UUID
+    download_url: str
+    expires_in_seconds: int

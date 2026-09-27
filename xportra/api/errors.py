@@ -13,6 +13,7 @@ from xportra.application.errors import (
     ApplicationError,
     ApplicationNotFoundError,
     ApplicationValidationError,
+    EvidenceUploadTooLargeError,
     InfrastructureError,
     InvalidTransitionError,
     StaleAnalysisError,
@@ -138,6 +139,11 @@ _APPLICATION_ERROR_STATUS = (
     (ApplicationAuthorizationError, 403, "permission_denied"),
     (TenantMismatchError, 403, "tenant_mismatch"),
     (ApplicationNotFoundError, 404, "not_found"),
+    #: Phase 10.4: oversize uploads are a distinct 413-class
+    #: rejection. The subclass entry precedes the plain
+    #: ``ApplicationValidationError`` mapping so the stable
+    #: sub-category survives handler lookup.
+    (EvidenceUploadTooLargeError, 413, "payload_too_large"),
     (ApplicationValidationError, 400, "invalid_input"),
     (StaleAnalysisError, 409, "stale_analysis"),
     (WorkflowNotReadyError, 409, "not_ready"),

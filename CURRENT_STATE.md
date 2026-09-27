@@ -264,6 +264,136 @@ from repr) is the only behavior-neutral change.
   1784 passed + 44 skipped (gated Postgres/Qdrant/OpenRouter-live,
   not executed), 0 failures. Frontend untouched.
 
+## Phase 10.2 — Conversational Backend Foundation (Complete, 2026-09-25)
+
+- Scope approved as `REQUIREMENTS.md` R-10.2; binding decisions
+  in `docs/decisions/ADR-0010-conversational-backend-foundation.md`;
+  task completed at
+  `tasks/completed/phase-10-2-conversational-backend-foundation.md`;
+  implementation record in
+  `docs/phases/phase-10-2-conversational-backend-foundation.md`.
+- Stateless, read-only contract only: frozen domain contracts
+  (`xportra/domain/conversation.py` — identity separation, two
+  modes, allow-listed intents, identifier/validated citations,
+  grounded/partial/refused_unknown), stateless use case
+  (`xportra/application/conversations.py` — per-request
+  workflow revalidation, tenant match, injected Phase 5 RAG
+  reuse, deterministic rendering, no new LLM call, no
+  mutations), one endpoint (`POST /conversations/messages`,
+  member-readable, existing auth/tenant/error/security
+  boundaries; `xportra/api/conversations.py` + schemas +
+  router include).
+- No migration, no transcript store (OQ-C1/OQ-C2 blocked);
+  OQ-C3 resolved by avoidance; OQ-C4 out; OQ-C5 harness
+  deferred (contract tests ship).
+- Verification: 39/39 new focused tests; full suite
+  1823 passed + 44 skipped (gated Postgres/Qdrant/OpenRouter-live,
+  not executed), 0 failures. No Phase 1–10.1 behavior change.
+  Frontend untouched.
+
+## Phase 10.3 — Evidence Upload & Ingestion Boundary (Scope only, 2026-09-25;
+## U1–U7 resolved 2026-09-27)
+
+- Definition task, not implementation: lifecycle, storage
+  strategy (one private bucket, server-composed keys, signed
+  downloads), five-identity model, file-validation policy
+  with layer placement, synchronous ingestion/failure
+  semantics, terminal-workflow rejection, future API
+  surface, conceptual persistence, RAG boundary
+  (raw never reaches LLM), processing × review status
+  contract, security/test matrix, OQ-U1–OQ-U7, and next-phase
+  implementation scope in
+  `docs/phases/phase-10-3-evidence-upload-ingestion-boundary.md`;
+  binding decisions in
+  `docs/decisions/ADR-0011-evidence-upload-ingestion-boundary.md`;
+  task record in
+  `tasks/completed/phase-10-3-evidence-upload-ingestion-boundary.md`.
+- No code written, no bucket created, no migration, no
+  endpoint, no behavior change; no `REQUIREMENTS.md` change
+  (no approved requirements; OQ-U1–OQ-U7 await product
+  decisions). Verified by inspection; no test run applies
+  to a docs-only task. Frontend untouched.
+- 2026-09-27: U1–U7 RESOLVED by approved product
+  decisions (`REQUIREMENTS.md` R-10.4; phase doc §13 and
+  ADR-0011 addendum): PDF/DOCX/JPEG/PNG with
+  content-type + magic-byte validation; 10 MB per file
+  server-enforced; no delete endpoint, inactive/
+  superseded via `archived`; private Storage with
+  authorized short-lived signed URLs; identifiers/status
+  metadata audit via existing structures;
+  server-generated deterministic identities (Phase 4/5
+  authoritative); `uploaded → processing → ready |
+  failed` separate from compliance state.
+
+## Phase 10.4 — Evidence Upload Implementation (Complete, 2026-09-27)
+
+- Implemented the approved Phase 10.3 boundary under
+  `REQUIREMENTS.md` R-10.4: domain validation boundary
+  (`xportra/domain/evidence_upload.py` — PDF/DOCX/JPEG/PNG,
+  content-type + magic bytes, 10 MB, filename safety,
+  stdlib extraction, U7 states); storage protocol +
+  in-memory/Supabase-HTTPS implementations
+  (`xportra/domain/evidence_storage.py`,
+  `xportra/infrastructure/evidence_storage.py`,
+  production composers in
+  `xportra/infrastructure/evidence_upload.py`);
+  migration 011 (+ rollback) on the existing
+  `compliance_evidence` table; repository + domain
+  service extensions; upload orchestration use case
+  (`xportra/application/evidence_upload.py`) reusing
+  Phase 4.1 ingestion and 4.2–4.5 sync; `POST
+  /compliance-evidence/uploads` + `GET
+  /compliance-evidence/{id}/download` (existing
+  auth/tenant/error boundaries; 413 mapping added).
+- Verification: focused 79/79 (+22 subtests); full
+  suite 1902 passed + 44 skipped (baseline 1823 + 44;
+  live Supabase/Postgres/Qdrant/OpenRouter NOT
+  executed — no environment). No Phase 1–10.3 behavior
+  change; no frontend/chat/delete/retention/queue work;
+  no packages installed. Task record:
+  `tasks/completed/phase-10-4-evidence-upload-implementation.md`;
+  implementation record:
+  `docs/phases/phase-10-4-evidence-upload-implementation.md`.
+- No active task remains. Next phases need
+  `REQUIREMENTS.md` entries and scheduling via `tasks/`.
+
+## Phase 10.5 — Evidence Upload UX & Workflow Integration (Complete, 2026-09-27)
+
+- Frontend-only follow-on to the Phase 10.4 backend
+  (no backend file changed): real Upload Evidence action
+  on the Evidence workspace calling `POST
+  /compliance-evidence/uploads` (base64 JSON, exact
+  backend contract; workflow record passed for
+  server-side terminal checks); honest
+  Selected → Uploading → Processing → Ready | Failed
+  states; supplied-evidence resolution via the existing
+  GET record endpoint with identifier fallback;
+  authorized download via `GET
+  /compliance-evidence/{id}/download` (signed URL used
+  immediately, never stored or shown); supply-to-workflow
+  and explicit re-analysis path preserved; finalized
+  workflows show the closure reason with no upload and
+  no reopen; gaps link per information need to upload;
+  stale "no upload" copy on Additional Evidence now
+  points at the Evidence page.
+- No compliance meaning is ever implied (ready ≠
+  satisfied asserted in copy and tests); backend stays
+  authoritative on all validation/processing/association.
+  No chat, delete, retention, reopening, queue,
+  notification, RAG, or analysis-logic work.
+- Verification: frontend 27 files / 157 tests passing
+  (+17, none weakened); `npx tsc --noEmit` clean;
+  `npm run build` succeeds; served 200 on
+  `/workspace/evidence` with bundle markers verified
+  (no browser engine — no pixel claim); backend
+  regression 1902 passed + 44 skipped (baseline holds
+  exactly). No packages installed. Task record:
+  `tasks/completed/phase-10-5-evidence-upload-ux.md`;
+  implementation record:
+  `docs/phases/phase-10-5-evidence-upload-ux.md`.
+- No active task remains. Next phases need
+  `REQUIREMENTS.md` entries and scheduling via `tasks/`.
+
 ## Conversational Product Architecture (Design only, 2026-09-25)
 
 - Canonical design doc:

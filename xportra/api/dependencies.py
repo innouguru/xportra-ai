@@ -7,6 +7,12 @@ from uuid import UUID
 from fastapi import Depends, Header, Request
 
 from xportra.application.result_store import ComplianceResultStore
+from xportra.application.evidence_upload import (
+    EvidenceUploadApplicationService,
+)
+from xportra.domain.evidence_ingestion import (
+    EvidenceDocumentIngestionService,
+)
 from xportra.domain.services import (
     CertificationService,
     ComplianceEvidenceService,
@@ -24,6 +30,7 @@ from xportra.persistence.repositories import (
     ComplianceEvidenceRepository,
     ComplianceWorkflowRoundRepository,
     DestinationMarketRepository,
+    EvidenceDocumentRepository,
     EvidenceRequirementRepository,
     ExporterRepository,
     FinalAssessmentPackageRepository,
@@ -66,6 +73,17 @@ class ApplicationServices:
     #: routes then fail closed with 503 instead of serving
     #: unretained results.
     result_store: Any = field(default=None)
+    #: Phase 10.4 private evidence object storage (an
+    #: ``EvidenceObjectStore`` implementation or a test
+    #: fake). ``None`` until wired — the upload/download
+    #: routes then fail closed with 503 instead of
+    #: touching unconfigured storage.
+    evidence_storage: Any = field(default=None)
+    #: Phase 10.4 evidence index synchronization (an
+    #: ``EvidenceIndexSyncService`` or a test fake).
+    #: ``None`` until wired — uploads then fail closed
+    #: with 503 before any storage or database mutation.
+    evidence_index_sync: Any = field(default=None)
 
     @classmethod
     def from_environment(cls) -> "ApplicationServices":
@@ -148,6 +166,48 @@ class ApplicationServices:
             result_store=base.result_store,
         )
 
+    @classmethod
+    def from_environment_with_evidence_upload(cls) -> "ApplicationServices":
+        """Build the container with the Phase 10.4 upload path wired.
+
+        Opt-in composition entry point mirroring
+        ``from_environment_with_rag``: the default
+        ``from_environment`` stays unchanged (unwired
+        storage/index-sync → the upload/download routes
+        fail closed with 503). Each piece is attempted
+        independently — a partially configured deployment
+        still fails closed per request, before any
+        storage or database mutation.
+        """
+        import importlib
+
+        base = cls.from_environment()
+        upload_composition = importlib.import_module(
+            "xportra.infrastructure.evidence_upload"
+        )
+        try:
+            storage = (upload_composition
+                       .compose_evidence_object_store_from_environment())
+        except Exception:
+            storage = None
+        try:
+            index_sync = (upload_composition
+                          .compose_evidence_index_sync_from_environment())
+        except Exception:
+            index_sync = None
+        return cls(
+            database=base.database,
+            exporters=base.exporters,
+            products=base.products,
+            destinations=base.destinations,
+            evidence=base.evidence,
+            certifications=base.certifications,
+            rag=base.rag,
+            result_store=base.result_store,
+            evidence_storage=storage,
+            evidence_index_sync=index_sync,
+        )
+
 
 def get_services(request: Request) -> ApplicationServices:
     services = getattr(request.app.state, "services", None)
@@ -204,6 +264,46 @@ def get_result_store(request: Request):
 
 
 ResultStoreDependency = Annotated[Any, Depends(get_result_store)]
+
+
+def get_evidence_upload_service(request: Request):
+    """Resolve the Phase 10.4 evidence upload service for the request.
+
+    Assembles the use case from the container: the
+    database-backed evidence service, the corpus
+    ingestion boundary over the evidence-document
+    repository, plus the injected object-storage and
+    index-sync collaborators (production implementations
+    or test fakes). No SDK client is ever constructed
+    inside a route handler. Fails closed when any piece
+    is unwired for the environment — before any storage
+    or database mutation.
+    """
+    services = get_services(request)
+    evidence = getattr(services, "evidence", None)
+    storage = getattr(services, "evidence_storage", None)
+    index_sync = getattr(services, "evidence_index_sync", None)
+    database = getattr(services, "database", None)
+    if (evidence is None or storage is None
+            or index_sync is None or database is None):
+        raise APIError(
+            503,
+            "evidence_upload_not_configured",
+            "The evidence upload service is not configured "
+            "for this deployment",
+        )
+    corpus = EvidenceDocumentIngestionService(
+        EvidenceDocumentRepository(database))
+    return EvidenceUploadApplicationService(
+        evidence_service=evidence,
+        corpus_ingestion=corpus,
+        index_sync=index_sync,
+        storage=storage,
+    )
+
+
+EvidenceUploadServiceDependency = Annotated[
+    Any, Depends(get_evidence_upload_service)]
 
 
 def get_development_tenant_context(

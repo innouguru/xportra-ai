@@ -7,8 +7,10 @@ from fastapi import FastAPI
 
 from .auth import SupabaseAuthSettings
 from .compliance import router as compliance_router
+from .conversations import router as conversations_router
 from .dependencies import ApplicationServices
 from .errors import register_exception_handlers
+from .evidence_uploads import router as evidence_uploads_router
 from .router import router
 from .runtime import (
     PRODUCTION_ENV_VALUE,
@@ -89,6 +91,8 @@ def create_app(services: ApplicationServices | None = None) -> FastAPI:
     application.add_middleware(SecurityHeadersMiddleware)
     application.include_router(router)
     application.include_router(compliance_router)
+    application.include_router(conversations_router)
+    application.include_router(evidence_uploads_router)
     register_exception_handlers(application)
     if is_production_environment():
         SupabaseAuthSettings.from_environment()

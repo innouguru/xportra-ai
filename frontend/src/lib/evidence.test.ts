@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_UPLOAD_BYTES,
   contradictionTone,
+  describeUnsupportedFile,
+  formatFileSize,
   gapKindLabel,
+  processingStateLabel,
+  processingStateNote,
+  processingStateTone,
   readinessTone,
   sufficiencyTone,
 } from "./evidence";
@@ -46,5 +52,41 @@ describe("evidence presentation helpers", () => {
     expect(sufficiencyTone("insufficient")).toBe("attention");
     expect(sufficiencyTone("supported")).toBe("info");
     expect(sufficiencyTone("unknown")).toBe("attention");
+  });
+
+  it("formats upload sizes honestly", () => {
+    expect(formatFileSize(0)).toBe("0 B");
+    expect(formatFileSize(512)).toBe("512 B");
+    expect(formatFileSize(1024)).toBe("1 KB");
+    expect(formatFileSize(MAX_UPLOAD_BYTES)).toBe("10 MB");
+  });
+
+  it("pre-checks files without ever approving them", () => {
+    expect(
+      describeUnsupportedFile({ name: "a.pdf", size: 100, type: "application/pdf" }),
+    ).toBeNull();
+    expect(
+      describeUnsupportedFile({ name: "a.pdf", size: MAX_UPLOAD_BYTES + 1, type: "application/pdf" }),
+    ).toMatch(/10 MB/);
+    expect(
+      describeUnsupportedFile({ name: "a.txt", size: 100, type: "text/plain" }),
+    ).toMatch(/not a supported format/);
+    expect(
+      describeUnsupportedFile({ name: "a.pdf", size: 100, type: "image/png" }),
+    ).toMatch(/does not look like/);
+  });
+
+  it("labels processing states without compliance meaning", () => {
+    expect(processingStateLabel("ready")).toBe("Ready");
+    expect(processingStateLabel("failed")).toBe("Failed");
+    expect(processingStateTone("ready")).toBe("info");
+    expect(processingStateTone("failed")).toBe("attention");
+    const notes = [
+      processingStateNote("processing"),
+      processingStateNote("ready"),
+      processingStateNote("failed"),
+    ].join(" ");
+    expect(notes).not.toMatch(/compliant|verified|approved/i);
+    expect(processingStateNote("ready")).toMatch(/does not mean/i);
   });
 });

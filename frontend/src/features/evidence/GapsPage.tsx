@@ -137,13 +137,13 @@ export function GapsPage() {
                     <div>
                       <dt>What you can provide</dt>
                       <dd>
-                        Register an evidence reference for this requirement, then supply it
-                        to the workflow.
+                        Upload the document for this requirement, then supply it
+                        to the workflow so a later analysis round can consider it.
                       </dd>
                     </div>
                   </dl>
                   <p className="ledger-actions">
-                    <Link to="../evidence">Register evidence</Link>
+                    <Link to="../evidence">Upload evidence</Link>
                     <span aria-hidden="true"> · </span>
                     <Link to="../additional-evidence">Supply requested evidence</Link>
                   </p>
@@ -153,7 +153,7 @@ export function GapsPage() {
           )}
           <div className="action-row">
             <Link className="secondary-button" to="../evidence">
-              Supply evidence
+              Upload evidence
             </Link>
             <Link className="secondary-button" to="../analysis">
               Run analysis

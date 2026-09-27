@@ -28,6 +28,11 @@ from .errors import (
     DomainValidationError,
     require_tenant_context,
 )
+from .evidence_upload import (
+    EVIDENCE_PROCESSING_STATES,
+    PROCESSING_FAILURE_STEPS,
+    PROCESSING_READY,
+)
 
 
 class ExporterService:
@@ -243,6 +248,107 @@ class ComplianceEvidenceService:
     def get(self, tenant: TenantContext, evidence_id: UUID) -> dict[str, Any] | None:
         require_tenant_context(tenant)
         return self._evidence.get(tenant, evidence_id)
+
+    def register_upload(
+        self,
+        tenant: TenantContext,
+        *,
+        evidence_id: UUID,
+        document_title: str,
+        document_type: str,
+        file_reference_or_uri: str,
+        content_hash: str,
+        original_filename: str | None = None,
+        mime_type: str | None = None,
+        storage_bucket: str | None = None,
+        uploaded_by: UUID | None = None,
+        status: str = "uploaded",
+        processing_status: str = "uploaded",
+    ) -> dict[str, Any]:
+        """Register one uploaded evidence file (Phase 10.4).
+
+        Identity (evidence id), storage reference (object
+        key), and content hash are all server-computed by
+        the caller. The review ``status`` always starts at
+        ``uploaded`` — uploads never arrive accepted — and
+        the processing lifecycle starts at ``uploaded``.
+        """
+        require_tenant_context(tenant)
+        if not isinstance(evidence_id, UUID):
+            raise DomainValidationError("evidence identity is required")
+        for field, value in (
+            ("document title", document_title),
+            ("document type", document_type),
+            ("file reference", file_reference_or_uri),
+            ("content hash", content_hash),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise DomainValidationError(
+                    f"a non-empty {field} is required")
+        if status != "uploaded":
+            raise DomainValidationError(
+                "uploaded evidence must start in review state 'uploaded'")
+        if processing_status not in EVIDENCE_PROCESSING_STATES:
+            raise DomainValidationError("processing state is malformed")
+        if processing_status == PROCESSING_READY:
+            raise DomainValidationError(
+                "uploaded evidence must not start as ready")
+        return _persist(
+            "compliance evidence upload registration",
+            lambda: self._evidence.register_upload(
+                tenant,
+                evidence_id=evidence_id,
+                document_title=document_title.strip(),
+                document_type=document_type.strip(),
+                file_reference_or_uri=file_reference_or_uri.strip(),
+                content_hash=content_hash.strip(),
+                original_filename=original_filename,
+                mime_type=mime_type,
+                storage_bucket=storage_bucket,
+                uploaded_by=uploaded_by,
+                status=status,
+                processing_status=processing_status,
+            ),
+        )
+
+    def find_by_content_hash(
+        self, tenant: TenantContext, content_hash: str
+    ) -> dict[str, Any] | None:
+        require_tenant_context(tenant)
+        if not isinstance(content_hash, str) or not content_hash.strip():
+            raise DomainValidationError("content hash is required")
+        return self._evidence.get_by_content_hash(
+            tenant, content_hash.strip())
+
+    def set_processing_state(
+        self,
+        tenant: TenantContext,
+        evidence_id: UUID,
+        *,
+        processing_status: str,
+        processing_step: str | None = None,
+        processing_error: str | None = None,
+        processed_at: datetime | None = None,
+    ) -> dict[str, Any]:
+        require_tenant_context(tenant)
+        if processing_status not in EVIDENCE_PROCESSING_STATES:
+            raise DomainValidationError("processing state is malformed")
+        if (processing_step is not None
+                and processing_step not in PROCESSING_FAILURE_STEPS
+                and processing_step != "complete"):
+            raise DomainValidationError("processing step is malformed")
+        row = self._evidence.set_processing_state(
+            tenant,
+            evidence_id,
+            processing_status=processing_status,
+            processing_step=processing_step,
+            processing_error=processing_error,
+            processed_at=processed_at,
+        )
+        if row is None:
+            raise DomainNotFoundError(
+                f"evidence {evidence_id} was not found for tenant")
+        return row
 
     def record_with_requirements(
         self,

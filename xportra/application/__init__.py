@@ -22,6 +22,10 @@ with live result/package objects traveling in-session.
 from .analysis import AnalysisApplicationService
 from .assessments import AssessmentApplicationService
 from .context import ApplicationContext
+from .conversations import (
+    ConversationApplicationService,
+    DEFAULT_CONVERSATION_CONTEXT_CHARACTERS,
+)
 from .dtos import (
     AnalysisReportDTO,
     AnalysisRoundDTO,
@@ -55,6 +59,11 @@ from .errors import (
     sanitized_detail,
 )
 from .evidence import EvidenceApplicationService
+from .evidence_upload import (
+    EvidenceDownloadDTO,
+    EvidenceUploadApplicationService,
+    EvidenceUploadDTO,
+)
 from .result_store import (
     ComplianceResultStore,
     rebuild_analysis,
@@ -79,9 +88,15 @@ __all__ = [
     "AssessmentApplicationService",
     "CaseReadinessDTO",
     "ComplianceResultStore",
+    "ConversationApplicationService",
+    "DEFAULT_CONVERSATION_CONTEXT_CHARACTERS",
     "EvidenceApplicationService",
+    "EvidenceDownloadDTO",
     "EvidenceRecordDTO",
     "EvidenceReferenceDTO",
+    "EvidenceUploadApplicationService",
+    "EvidenceUploadDTO",
+    "EvidenceUploadTooLargeError",
     "FinalPackageDTO",
     "HistoryDTO",
     "HistoryEntryDTO",

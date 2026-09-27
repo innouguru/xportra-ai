@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
 import { GapsPage } from "./GapsPage";
@@ -30,7 +30,9 @@ function renderWithRecord() {
       <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
         <WorkflowProvider>
           <Routes>
-            <Route path="/workspace/gaps" element={<GapsPage />} />
+            <Route path="/workspace" element={<Outlet />}>
+              <Route path="gaps" element={<GapsPage />} />
+            </Route>
           </Routes>
         </WorkflowProvider>
       </AuthProvider>
@@ -162,7 +164,11 @@ describe("GapsPage", () => {
     expect(screen.getByText("Why it is needed")).toBeInTheDocument();
     expect(screen.getByText("What you can provide")).toBeInTheDocument();
     expect(screen.getByText("No certificate on file.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Register evidence" })).toBeInTheDocument();
+    const uploadLinks = screen.getAllByRole("link", { name: "Upload evidence" });
+    expect(uploadLinks.length).toBeGreaterThan(0);
+    for (const link of uploadLinks) {
+      expect(link).toHaveAttribute("href", "/workspace/evidence");
+    }
     expect(
       screen.getByRole("link", { name: "Supply requested evidence" }),
     ).toBeInTheDocument();

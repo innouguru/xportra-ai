@@ -655,6 +655,26 @@ legend {
   opacity: 0.8;
 }
 
+/* Native file input: keep the control itself visible and
+ * keyboard-operable (never hidden for styling); the
+ * inherited min-height and :focus-visible outline apply. */
+.form-row input[type="file"] {
+  cursor: pointer;
+  padding: 0.55rem 0.7rem;
+}
+
+.form-row input[type="file"]::file-selector-button {
+  font: inherit;
+  font-weight: 600;
+  margin-right: 0.9rem;
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  background: var(--surface-warm, var(--surface));
+  color: var(--ink);
+  cursor: pointer;
+}
+
 .form-hint {
   font-size: 0.87rem;
   color: var(--muted);

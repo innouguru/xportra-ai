@@ -72,6 +72,7 @@ export function userFacingErrorMessage(error: unknown): string {
       case "tenant_mismatch":
         return "This shipment belongs to a different workspace.";
       case "not_found":
+      case "resource_not_found":
         return "The requested record was not found in this workspace.";
       case "invalid_transition":
         return "This action is not available in the shipment's current step.";
@@ -84,6 +85,11 @@ export function userFacingErrorMessage(error: unknown): string {
       case "validation_error":
       case "invalid_input":
         return error.message || "Some input was invalid. Check the form.";
+      case "payload_too_large":
+        return "This file is larger than the 10 MB limit. Choose a smaller file.";
+      case "malformed_upload_content":
+        return "The selected file could not be read. Select it again.";
+      case "evidence_upload_not_configured":
       case "infrastructure_failure":
         return "A backend service is temporarily unavailable. Try again shortly.";
       default:

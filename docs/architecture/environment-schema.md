@@ -74,6 +74,29 @@ access tokens and are only required on deployments that authenticate requests.
 - Type/format: string.
 - Example: `authenticated`
 
+### Evidence storage (Supabase Storage, Phase 10.4)
+
+Private object storage for tenant evidence files. The server performs
+puts and issues short-lived signed download URLs with these
+credentials; they are never exposed to clients.
+
+#### SUPABASE_SERVICE_ROLE_KEY
+- Purpose: Supabase service-role key authorizing server-side object
+  puts and signed-URL issuance against private Storage.
+- Required: yes when evidence upload is configured.
+- Secret: yes. Must be supplied through environment/secret configuration and
+  never written into source code or documentation.
+- Type/format: secret string.
+- Example placeholder: `replace-with-supabase-service-role-key`
+
+#### EVIDENCE_STORAGE_BUCKET
+- Purpose: names the single private bucket holding tenant evidence
+  objects (default: `tenant-evidence`).
+- Required: no (defaults to `tenant-evidence`).
+- Secret: no.
+- Type/format: string.
+- Example: `tenant-evidence`
+
 ### Vector store
 
 #### VECTOR_STORE_URL
