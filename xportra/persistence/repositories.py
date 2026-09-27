@@ -86,6 +86,13 @@ class TenantRepository:
             (tenant_id,),
         )
 
+    def get_by_slug(self, slug: str) -> Row | None:
+        return _fetch_one(
+            self._database,
+            "SELECT * FROM xportra.tenants WHERE slug = %s",
+            (slug,),
+        )
+
 
 class UserRepository:
     def __init__(self, database: Database) -> None:
@@ -122,6 +129,30 @@ class UserRepository:
             "SELECT * FROM xportra.users WHERE supabase_uid = %s",
             (supabase_uid,),
         )
+
+    def get_by_email(self, email: str) -> Row | None:
+        return _fetch_one(
+            self._database,
+            "SELECT * FROM xportra.users WHERE email = %s",
+            (email,),
+        )
+
+    def set_supabase_uid(self, user_id: UUID, supabase_uid: UUID) -> Row | None:
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE xportra.users
+                        SET supabase_uid = %s
+                        WHERE id = %s
+                        RETURNING *
+                        """,
+                        (supabase_uid, user_id),
+                    )
+                    return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError("user identity linking", cause) from cause
 
 
 class UserTenantMembershipRepository:

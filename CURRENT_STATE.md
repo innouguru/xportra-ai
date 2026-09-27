@@ -396,9 +396,7 @@ from repr) is the only behavior-neutral change.
 - No active task remains. Next phases need
   `REQUIREMENTS.md` entries and scheduling via `tasks/`.
 
-## Post-Phase-10 Product & Scope Audit (Complete, 2026-09-27)
-
-- Documentation-only audit at checkpoint `9249544`
+## Post-Phase-10 Product & Scope Audit (Complete, 2026-09-27)- Documentation-only audit at checkpoint `9249544`
   (origin/main aligned; no behavior changed; no phase
   started). Findings:
   `docs/phases/post-phase-10-product-scope-audit.md`;
@@ -2329,3 +2327,19 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   inferred; in-memory representation only (no repository/migration).
 - Verification: focused 25/25, full suite 364/364, no regressions.
 - No embeddings/retrieval/RAG/persistence implemented.
+
+## Local-Development Bootstrap (Complete, 2026-09-27)
+
+- Development-only utility `python -m xportra.dev.bootstrap`
+  (`xportra/dev/bootstrap.py`): idempotently provisions
+  tenant `local-development`, user
+  `local-developer@xportra.local`, and one active owner
+  membership; refuses `APP_ENV=production` before any
+  DB use; optional `--supabase-uid` links a real Auth
+  identity, never mints tokens. New natural-key lookups
+  `get_by_slug` / `get_by_email` / `set_supabase_uid`;
+  no auth/tenant-isolation/production behavior changed.
+- Verification: 20/20 focused tests; full suite 1922
+  passed + 44 skipped (1902 + 20 new), 0 failures.
+- Guide: `docs/local-development.md`. No secrets
+  committed; no commit/push performed.
