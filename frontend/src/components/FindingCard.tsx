@@ -17,11 +17,14 @@ export function FindingCard({
   finding,
   index,
   total,
+  askAction,
 }: {
   finding: AnalysisFinding;
   /** Zero-based position in the report; renders "Finding N of M" when both are given. */
   index?: number;
   total?: number;
+  /** Optional contextual entry point (e.g. Ask Xportra); rendered verbatim. */
+  askAction?: React.ReactNode;
 }) {
   const assessmentNote = stateQualifier("assessment", finding.assessment);
   const sufficiencyNote = stateQualifier("sufficiency", finding.evidence_sufficiency);
@@ -112,6 +115,7 @@ export function FindingCard({
           </ul>
         </section>
       ) : null}
+      {askAction ? <p className="ledger-actions">{askAction}</p> : null}
       <Collapsible title={`Sources and provenance (${finding.sources.length})`}>
         {finding.sources.length === 0 ? (
           <p className="muted">No sources recorded.</p>

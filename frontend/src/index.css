@@ -1833,3 +1833,182 @@ h4 {
     font-size: 1.02rem;
   }
 }
+
+/* ------------------------------------------------------------------
+ * Phase 10.6 — Ask Xportra conversation panel.
+ *
+ * Shipment-scoped drawer on desktop, bottom sheet under
+ * 860px. Editorial product language throughout: paper
+ * surfaces, rule lines, teal accents, badge + text
+ * status (never color alone).
+ * ------------------------------------------------------------------ */
+
+.conversation-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+}
+
+.conversation-scrim {
+  position: absolute;
+  inset: 0;
+  background: rgb(28 25 23 / 0.32);
+  pointer-events: auto;
+}
+
+.conversation-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(26rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.1rem 1.25rem 1.25rem;
+  background: var(--paper);
+  border-left: 1px solid var(--line-strong);
+  box-shadow: var(--shadow);
+  overflow-y: auto;
+  pointer-events: auto;
+}
+
+.conversation-panel__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--rule-dark);
+}
+
+.conversation-panel__head h2 {
+  margin: 0.15rem 0 0.3rem;
+}
+
+.conversation-panel__head p {
+  margin: 0.15rem 0;
+}
+
+.conversation-modes {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+}
+
+.conversation-modes__option {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  cursor: pointer;
+}
+
+.conversation-modes__option input {
+  margin-top: 0.3rem;
+}
+
+.conversation-empty {
+  padding: 0.25rem 0;
+}
+
+.conversation-suggestions {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.conversation-messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.conversation-message {
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.conversation-message--user {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+}
+
+.conversation-message p {
+  margin: 0.3rem 0;
+}
+
+.conversation-explanation,
+.conversation-record {
+  margin-top: 0.6rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--line);
+}
+
+.conversation-references {
+  list-style: none;
+  margin: 0.4rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.conversation-references p {
+  margin: 0.1rem 0;
+}
+
+.conversation-composer {
+  position: sticky;
+  bottom: 0;
+  padding-top: 0.75rem;
+  border-top: 2px solid var(--rule-dark);
+  background: var(--paper);
+}
+
+.conversation-composer textarea {
+  font: inherit;
+  width: 100%;
+  min-height: calc(var(--control-height) * 2);
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  background: var(--surface);
+  color: var(--ink);
+  resize: vertical;
+}
+
+@media (max-width: 860px) {
+  .conversation-scrim {
+    display: none;
+  }
+
+  .conversation-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: 88vh;
+    border-left: none;
+    border-top: 2px solid var(--rule-dark);
+    border-radius: var(--radius) var(--radius) 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-panel {
+    transition: none;
+  }
+}

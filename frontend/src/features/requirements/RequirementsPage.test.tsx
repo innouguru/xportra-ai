@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { AnalysisProvider } from "../../app/AnalysisContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
+import { ConversationProvider } from "../conversation/ConversationContext";
 import { RequirementsPage } from "./RequirementsPage";
 import type { WorkflowRecord } from "../../types/api";
 
@@ -33,11 +34,13 @@ function renderWithRecord(record: WorkflowRecord = RECORD) {
     <MemoryRouter initialEntries={["/workspace/requirements"]}>
       <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
         <WorkflowProvider>
+          <ConversationProvider>
           <AnalysisProvider>
             <Routes>
               <Route path="/workspace/requirements" element={<RequirementsPage />} />
             </Routes>
           </AnalysisProvider>
+          </ConversationProvider>
         </WorkflowProvider>
       </AuthProvider>
     </MemoryRouter>,

@@ -4,6 +4,8 @@ import { useAnalysis } from "../../app/AnalysisContext";
 import { useWorkflow } from "../../app/WorkflowContext";
 import { FindingCard } from "../../components/FindingCard";
 import { EmptyState, Field, Identifier } from "../../components/StatusBits";
+import { isUuidLike } from "../../lib/conversation";
+import { AskXportraButton } from "../conversation/AskXportraButton";
 
 /**
  * Screen 7 — Findings Review (Pass 2 centerpiece).
@@ -177,6 +179,20 @@ export function FindingsPage() {
           finding={finding}
           index={report.findings.indexOf(finding)}
           total={report.findings.length}
+          askAction={
+            <AskXportraButton
+              seed={{
+                intent: "explain_finding",
+                ...(isUuidLike(finding.requirement_id)
+                  ? { requirementId: finding.requirement_id }
+                  : {}),
+                focus: "finding",
+                suggestedText: "Why was this finding recorded?",
+              }}
+              label="Ask Xportra"
+              className="link-button"
+            />
+          }
         />
       ))}
       <div className="action-row">

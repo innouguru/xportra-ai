@@ -28,6 +28,7 @@ import {
   processingStateTone,
 } from "../../lib/evidence";
 import { isTerminalState } from "../../lib/workflow";
+import { AskXportraButton } from "../conversation/AskXportraButton";
 import type {
   EvidenceRecord,
   EvidenceUploadResult,
@@ -555,6 +556,11 @@ export function EvidencePage() {
         <Link className="secondary-button" to="../analysis">
           {hasAnalysisRounds ? "Run analysis again" : "Continue to analysis"}
         </Link>
+        <AskXportraButton
+          seed={{ intent: "explain_evidence_gaps", focus: "evidence" }}
+          label="Ask Xportra"
+          className="secondary-button"
+        />
       </div>
     </div>
   );

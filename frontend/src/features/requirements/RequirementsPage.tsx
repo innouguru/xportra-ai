@@ -13,6 +13,8 @@ import {
 } from "../../components/StatusBits";
 import { assessmentTone } from "../../lib/findings";
 import { applicabilityLabel, applicabilityTone, isTerminalState } from "../../lib/workflow";
+import { isUuidLike } from "../../lib/conversation";
+import { AskXportraButton } from "../conversation/AskXportraButton";
 
 /**
  * Screen 3 — Requirements / applicability.
@@ -299,6 +301,19 @@ export function RequirementsPage() {
                       {row.finding ? <Link to="../review">View finding</Link> : null}
                       {row.finding ? <span aria-hidden="true"> · </span> : null}
                       <Link to="../evidence">Evidence workspace</Link>
+                      <span aria-hidden="true"> · </span>
+                      <AskXportraButton
+                        seed={{
+                          intent: "explain_requirement_state",
+                          ...(isUuidLike(row.requirement_id)
+                            ? { requirementId: row.requirement_id }
+                            : {}),
+                          focus: "requirement",
+                          suggestedText: "Why is this requirement still open?",
+                        }}
+                        label="Ask Xportra"
+                        className="link-button"
+                      />
                     </p>
                   </li>
                 ))}

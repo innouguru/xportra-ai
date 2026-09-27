@@ -5,6 +5,7 @@ import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
 import { AnalysisProvider } from "../../app/AnalysisContext";
+import { ConversationProvider } from "../conversation/ConversationContext";
 import { AnalysisPage } from "./AnalysisPage";
 import type { WorkflowRecord } from "../../types/api";
 
@@ -41,6 +42,7 @@ function renderWithRecord(record: WorkflowRecord = RECORD) {
     <MemoryRouter initialEntries={["/workspace/analysis"]}>
       <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
         <WorkflowProvider>
+          <ConversationProvider>
           <AnalysisProvider>
             <Routes>
               <Route path="/workspace" element={<Outlet />}>
@@ -49,6 +51,7 @@ function renderWithRecord(record: WorkflowRecord = RECORD) {
               </Route>
             </Routes>
           </AnalysisProvider>
+          </ConversationProvider>
         </WorkflowProvider>
       </AuthProvider>
     </MemoryRouter>,

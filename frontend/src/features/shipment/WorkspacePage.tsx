@@ -3,6 +3,8 @@ import { useWorkflow } from "../../app/WorkflowContext";
 import { AppShell } from "../../components/AppShell";
 import { Collapsible, EmptyState, Field, Identifier } from "../../components/StatusBits";
 import { isTerminalState, workflowStateLabel } from "../../lib/workflow";
+import { ConversationPanel } from "../conversation/ConversationPanel";
+import { ConversationProvider } from "../conversation/ConversationContext";
 
 /**
  * Shipment workspace shell: compact identity bar, workflow
@@ -139,7 +141,10 @@ export function WorkspacePage() {
           </NavLink>
         </div>
       </nav>
-      <Outlet />
+      <ConversationProvider>
+        <Outlet />
+        <ConversationPanel />
+      </ConversationProvider>
     </AppShell>
   );
 }

@@ -257,3 +257,83 @@ export interface EvidenceDownloadGrant {
   download_url: string;
   expires_in_seconds: number;
 }
+
+/**
+ * Conversational contract types (mirror
+ * `xportra/api/schemas.py` conversation schemas and the
+ * Phase 10.2 domain vocabulary).
+ *
+ * The frontend sends exactly one allow-listed intent per
+ * turn plus only the context the backend contract
+ * permits: the client-held workflow record in
+ * shipment-aware mode, requirement/evidence identities
+ * when pinned by the entry point, and the information
+ * need for regulatory questions. Tenant identity never
+ * appears here — it comes from authenticated membership.
+ * Responses carry quoted state plus identifier/source
+ * references only — never model internals.
+ */
+
+export type ConversationMode = "shipment_aware" | "knowledge";
+
+export type ConversationIntent =
+  | "explain_requirement_state"
+  | "explain_evidence_gaps"
+  | "explain_finding"
+  | "summarize_shipment_state"
+  | "answer_regulatory_question";
+
+export type ConversationResponseStatus =
+  | "grounded"
+  | "partial"
+  | "refused_unknown";
+
+export interface ConversationMessageRequest {
+  conversation_id: string;
+  mode: ConversationMode;
+  intent: ConversationIntent;
+  user_text: string;
+  workflow?: WorkflowRecord | null;
+  requirement_id?: string | null;
+  evidence_id?: string | null;
+  information_need?: string | null;
+  retrieval_mode?: "semantic" | "lexical" | "hybrid";
+  max_context_characters?: number;
+  top_k?: number | null;
+}
+
+/** Identifier citation for one shipment/compliance claim. */
+export interface ConversationShipmentCitation {
+  kind: string;
+  id: string;
+}
+
+/** One validated regulatory citation with source pointers. */
+export interface ConversationCitationEvidence {
+  chunk_id: string;
+  document_id: string;
+  chunk_index: number;
+  source_id: string;
+  source_type: string;
+  source_location: string | null;
+  document_version: string | null;
+  content_fingerprint: string;
+}
+
+export interface ConversationCitation {
+  label: string;
+  rank_position: number;
+  evidence: ConversationCitationEvidence;
+}
+
+/** Grounded assistant turn: quoted state plus references. */
+export interface ConversationMessageResponse {
+  conversation_id: string;
+  mode: string;
+  intent: string;
+  status: ConversationResponseStatus;
+  summary_text: string;
+  shipment_references: ConversationShipmentCitation[];
+  citations: ConversationCitation[];
+  refusal_reason: string | null;
+}

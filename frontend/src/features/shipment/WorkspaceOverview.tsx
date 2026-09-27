@@ -8,6 +8,7 @@ import {
   Identifier,
   StatusBadge,
 } from "../../components/StatusBits";
+import { AskXportraButton } from "../conversation/AskXportraButton";
 import {
   isTerminalState,
   journeyStepStatuses,
@@ -251,6 +252,17 @@ export function WorkspaceOverview() {
           <StatusBadge value={record.state} tone="neutral" />{" "}
           <span className="state-label">{assessmentLine}</span>{" "}
           <span className="muted">— {workflowStateLabel(record.state)}</span>
+        </p>
+        <p>
+          <AskXportraButton
+            seed={{
+              intent: "summarize_shipment_state",
+              focus: "shipment",
+              suggestedText: "What still needs my attention?",
+            }}
+            label="Ask Xportra about this shipment"
+            className="secondary-button"
+          />
         </p>
       </header>
 

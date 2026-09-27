@@ -5,6 +5,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AnalysisProvider, useAnalysis } from "../../app/AnalysisContext";
 import { AuthProvider } from "../../app/AuthContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
+import { ConversationProvider } from "../conversation/ConversationContext";
 import { WorkspaceOverview } from "./WorkspaceOverview";
 import type { AnalysisReport, WorkflowRecord } from "../../types/api";
 
@@ -46,6 +47,7 @@ function renderOverview(record: WorkflowRecord | null, report: AnalysisReport | 
     <MemoryRouter initialEntries={["/workspace"]}>
       <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
         <WorkflowProvider>
+          <ConversationProvider>
           <AnalysisProvider>
             <Routes>
               <Route path="/workspace" element={<Seed />}>
@@ -60,6 +62,7 @@ function renderOverview(record: WorkflowRecord | null, report: AnalysisReport | 
               </Route>
             </Routes>
           </AnalysisProvider>
+          </ConversationProvider>
         </WorkflowProvider>
       </AuthProvider>
     </MemoryRouter>,
@@ -122,7 +125,11 @@ describe("WorkspaceOverview", () => {
     expect(screen.getByText("Finalized — read-only")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open package" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Review now" })).toBeNull();
-    expect(screen.queryByRole("button")).toBeNull();
+    // The only button is the read-only Ask Xportra entry: asking a
+    // question mutates nothing, so it stays available when closed.
+    const buttons = screen.getAllByRole("button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]).toHaveTextContent("Ask Xportra about this shipment");
   });
 
   it("asks for a shipment when no workflow record exists", () => {

@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
+import { ConversationProvider } from "../conversation/ConversationContext";
 import { GapsPage } from "./GapsPage";
 import type { WorkflowRecord } from "../../types/api";
 
@@ -29,11 +30,13 @@ function renderWithRecord() {
     <MemoryRouter initialEntries={["/workspace/gaps"]}>
       <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
         <WorkflowProvider>
+          <ConversationProvider>
           <Routes>
             <Route path="/workspace" element={<Outlet />}>
               <Route path="gaps" element={<GapsPage />} />
             </Route>
           </Routes>
+          </ConversationProvider>
         </WorkflowProvider>
       </AuthProvider>
     </MemoryRouter>,

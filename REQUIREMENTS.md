@@ -398,12 +398,50 @@ semantics change.
   deployment infrastructure, and unrelated redesign
   are excluded.
 
+## R-10.6: Conversational Frontend MVP (Phase 10.6) — Approved
+
+Phase 10.6 makes the Phase 10.2 conversational backend
+a real user-facing capability. Conversation stays a
+grounded interface over existing capabilities, never a
+decision-maker (ADR-0009 holds). No backend behavior
+changes and no compliance, retrieval, reasoning, or
+workflow semantics change.
+
+- R-10.6.1 (Placement): one shared shipment-scoped
+  side panel reachable from workspace screens; no
+  dedicated chat page; no duplicated conversation
+  implementation across pages.
+- R-10.6.2 (Modes): `shipment_aware` (pinned workflow
+  context from the active shipment, human-labelled,
+  never a workflow ID) and `knowledge` (no shipment
+  context, structurally excluded from the request).
+- R-10.6.3 (Contract): exactly the existing `POST
+  /conversations/messages` endpoint and schemas; one
+  allow-listed intent per turn; tenant identity from
+  authenticated membership only.
+- R-10.6.4 (Trust): shipment claims keep identifier
+  citations, regulatory claims keep validated source
+  references, refusals render honestly; model prose is
+  never presented as deterministic system state.
+- R-10.6.5 (Read-only): no upload, record, analysis,
+  finalize, applicability, or state change is
+  reachable from conversation; no tool calling and no
+  proposal/confirmation execution. OQ-C1/C2 remain
+  blocked; OQ-C3 avoidance, OQ-C4 out-of-scope, and
+  OQ-C5 deferral hold unchanged.
+- R-10.6.6 (Out of scope): persistence, transcript
+  store, migration, tool calling, mutations,
+  proposal/confirmation cards, voice, notifications,
+  analytics, multi-shipment comparison, provider
+  migration, deployment changes, backend redesign,
+  in-chat upload, and unrelated redesign are excluded.
+
 ## R-1..R-10: Future Phases — Partially Scoped
 
 Phases 1–10 (see `ROADMAP.md`) have no approved detailed functional
 requirements at this time, except for Phase 10.1 (`R-10.1` above),
 Phase 10.2 (`R-10.2` above), Phase 10.4 (`R-10.4` above),
-and Phase 10.5 (`R-10.5` above).
+Phase 10.5 (`R-10.5` above), and Phase 10.6 (`R-10.6` above).
 Requirements for each remaining phase will be added here
 when defined and approved. In particular, no regulatory requirements and
 no detailed product functionality beyond the sections above have been

@@ -14,6 +14,8 @@ import {
   StatusBadge,
 } from "../../components/StatusBits";
 import { gapKindLabel, readinessTone } from "../../lib/evidence";
+import { isUuidLike } from "../../lib/conversation";
+import { AskXportraButton } from "../conversation/AskXportraButton";
 
 /**
  * Screen 5 — Evidence gaps and case readiness.
@@ -146,6 +148,19 @@ export function GapsPage() {
                     <Link to="../evidence">Upload evidence</Link>
                     <span aria-hidden="true"> · </span>
                     <Link to="../additional-evidence">Supply requested evidence</Link>
+                    <span aria-hidden="true"> · </span>
+                    <AskXportraButton
+                      seed={{
+                        intent: "explain_evidence_gaps",
+                        ...(isUuidLike(gap.requirement_id)
+                          ? { requirementId: gap.requirement_id }
+                          : {}),
+                        focus: "gap",
+                        suggestedText: "What information is needed here?",
+                      }}
+                      label="Ask Xportra"
+                      className="link-button"
+                    />
                   </p>
                 </li>
               ))}

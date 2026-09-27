@@ -18,6 +18,7 @@ import {
 } from "../../components/StatusBits";
 import { readinessTone } from "../../lib/evidence";
 import { isTerminalState } from "../../lib/workflow";
+import { AskXportraButton } from "../conversation/AskXportraButton";
 
 /**
  * Screen 6 — Analysis run (first run and re-runs).
@@ -153,6 +154,15 @@ export function AnalysisPage() {
           >
             {pending === "coverage" ? "Checking…" : "Check evidence coverage"}
           </button>
+          <AskXportraButton
+            seed={{
+              intent: "summarize_shipment_state",
+              focus: "shipment",
+              suggestedText: "What changed after the last analysis?",
+            }}
+            label="Ask Xportra"
+            className="secondary-button"
+          />
         </div>
         {coverage ? (
           <dl className="field-grid">

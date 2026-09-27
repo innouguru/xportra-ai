@@ -396,6 +396,36 @@ from repr) is the only behavior-neutral change.
 - No active task remains. Next phases need
   `REQUIREMENTS.md` entries and scheduling via `tasks/`.
 
+## Phase 10.6 — Conversational Frontend MVP (Complete, 2026-09-27)
+
+- Frontend-only follow-on to the Phase 10.2 backend
+  (no backend file changed): one shared Ask Xportra
+  side panel mounted in the workspace shell, with
+  entry points on Overview, Requirements, Gaps,
+  Findings, Evidence, and Analysis; `shipment_aware`
+  and structurally separated `knowledge` modes; exact
+  `POST /conversations/messages` contract; identifier
+  and validated-source references rendered under an
+  explanation/record split with honest refusals;
+  read-only by construction (no mutations, tools, or
+  proposal cards); drawer-to-bottom-sheet responsive
+  structure; dialog semantics with focus management
+  and live regions.
+- Verification: focused 24/24 (all 16 required areas);
+  six existing page suites updated only with the
+  provider harness plus one same-strictness assertion
+  refinement; full frontend suite 30 files / 181
+  tests passing (baseline 27/157); `npx tsc --noEmit`
+  clean; `npm run build` succeeds. Backend untouched
+  (contract re-read, no defect); live services and
+  browser engine not available (no pixel claim). No
+  packages installed. Task record:
+  `tasks/completed/phase-10-6-conversational-frontend-mvp.md`;
+  implementation record:
+  `docs/phases/phase-10-6-conversational-frontend-mvp.md`.
+- No active task remains. Next phases need
+  `REQUIREMENTS.md` entries and scheduling via `tasks/`.
+
 ## Post-Phase-10 Product & Scope Audit (Complete, 2026-09-27)- Documentation-only audit at checkpoint `9249544`
   (origin/main aligned; no behavior changed; no phase
   started). Findings:

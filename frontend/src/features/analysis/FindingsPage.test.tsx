@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
 import { AnalysisProvider, useAnalysis } from "../../app/AnalysisContext";
+import { ConversationProvider } from "../conversation/ConversationContext";
 import { FindingsPage } from "./FindingsPage";
 import type { AnalysisFinding, AnalysisReport, WorkflowRecord } from "../../types/api";
 
@@ -88,11 +89,13 @@ function renderWithReport(report: AnalysisReport | null) {
     <MemoryRouter initialEntries={["/workspace/review"]}>
       <AuthProvider>
         <WorkflowProvider>
+          <ConversationProvider>
           <AnalysisProvider>
             <Routes>
               <Route path="/workspace/review" element={<Seed />} />
             </Routes>
           </AnalysisProvider>
+          </ConversationProvider>
         </WorkflowProvider>
       </AuthProvider>
     </MemoryRouter>,
