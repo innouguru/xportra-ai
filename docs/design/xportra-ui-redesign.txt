@@ -1,0 +1,333 @@
+XPORTRA AI — VISUAL/PRODUCT REDESIGN SPECIFICATION
+Implementation handoff document. Companion file: xportra-ui-redesign.html (visual prototype).
+
+
+A. DESIGN PHILOSOPHY
+=====================
+Xportra is a compliance workspace, not a dashboard or a chatbot. Every screen should answer,
+in order: What is happening with this shipment? Why does it matter? What's missing? What do
+I do next? The interface should feel like a calm, well-organized case file that Xportra keeps
+on your behalf — not a product that is constantly reminding you it's powered by AI.
+
+Two decisions drive the whole system:
+1. Replace card-grid composition with a ledger/worklist composition. Cards imply "independent
+   objects to browse." A shipment's requirements aren't independent — they're line items in
+   one case file. Rows, dividers, and typographic hierarchy communicate that relationship;
+   cards don't.
+2. Say things in plain English. Internal states (UNKNOWN, PENDING, APPLICABLE) are translated
+   to sentences a non-compliance-expert exporter would say out loud ("Xportra is still
+   checking this," "We need more information before we can determine this").
+
+
+B. VISUAL LANGUAGE
+=====================
+Color (4-6 named base values, use as CSS custom properties):
+  --bg            #0D1512   deep green-black, primary background
+  --surface       #131C18   one step up, used for hover states and the briefing panel
+  --surface-raised#17211C   active/selected surface (sidebar active link)
+  --border-soft   #1D2721   hairline dividers between rows/sections
+  --border        #253128   slightly stronger border (inputs, drawer edge)
+  --text          #EDEBE1   primary off-white text
+  --text-dim      #A8B3A9   secondary text (descriptions, meta)
+  --text-faint    #6E796F   tertiary text (hints, timestamps, eyebrows)
+  --lime          #C7F464   the ONE accent color — primary buttons, active tab, links that
+                             mean "go do the important thing." Never used as a background fill
+                             for large areas, never used for status.
+
+Semantic colors (small dots/text only, never large badges/pills):
+  --satisfied  #7FBF8C   soft green
+  --attention  #E0A94C   amber
+  --waiting    #8B96A3   slate grey — not yet started / blocked on user input
+  --checking   #A796D9   soft violet — Xportra is actively determining this
+  --error      #D9776B   muted red-clay — reserved for hard failures, used sparingly
+
+Rule: lime = "act on this." Semantic colors = "this is the state of a requirement." They are
+never combined — a status is never rendered in lime, and the accent button is never used for
+status communication.
+
+Typography:
+  Display/identity — 'Source Serif Pro' (or Source Serif 4), weight 600/700. Used only for:
+    page H1s (shipment title, "Your shipments", hero headline, drawer requirement name).
+    The serif signals "this is a record," reinforcing the case-file metaphor.
+  UI/body — 'Inter', weights 400/500/600. Used for everything else: nav, buttons, descriptions,
+    meta text, form labels, table/row content.
+  Do not introduce a third typeface. Do not use a monospace face for labels.
+  Type scale: 26px (page H1) / 19-22px (section H1 in app chrome) / 15-16px (row/item name) /
+    13-13.5px (body/description) / 12-12.5px (meta, eyebrows, hints). Line-height 1.5-1.65 for
+    paragraph text, 1.2-1.3 for headings.
+  No tracked-out ALL-CAPS labels anywhere. Eyebrow-style labels (e.g. "Shipment," "Requirement")
+    use sentence case at 12-12.5px in --text-faint, not caps.
+
+Spacing, surfaces, borders:
+  Base unit 4px. Section rhythm uses 24/32/36/40px vertical gaps, not fixed card padding.
+  Hairline 1px borders (--border-soft) as row/section dividers are the primary structural
+    device — not boxes. A component gets an actual border+radius only when it needs to be
+    visually separated from a flowing list (the attention block, the briefing panel, form
+    inputs, the drawer).
+  Radius: 3px for inputs/buttons/chips, 6px for the few genuine panels (attention block,
+    briefing). Nothing larger. No pill-shaped status badges.
+  Shadows: none in the base UI. The drawer/modal gets a soft shadow only via the dark overlay
+    behind it, not a box-shadow on light card edges.
+
+Icons: minimal line icons (stroke, not filled), used only in the sidebar nav and evidence
+  rows. Not decorative — every icon labels a specific function.
+
+Motion: respect prefers-reduced-motion. The only animated moments are: drawer slide-in/out
+  (200ms ease), sidebar open/close on mobile (200ms). No hover-lift on rows, no fade-up
+  entrances on scroll, no skeleton shimmer beyond a plain "loading" state if needed.
+
+Status treatment: a small 7-9px dot + a short phrase in the matching semantic color, placed
+  inline with the item name. No pills, no icon+text+background badges. Reserve visual weight
+  for the item itself, not its status chrome.
+
+
+C. PUBLIC LANDING PAGE
+=====================
+Navigation: wordmark "Xportra." (period in lime) on the left. Right side: "Sign In" (text
+  link) and "Get Started" (primary lime button) only. No other nav items, no "Start a
+  Shipment" CTA anywhere in the public nav or hero.
+  Get Started → /signup
+  Sign In → /signin
+
+Hero: one natural sentence as H1 (serif, ~28-46px depending on viewport, clamp()), e.g.
+  "Xportra tells you exactly what your shipment needs to clear export compliance, and why."
+  Do not force line breaks; let it wrap naturally at viewport width. One supporting paragraph
+  (max-width ~560px) in --text-dim. Two CTAs below: "Get Started" (primary) and "Sign In"
+  (ghost) — same destinations as nav. Below the CTAs, a quiet three-item "strip" (not cards)
+  separated by a hairline top border, each item a short label + one sentence, communicating
+  concretely what the product does (paperwork mapped to product/destination, nothing assumed,
+  one place per shipment). No stats, no logos, no testimonials.
+
+Sections below hero: one section, "Three things, per shipment," presented as three text
+  columns (not cards) — Product & destination / Requirements / Evidence — each a short label,
+  a 3-5 word heading, one sentence. This replaces any feature-grid-of-cards pattern.
+
+Footer: copyright line left, Privacy/Terms/Contact links right. No newsletter signup, no
+  social icons, no sitemap columns.
+
+Responsive: nav stays two-item; hero font drops via clamp(); the three-column section stacks
+  to one column under ~860px.
+
+
+D. DASHBOARD ("Your shipments")
+=====================
+Page title is literally "Your shipments," not "Dashboard."
+Hierarchy, top to bottom:
+  1. "Needs your attention" — a single bordered panel (amber left border) listing shipments
+     with a blocking issue. Each row: shipment name, one-sentence reason, a "Review →" or
+     "Continue →" link. If empty, hide the whole block rather than showing an empty state.
+  2. "Recent shipments" — a compact worklist (dot + name + route + one-line state), NOT cards.
+     Shows the last 4-6 shipments the user touched, most recent first. Each row links straight
+     into the shipment workspace (or new-shipment flow if incomplete).
+  3. A "View all" link to the full archive.
+Explicitly excluded: KPI tiles, compliance percentage, charts/trend graphs, AI insight panels,
+  decorative statistics of any kind.
+Primary action ("New shipment") lives in the top bar, top-right, not as a hero button on the
+  page body.
+
+
+E. NEW SHIPMENT
+=====================
+Single centered column, max-width ~560px, not a full-width form.
+Step 1 fields, always visible: "What are you exporting?" (text) and "Where is it going?"
+  (text/destination). These two are the only fields shown initially.
+Adaptive behavior: once product + destination are entered, if (and only if) a specific
+  requirement depends on further detail (e.g. HS code, processing state, intended use), show
+  those additional fields in a visually distinct inset block below ("Xportra needs one more
+  detail…"), not by expanding into a long generic form. Each adaptive field may offer an
+  "I don't know" link — selecting it must leave that field explicitly marked unknown, never
+  auto-filled or silently defaulted.
+A shipment with unresolved required fields is an "Incomplete" shipment and must be labeled as
+  such everywhere it's referenced (dashboard, archive) until resolved.
+CTA: "Continue" (primary), which moves into the shipment workspace once minimum fields are
+  present.
+
+
+F. SHIPMENT WORKSPACE
+=====================
+This is the core screen. Vertical flow, top to bottom, no equally-weighted card grid:
+  1. Identity — eyebrow "Shipment," serif H1 combining product + destination
+     ("Frozen mango purée → European Union"), meta line (HS code, start date).
+  2. Current state — one dot + one sentence describing what's true right now, plus one
+     supporting sentence. This is the single most important line on the page.
+  3. Xportra's briefing — a quiet panel (surface background, no border) with 2-4 sentences
+     of plain-English synthesis: what applies to this shipment and why, written as if a
+     knowledgeable colleague explained it once, not a running log.
+  4. "What needs attention" — requirement ledger rows, but only the ones blocking progress.
+     Omit this whole section if none exist.
+  5. "Requirements" — the full ledger (see section G), all requirements for the shipment.
+  6. Evidence/documents are not a separate top-level section — they attach to the requirement
+     they support and open via the requirement (see section H). Do not create a parallel
+     "Documents" list that duplicates the requirements list.
+
+
+G. REQUIREMENTS (ledger treatment)
+=====================
+Each requirement is a row, not a card: hairline top divider, no border box, no shadow.
+Row anatomy:
+  - status dot (color = semantic state)
+  - requirement name (15px, semibold) — plain language, e.g. "Phytosanitary certificate"
+  - one-line "why" sentence directly under the name, in --text-dim
+  - right-aligned short state phrase in the matching semantic color ("Satisfied," "Checking,"
+    "Doesn't match," "Needs more information") — never "Applicability: UNKNOWN" or other raw
+    internal state strings
+  - optional third line: current evidence on file, in --text-faint, only if there's something
+    to show
+Clicking a row opens the requirement detail (drawer on desktop, full-screen sheet on mobile)
+  which expands: why it's required (with a "view source" disclosure, collapsed by default) →
+  current state, in a full sentence → evidence on file (or upload) → what to do next. This
+  encodes Requirement → Evidence needed → Evidence provided → Verification result without a
+  diagram or extra chrome — it's just the reading order of the drawer.
+Unknown/pending states must always read as a sentence ("Xportra is still checking this
+  requirement" / "We need more information before we can determine this"), never as a raw
+  label.
+
+
+H. DOCUMENTS / EVIDENCE
+=====================
+No standalone document-manager screen or nav item. Evidence lives inside the requirement
+  drawer it supports.
+Drawer/sheet must show, per requirement: the file name of evidence provided, a one-line
+  statement of what Xportra found relative to the requirement (satisfies it / doesn't satisfy
+  it and why / needs a specific replacement), and an upload control for a new or replacement
+  file. Do not depict OCR/extraction/verification detail beyond what the current system
+  actually performs — if verification is manual or not yet automated, say so plainly rather
+  than implying automatic extraction.
+Desktop: right-side drawer, 460px, overlay dims the workspace behind it, closes on Escape,
+  overlay click, or the "← Back to shipment" link. Focus moves into the drawer on open and
+  returns to the triggering row on close.
+Mobile: full-screen sheet (not a bottom sheet), same content, same close affordances.
+
+
+I. ARCHIVE / VIEW SHIPMENTS
+=====================
+One search field + filter chips (All / Active / Incomplete / Completed) — chips, not a
+  dropdown, since there are only four states.
+List grouped under quiet section labels (Active, Incomplete, Completed) reflecting the
+  conceptual hierarchy Active → Incomplete → Completed. Each row: dot, name, route, date —
+  same visual language as the dashboard worklist, so the two screens feel continuous.
+Completed rows are visually quieter (dimmer name color) to read as historical at a glance.
+Desktop may use this row-list as a lightweight table (aligned columns); mobile stacks name/
+  route/date vertically within the row without introducing a card border.
+
+
+J. HISTORICAL REPORT (completed shipment)
+=====================
+A slim top banner states plainly: "This shipment is complete and read-only. It's kept as a
+  compliance record." — always visible, not dismissible.
+No edit affordances anywhere on the page: no "reopen," no editable fields, no upload zones.
+Content: shipment identity, a short final-assessment paragraph (replacing the live "briefing"
+  language with past tense), and the full requirements ledger showing final satisfied state
+  for each. Do not fabricate timestamps, scores, or metadata the underlying system doesn't
+  actually produce (e.g. no invented "compliance score," no fake audit trail entries beyond
+  what's real).
+
+
+K. SETTINGS
+=====================
+Secondary, quiet layout: left-hand text nav (Account / Organization / Notifications /
+  Security) + right-hand content panel of label/value rows with an "Edit" or "Change" action.
+  No visual competition with shipment work — no colored panels, no large headings beyond the
+  page H1. Only represent settings the real system supports; label anything not yet
+  functional honestly rather than implying it works.
+
+
+L. RESPONSIVE BEHAVIOR
+=====================
+Desktop-first, breakpoint around 860px for the main collapse.
+  - Sidebar becomes an off-canvas drawer triggered by a hamburger in the top bar; overlay
+    behind it, closes on outside click or Escape.
+  - Dashboard/archive rows drop the secondary "route" column on narrow widths rather than
+    truncating illegibly; date/state remain.
+  - Requirement drawer becomes a full-screen sheet.
+  - Requirement "grids" (there are none by design — they're already rows) simply keep
+    stacking; no accordion needed since rows are already vertically compact. If a future
+    screen introduces a genuine grid, convert it to a single-column accordion under 860px.
+  - Landing three-column section stacks to one column.
+  - No bottom navigation bar at any width. Primary nav is always the sidebar (or its
+    off-canvas mobile form).
+  - Maintain minimum 44px touch targets for row/button tap areas on mobile even though visual
+    row height is compact.
+
+
+M. ACCESSIBILITY
+=====================
+  - Semantic HTML: nav/main/aside landmarks, real heading hierarchy per screen (one H1),
+    buttons for actions vs. anchors for navigation.
+  - Full keyboard operability: all rows, chips, and the drawer are reachable and operable via
+    keyboard; visible focus ring (2px, lime, 2px offset) on every interactive element.
+  - Drawer/sheet: trap focus while open, return focus to the trigger on close, close on
+    Escape, announce via aria-modal/role=dialog.
+  - Status is never color-only: every status dot is paired with a text phrase.
+  - Respect prefers-reduced-motion by disabling the drawer slide and any other transition.
+  - Color contrast: body text (--text, --text-dim) against --bg/--surface meets WCAG AA at
+    the sizes specified; verify semantic colors against --bg specifically since amber/violet
+    can run lower-contrast than green/red at small sizes — adjust luminance if needed rather
+    than relying on the hex values above verbatim.
+  - Form fields (new shipment, settings) have programmatically associated labels, not
+    placeholder-only labeling.
+
+
+N. EXISTING-CODE MAPPING
+=====================
+Note: the source bundle referenced in the brief was not included in the material provided to
+this design pass — this section states the general disposition each current area should have;
+confirm exact current component/route names against the real repository before implementing.
+
+  KEEP (route/data logic, redesign presentation only):
+    - Shipment CRUD and state machine
+    - Requirement evaluation/determination logic
+    - Evidence upload + storage
+    - Auth (signup/signin) flows
+    - Settings data (account/org/notifications/security), where real
+
+  VISUALLY REDESIGN (same function, new presentation per this spec):
+    - Landing hero and public nav
+    - Dashboard layout (cards → worklist + attention block)
+    - Requirement display (card grid → ledger rows + drawer)
+    - Document/evidence UI (standalone panel → embedded in requirement drawer)
+    - Archive/list view (generic table → grouped worklist)
+    - Completed-shipment view (→ read-only historical report banner + same ledger, past tense)
+
+  SIMPLIFY:
+    - Any multi-step "new shipment" wizard with fixed steps → adaptive two-field start
+    - Status representation (badges/pills → dot + phrase)
+
+  REMOVE FROM PRIMARY NAVIGATION (may remain as routes reachable from within a shipment):
+    - Top-level "Documents" nav item
+    - Top-level "Requirements" nav item
+    - Top-level "Evidence" nav item
+  Primary authenticated nav is exactly: Dashboard, View Shipments, account/settings area.
+
+  DO NOT REMOVE OR CHANGE:
+    - Any backend/API contracts, unless a specific frontend need in this spec genuinely
+      requires new data the backend doesn't yet expose — flag such cases explicitly rather
+      than silently working around them.
+
+
+O. IMPLEMENTATION PRINCIPLES
+=====================
+  1. Do not introduce fake data, fake metrics, fake timestamps, or fake verification detail
+     anywhere in the shipped product. The prototype HTML uses static example data for
+     demonstration only — none of it should be treated as real content to ship.
+  2. Do not imply functionality that doesn't exist (OCR, automatic extraction, persistence,
+     scoring) unless it is genuinely implemented.
+  3. Preserve real data/state boundaries — a requirement's true state (satisfied / attention /
+     checking / waiting / error) must map 1:1 to the actual backend state; the plain-English
+     phrasing is a presentation layer over that state, not a new state model.
+  4. Preserve existing routes where reasonably possible; this is a visual/IA redesign, not a
+     URL redesign, except where section N calls for removing nav-level items (the underlying
+     routes can still exist for deep linking).
+  5. Avoid duplicate mental models — evidence must not have both an embedded view (in the
+     requirement drawer) and a separate standalone "documents" screen doing the same job.
+  6. Avoid card proliferation — before adding a bordered/shadowed box anywhere, check whether
+     a row + divider communicates the same relationship without adding a container.
+  7. Preserve completed-shipment immutability at the data layer, not just the UI layer — the
+     read-only banner is a reflection of real immutability, not a cosmetic restriction with
+     an editable form underneath.
+  8. Keep the lime accent reserved for primary actions/links; if a future screen needs a new
+     "primary" affordance, use lime — don't introduce a second accent color.
+  9. When a screen doesn't have real content yet (e.g. no shipments), design a plain,
+     direction-giving empty state in the interface's own voice ("You don't have any shipments
+     yet. Start one to see what it needs.") rather than omitting the state or using a
+     generic illustration.

@@ -1,10 +1,18 @@
 /* Xportra AI — export compliance intelligence workspace.
  *
- * Phase 9.5 product refinement. Warm-neutral paper, charcoal
- * ink, one deep-teal accent; editorial document hierarchy
- * carried by typography, rules and whitespace — not by
- * boxes. Status is never color alone: badges, flags and
- * explicit state text accompany every tone.
+ * Phase 10.7B visual system. Dark near-black foundation,
+ * off-white typography, one electric-lime brand accent;
+ * editorial hierarchy carried by typography, rules and
+ * whitespace — not by boxes. Status is never color
+ * alone: badges, flags and explicit state text
+ * accompany every tone.
+ *
+ * Token contract (queried by tests — do not rename):
+ * --background, --surface, --surface-elevated,
+ * --border, --text-primary, --text-secondary,
+ * --text-muted, --brand, --brand-hover,
+ * --brand-foreground, --success, --warning, --error,
+ * --info.
  *
  * Class contract (queried by tests — do not rename):
  * .finding-card, .finding-section, .session-dot,
@@ -13,30 +21,49 @@
  */
 
 :root {
-  --paper: #faf8f3;
-  --surface: #ffffff;
-  --surface-warm: #f4efe4;
-  --ink: #1c1917;
-  --ink-soft: #44403c;
-  --muted: #78716c;
-  --line: #e7e0d3;
-  --line-strong: #cfc4ab;
-  --rule-dark: #292524;
-  --accent: #0e6e62;
-  --accent-deep: #0a544b;
-  --accent-ink: #ffffff;
-  --accent-wash: #e6f2ef;
-  --info: #1d4ed8;
-  --info-wash: #e8effc;
-  --attention: #b45309;
-  --attention-wash: #fef3e2;
-  --error: #b91c1c;
-  --error-wash: #fdecec;
-  --success: #166534;
-  --success-wash: #e9f5ec;
+  /* Foundations: near-black base, elevated dark surfaces. */
+  --paper: #0b0e0c;
+  --background: #0b0e0c;
+  --surface: #131613;
+  --surface-warm: #1a201b;
+  --surface-elevated: #20271f;
+  /* Typography: off-white primary, muted secondaries. */
+  --ink: #f2f4ef;
+  --text-primary: #f2f4ef;
+  --ink-soft: #c9cec6;
+  --text-secondary: #c9cec6;
+  --muted: #9aa39c;
+  --text-muted: #9aa39c;
+  /* Borders: subtle structural lines on dark. */
+  --line: #232b24;
+  --border: #232b24;
+  --line-strong: #39443b;
+  --rule-dark: #4a554c;
+  /* Brand: electric lime, used deliberately for identity
+   * and primary actions only — never for compliance
+   * state, which keeps its own semantic colors. */
+  --accent: #a3e635;
+  --brand: #a3e635;
+  --accent-deep: #8fd41f;
+  --brand-hover: #bef264;
+  --accent-ink: #141a08;
+  --brand-foreground: #141a08;
+  --accent-wash: #1d2614;
+  /* Semantic states: each keeps text + indicator
+   * treatment, never color alone, and stays visually
+   * distinct from the brand accent. */
+  --info: #8fb3f5;
+  --info-wash: #16233d;
+  --attention: #e8a04c;
+  --warning: #e8a04c;
+  --attention-wash: #2b1f0e;
+  --error: #f08080;
+  --error-wash: #2e1414;
+  --success: #7bc98a;
+  --success-wash: #122619;
   --radius: 6px;
   --radius-small: 4px;
-  --shadow: 0 1px 2px rgb(28 25 23 / 0.06);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.5);
   --font-body: "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-display: Charter, "Bitstream Charter", "Sitka Text", Cambria, Georgia, serif;
   --control-height: 2.75rem;
@@ -90,6 +117,16 @@ p {
   margin: 0.55rem 0;
 }
 
+/* Content links default to the readable brand green;
+ * navigational and button links keep their own rules. */
+a {
+  color: var(--accent-deep);
+}
+
+a:hover {
+  color: var(--brand);
+}
+
 /* Small-caps kickers carry the document hierarchy. */
 .eyebrow,
 .kicker {
@@ -121,7 +158,7 @@ p {
   left: -9999px;
   top: 0;
   background: var(--ink);
-  color: #fff;
+  color: var(--paper);
   padding: 0.5rem 1rem;
   z-index: 100;
 }
@@ -756,15 +793,15 @@ summary:focus-visible {
 }
 
 .primary-button {
-  background: var(--accent-deep);
-  color: var(--accent-ink);
-  border: 1px solid var(--accent-deep);
+  background: var(--brand);
+  color: var(--brand-foreground);
+  border: 1px solid var(--brand);
   font-weight: 700;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--brand-hover);
+  border-color: var(--brand-hover);
 }
 
 .primary-button:disabled {
@@ -1853,7 +1890,7 @@ h4 {
 .conversation-scrim {
   position: absolute;
   inset: 0;
-  background: rgb(28 25 23 / 0.32);
+  background: rgb(0 0 0 / 0.55);
   pointer-events: auto;
 }
 
@@ -1937,7 +1974,7 @@ h4 {
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: var(--surface-elevated);
 }
 
 .conversation-message--user {
@@ -2011,4 +2048,158 @@ h4 {
   .conversation-panel {
     transition: none;
   }
+}
+
+/* ------------------------------------------------------------------
+ * Phase 10.7B — sidebar application shell (wide screens).
+ *
+ * Below 1100px the horizontal wrapping topbar is unchanged.
+ * DOM order, roles, and labels are identical in both
+ * layouts; only placement changes.
+ * ------------------------------------------------------------------ */
+
+@media (min-width: 1100px) {
+  .shell {
+    display: grid;
+    grid-template-columns: 15.5rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 1.1rem;
+    border-bottom: none;
+    border-right: 2px solid var(--rule-dark);
+    padding: 1.25rem 1rem;
+  }
+
+  .primary-nav,
+  .shipment-nav {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.15rem;
+  }
+
+  .primary-nav a {
+    border-bottom: none;
+    border-left: 3px solid transparent;
+    margin-bottom: 0;
+    border-radius: var(--radius-small);
+    padding: 0.5rem 0.75rem;
+  }
+
+  .primary-nav a.active {
+    border-left-color: var(--brand);
+    background: var(--accent-wash);
+    color: var(--ink);
+  }
+
+  .shipment-nav {
+    flex-basis: auto;
+    border-top: 1px solid var(--line);
+    padding-top: 0.75rem;
+  }
+
+  .shipment-nav a {
+    border-bottom: none;
+    border-left: 3px solid transparent;
+    border-radius: var(--radius-small);
+    padding: 0.4rem 0.75rem;
+  }
+
+  .shipment-nav a.active {
+    border-left-color: var(--brand);
+  }
+
+  .session-area {
+    margin-left: 0;
+    margin-top: auto;
+    flex-direction: column;
+    align-items: stretch;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--line);
+  }
+}
+
+/* ------------------------------------------------------------------
+ * Phase 10.7A — product information architecture.
+ *
+ * Landing hero, tab selected-state (mirrors the pressed
+ * chip treatment), shipment route line. Everything else
+ * reuses the existing system; no new visual language.
+ * ------------------------------------------------------------------ */
+
+.chip[aria-selected="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+/* ------------------------------------------------------------------
+ * Phase 10.7B — landing hero composition.
+ * ------------------------------------------------------------------ */
+
+.landing-hero {
+  padding: 2.5rem 0 1rem;
+}
+
+.landing-display {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 5vw + 1rem, 3.9rem);
+  line-height: 1.08;
+  letter-spacing: 0;
+  font-weight: 600;
+  margin: 0.4rem 0 0.9rem;
+  max-width: 20ch;
+}
+
+.landing-hero .lede {
+  font-size: 1.12rem;
+}
+
+.landing-meta {
+  list-style: none;
+  margin: 1.1rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.landing-meta > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.landing-meta > li::before {
+  content: "";
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--brand);
+  flex-shrink: 0;
+}
+
+.landing-hero {
+  max-width: var(--measure);
+}
+
+.landing-hero .action-row {
+  margin-top: 1.25rem;
+}
+
+.overview-route {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  margin: 0.15rem 0 0;
+  color: var(--ink-soft);
 }

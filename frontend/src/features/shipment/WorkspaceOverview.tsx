@@ -15,6 +15,7 @@ import {
   workflowStateLabel,
   type StepStatus,
 } from "../../lib/workflow";
+import { listShipments, shipmentDisplayName } from "../../lib/shipments";
 
 /**
  * Screen 0 — Shipment overview (command center).
@@ -79,7 +80,7 @@ export function WorkspaceOverview() {
         title="No active shipment"
         body="Open a compliance case first."
         action={
-          <Link className="primary-button" to="/">
+          <Link className="primary-button" to="/start">
             Start a new shipment
           </Link>
         }
@@ -89,6 +90,8 @@ export function WorkspaceOverview() {
 
   const closed = isTerminalState(record.state);
   const journey = journeyStepStatuses(record.state);
+  const shipmentEntry =
+    listShipments().find((item) => item.caseId === record.case_id) ?? null;
   const shortReference = record.shipment_id
     ? `${record.shipment_id.slice(0, 8)}…`
     : "Unbound shipment";
@@ -97,6 +100,29 @@ export function WorkspaceOverview() {
     : record.state === "review_required"
       ? "Assessment in review"
       : "Assessment in progress";
+
+  /**
+   * Next action, derived deterministically from client-held
+   * process state only. Each target is an existing route;
+   * nothing here judges the shipment.
+   */
+  const nextAction = closed
+    ? { label: "Open assessment package", to: "package", detail: "The finalized package stays readable." }
+    : record.state === "created" || record.state === "information_provided"
+      ? { label: "Record shipment information", to: "info", detail: "Establish the facts this case is built on." }
+      : record.state === "evidence_pending"
+        ? { label: "Supply evidence", to: "documents", detail: "Upload and supply documents so analysis can consider them." }
+        : record.state === "applicability_determined"
+          ? { label: "Review requirements", to: "requirements", detail: "Confirm what applies before analysis runs." }
+          : record.state === "additional_evidence_requested"
+            ? { label: "Supply requested evidence", to: "documents", detail: "Provide what was flagged open, then re-run analysis." }
+            : record.state === "reanalysis_required"
+              ? { label: "Re-run analysis", to: "assessment", detail: "New evidence is recorded — running again is your decision." }
+              : record.state === "analysis_available"
+                ? { label: "Review findings", to: "assessment", detail: "Read what the latest round established." }
+                : record.state === "review_required"
+                  ? { label: "Continue to final review", to: "assessment", detail: "Findings are waiting for review." }
+                  : { label: "Open documents", to: "documents", detail: "Continue where the workflow left off." };
 
   const areas: AreaState[] = [
     {
@@ -248,6 +274,9 @@ export function WorkspaceOverview() {
       <header className="overview-identity">
         <p className="page-kicker">Export shipment</p>
         <h2 className="overview-reference">{shortReference}</h2>
+        {shipmentEntry ? (
+          <p className="overview-route">{shipmentDisplayName(shipmentEntry)}</p>
+        ) : null}
         <p className="overview-state">
           <StatusBadge value={record.state} tone="neutral" />{" "}
           <span className="state-label">{assessmentLine}</span>{" "}
@@ -282,6 +311,59 @@ export function WorkspaceOverview() {
             </li>
           ))}
         </ol>
+      </section>
+
+      <section aria-label="Next action">
+        <h3 className="overview-heading">Next action</h3>
+        <ul className="attention-list">
+          <li className="attention-item attention-item--neutral">
+            <div>
+              <p className="attention-item__title">{nextAction.label}</p>
+              <p className="muted">{nextAction.detail}</p>
+            </div>
+            <Link className="secondary-button" to={nextAction.to}>
+              {nextAction.label}
+            </Link>
+          </li>
+        </ul>
+      </section>
+
+      <section aria-label="Shipment summary">
+        <h3 className="overview-heading">Shipment summary</h3>
+        <dl className="field-grid">
+          <Field label="Open requirements">
+            {record.open_requirements.length === 0 ? (
+              <span className="muted">None flagged open</span>
+            ) : (
+              <span>
+                {record.open_requirements.length} flagged open —{" "}
+                <Link to="requirements">Review requirements</Link>
+              </span>
+            )}
+          </Field>
+          <Field label="Documents supplied">
+            {record.supplied_evidence_ids.length === 0 ? (
+              <span className="muted">
+                None yet — <Link to="documents">Open documents</Link>
+              </span>
+            ) : (
+              <span>
+                {record.supplied_evidence_ids.length} supplied —{" "}
+                <Link to="documents">Open documents</Link>
+              </span>
+            )}
+          </Field>
+          <Field label="Analysis rounds">
+            {record.rounds.length === 0 ? (
+              <span className="muted">None yet</span>
+            ) : (
+              <span>
+                {record.rounds.length} recorded —{" "}
+                <Link to="assessment">Open assessment</Link>
+              </span>
+            )}
+          </Field>
+        </dl>
       </section>
 
       <section aria-label="Attention">

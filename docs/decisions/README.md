@@ -4,7 +4,7 @@ This directory holds Architecture Decision Records. Per `INVARIANTS.md`,
 any change to structure, boundaries, data flow, storage, or cross-cutting
 concerns requires an ADR here **before** implementation.
 
-- Status: 11 decisions recorded as of 2026-09-27.
+- Status: 12 decisions recorded as of 2026-09-28.
 - Naming: `ADR-0001-short-title.md`, incrementing.
 - Each ADR must record: context, decision, alternatives considered,
   consequences, and linked requirements/tasks.
@@ -22,3 +22,4 @@ concerns requires an ADR here **before** implementation.
 - `ADR-0009-conversational-boundary.md`
 - `ADR-0010-conversational-backend-foundation.md`
 - `ADR-0011-evidence-upload-ingestion-boundary.md`
+- `ADR-0012-authenticated-shell-restructure.md`

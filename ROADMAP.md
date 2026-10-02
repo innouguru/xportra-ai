@@ -54,7 +54,49 @@ active-dir mirrors were reconciled on 2026-09-27
 (see commit history). This note records the gap rather
 than inventing records.
 
-No phase beyond the above is scoped or started.
-Detailed scope for any future phase will be recorded in
-`REQUIREMENTS.md` and decomposed into task files under
-`tasks/` when approved.
+- [ ] **Phase 10.8 — UI/UX Redesign** (requirements
+  approved 2026-09-28: `REQUIREMENTS.md` R-10.8
+  with binding `ADR-0012`. Docs-only — no
+  implementation started. Subtasks defined but not
+  scheduled: 10.8A Redesign foundation, 10.8B
+  Application shell, 10.8C Dashboard, 10.8D New
+  Shipment, 10.8E Shipment Workspace, 10.8F
+  Document Verification, 10.8G View Shipments +
+  Historical Report, 10.8H Public Landing Page,
+  10.8I Settings / Notifications / Responsive,
+  10.8J Accessibility / Visual QA. 10.8A
+  Redesign foundation complete 2026-09-28
+  (frontend tokens/theme/primitives only).
+  10.8B Application shell complete 2026-09-28
+  (frontend shell + two routes only; no
+  product pages).   10.8C Dashboard complete
+  2026-09-28 (frontend resumption workspace;
+  real registry data; no analytics). 10.8D New
+  Shipment complete 2026-09-28 (frontend
+  intake; existing creation boundary; no draft
+  autosave by guardrail). 10.8E Shipment
+  Workspace complete 2026-09-28 (frontend
+  briefing workbench; real record/report
+  data; 10.8F drawer seam). 10.8F Document
+  Verification complete 2026-09-28 (frontend
+  upload/link/finding/preview; nothing
+  invented). 10.8G View Shipments + History
+  complete 2026-09-28 (frontend archive +
+  read-only report; no PDF boundary). 10.8H
+  Public Landing Page complete 2026-09-28
+  (frontend public route; dedicated chrome;
+  R-10.8.12 copy). 10.8A.1 Typography
+  correction complete 2026-09-28 (canonical
+  scale only; architecture unchanged). 10.8I
+  Settings / Notifications / Responsive
+  complete 2026-09-28 (utility surface +
+  minimal integration; no redesigns). 10.8J
+  Accessibility / Visual QA complete
+  2026-09-28 (audit + 3 corrections; no
+  redesign). Phase 10.8 redesign complete —
+  ready for final human visual review.)
+
+No implementation subtask beyond the above is
+started. Detailed scope for any future work will
+be recorded in `REQUIREMENTS.md` and decomposed
+into task files under `tasks/` when approved.

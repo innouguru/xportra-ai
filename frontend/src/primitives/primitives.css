@@ -1,0 +1,964 @@
+/* Xportra AI — Phase 10.8A reusable primitives.
+ *
+ * Styling foundation for the Phase 10.8 redesign.
+ * Every value flows through `theme/tokens.css`
+ * (`var(--xb-…)`); this file carries no literal
+ * colors, no gradients, and no glassmorphism
+ * (pinned by test). Legacy `index.css` classes
+ * stay untouched for existing components.
+ *
+ * Class contract (queried by tests — do not rename
+ * without a task recording the change):
+ * .xb-workspace, .xb-page-header, .xb-breadcrumbs,
+ * .xb-back, .xb-topbar, .xb-sidebar,
+ * .xb-status, .xb-badge, .xb-metric,
+ * .xb-attention, .xb-empty, .xb-loading,
+ * .xb-spinner, .xb-error, .xb-card-grid,
+ * .xb-card, .xb-summary, .xb-req-card,
+ * .xb-theme-control.
+ */
+
+.xb-workspace {
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: var(--xb-space-lg) var(--xb-page-gutter) var(--xb-space-2xl);
+}
+
+/* Page header: kicker + title + description +
+ * optional actions. Kickers are paragraphs so
+ * the document outline stays with headings. */
+.xb-page-header {
+  margin: 0 0 var(--xb-space-lg);
+  max-width: var(--xb-measure);
+}
+
+.xb-page-header__eyebrow {
+  font-size: var(--xb-text-meta);
+  font-weight: var(--xb-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.11em;
+  color: var(--xb-text-muted);
+  margin: 0 0 var(--xb-space-xs);
+}
+
+.xb-page-header__title {
+  font-family: var(--xb-font-display);
+  font-size: var(--xb-text-title);
+  line-height: var(--xb-leading-tight);
+  font-weight: var(--xb-weight-medium);
+  color: var(--xb-text-primary);
+  margin: 0;
+}
+
+.xb-page-header__description {
+  font-size: var(--xb-text-lead);
+  line-height: var(--xb-leading-body);
+  color: var(--xb-text-secondary);
+  margin: var(--xb-space-xs) 0 0;
+}
+
+.xb-page-header__actions {
+  display: flex;
+  gap: var(--xb-space-xs);
+  flex-wrap: wrap;
+  margin-top: var(--xb-space-md);
+}
+
+/* Breadcrumbs: ordered list, current page
+ * marked for assistive technology. */
+.xb-breadcrumbs ol {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--xb-space-2xs) var(--xb-space-xs);
+  align-items: center;
+  margin: 0 0 var(--xb-space-md);
+  padding: 0;
+  font-size: var(--xb-text-small);
+}
+
+.xb-breadcrumbs li + li::before {
+  content: "/";
+  color: var(--xb-text-muted);
+  margin-right: var(--xb-space-xs);
+}
+
+.xb-breadcrumbs a {
+  color: var(--xb-text-secondary);
+  text-decoration: none;
+  font-weight: var(--xb-weight-medium);
+}
+
+.xb-breadcrumbs a:hover {
+  color: var(--xb-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.xb-breadcrumbs [aria-current="page"] {
+  color: var(--xb-text-primary);
+  font-weight: var(--xb-weight-bold);
+}
+
+/* Back navigation: text button, keyboard-native. */
+.xb-back {
+  font: inherit;
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  color: var(--xb-text-secondary);
+  background: transparent;
+  border: var(--xb-border-width) solid transparent;
+  border-radius: var(--xb-radius-sm);
+  padding: var(--xb-space-2xs) var(--xb-space-xs);
+  min-height: var(--xb-control-height);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--xb-space-2xs);
+}
+
+.xb-back:hover {
+  color: var(--xb-text-primary);
+  border-color: var(--xb-border);
+}
+
+/* Contextual top bar container (slot-based;
+ * final shell composition is Phase 10.8B). */
+.xb-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--xb-space-md);
+  padding: var(--xb-space-sm) var(--xb-page-gutter);
+  background: var(--xb-surface);
+  border-bottom: var(--xb-border-width) solid var(--xb-border);
+}
+
+/* Sidebar container boundary (slot-based:
+ * brand, nav, footer). Final navigation items,
+ * collapse wiring, and drawer behavior arrive
+ * in Phase 10.8B; this reserves the landmark,
+ * width contract (~240px expanded), and the
+ * collapsed state class. */
+.xb-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--xb-space-md);
+  background: var(--xb-surface);
+  border-right: var(--xb-border-width) solid var(--xb-border);
+  padding: var(--xb-space-md);
+  transition: width var(--xb-motion-base) var(--xb-motion-ease);
+}
+
+.xb-sidebar--collapsed {
+  width: 72px;
+}
+
+.xb-sidebar--collapsed .xb-sidebar__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.xb-sidebar__brand,
+.xb-sidebar__nav,
+.xb-sidebar__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--xb-space-2xs);
+  min-width: 0;
+}
+
+.xb-sidebar__footer {
+  margin-top: auto;
+  border-top: var(--xb-border-width) solid var(--xb-border);
+  padding-top: var(--xb-space-md);
+}
+
+/* Status: indicator dot + words (never color
+ * alone). Tones stay distinct from brand. */
+.xb-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--xb-space-xs);
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  line-height: var(--xb-leading-body);
+  color: var(--xb-text-secondary);
+}
+
+.xb-status-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: var(--xb-radius-full);
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.xb-status--success {
+  color: var(--xb-success);
+}
+
+.xb-status--warning {
+  color: var(--xb-warning);
+}
+
+.xb-status--danger {
+  color: var(--xb-danger);
+}
+
+.xb-status--info {
+  color: var(--xb-info);
+}
+
+.xb-status--neutral {
+  color: var(--xb-text-muted);
+}
+
+.xb-status__detail {
+  font-weight: var(--xb-weight-regular);
+  color: var(--xb-text-muted);
+}
+
+/* Badge: compact labeled tone chip. */
+.xb-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--xb-space-2xs);
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-bold);
+  letter-spacing: 0.02em;
+  border: var(--xb-border-width) solid var(--xb-border-strong);
+  border-radius: var(--xb-radius-full);
+  padding: 0.15em 0.65em;
+  background: var(--xb-surface);
+  color: var(--xb-text-secondary);
+  white-space: nowrap;
+}
+
+.xb-badge--success {
+  color: var(--xb-success);
+  border-color: currentColor;
+  background: var(--xb-success-bg);
+}
+
+.xb-badge--warning {
+  color: var(--xb-warning);
+  border-color: currentColor;
+  background: var(--xb-warning-bg);
+}
+
+.xb-badge--danger {
+  color: var(--xb-danger);
+  border-color: currentColor;
+  background: var(--xb-danger-bg);
+}
+
+.xb-badge--info {
+  color: var(--xb-info);
+  border-color: currentColor;
+  background: var(--xb-info-bg);
+}
+
+/* Metric summary: value + label + optional hint. */
+.xb-metric {
+  display: grid;
+  gap: var(--xb-space-2xs);
+  align-content: start;
+}
+
+.xb-metric__value {
+  font-family: var(--xb-font-display);
+  font-size: var(--xb-text-title);
+  line-height: var(--xb-leading-tight);
+  font-weight: var(--xb-weight-medium);
+  color: var(--xb-text-primary);
+}
+
+.xb-metric__label {
+  font-size: var(--xb-text-meta);
+  font-weight: var(--xb-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--xb-text-muted);
+}
+
+.xb-metric__hint {
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-secondary);
+  margin: 0;
+}
+
+/* Attention indicator: quiet count + label for
+ * the dashboard attention section (10.8C owns
+ * final placement). */
+.xb-attention {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--xb-space-xs);
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  color: var(--xb-text-secondary);
+  border-left: 3px solid var(--xb-warning);
+  padding-left: var(--xb-space-sm);
+}
+
+/* Feedback states: friendly, action-oriented. */
+.xb-empty {
+  border: var(--xb-border-width) dashed var(--xb-border-strong);
+  border-radius: var(--xb-radius-md);
+  padding: var(--xb-space-2xl) var(--xb-space-xl);
+  text-align: center;
+  background: var(--xb-surface);
+  box-shadow: var(--xb-shadow-sm);
+  max-width: 40rem;
+}
+
+.xb-empty__title {
+  font-family: var(--xb-font-display);
+  font-size: var(--xb-text-section);
+  color: var(--xb-text-primary);
+  margin: 0 0 var(--xb-space-xs);
+}
+
+.xb-empty__body {
+  color: var(--xb-text-secondary);
+  font-size: var(--xb-text-body);
+  margin: 0 0 var(--xb-space-md);
+}
+
+.xb-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--xb-space-xs);
+  color: var(--xb-text-secondary);
+}
+
+.xb-spinner {
+  width: 1rem;
+  height: 1rem;
+  border-radius: var(--xb-radius-full);
+  border: 2px solid var(--xb-border);
+  border-top-color: var(--xb-brand);
+  animation: xb-spin 0.9s linear infinite;
+}
+
+@keyframes xb-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.xb-error {
+  border: var(--xb-border-width) solid var(--xb-border-strong);
+  border-left-width: 4px;
+  border-left-color: var(--xb-danger);
+  border-radius: var(--xb-radius-sm);
+  padding: var(--xb-space-sm) var(--xb-space-md);
+  background: var(--xb-danger-bg);
+  color: var(--xb-text-primary);
+  max-width: var(--xb-measure);
+}
+
+/* Cards: briefing surfaces for shipments and
+ * requirements. The whole card is clickable via
+ * a stretched link; the primary action stays a
+ * real, separately focusable control. */
+.xb-card-grid {
+  list-style: none;
+  margin: var(--xb-space-md) 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--xb-space-md);
+}
+
+.xb-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--xb-space-xs);
+  background: var(--xb-surface);
+  border: var(--xb-border-width) solid var(--xb-border);
+  border-radius: var(--xb-radius-md);
+  box-shadow: var(--xb-shadow-sm);
+  padding: var(--xb-card-padding);
+  min-width: 0;
+}
+
+.xb-card__title {
+  font-size: var(--xb-text-card);
+  font-weight: var(--xb-weight-bold);
+  line-height: var(--xb-leading-tight);
+  color: var(--xb-text-primary);
+  margin: 0;
+}
+
+.xb-card__meta {
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-muted);
+  margin: 0;
+}
+
+.xb-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--xb-space-xs);
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: var(--xb-space-sm);
+}
+
+/* Stretched link: extends the card link hit area
+ * without removing the primary action from the
+ * tab order (action sits above via z-index). */
+.xb-card__link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.xb-card__action {
+  position: relative;
+  z-index: 1;
+}
+
+/* Worklist rows (approved reference): hairline
+ * dividers, dot + name + route + state. No card
+ * boxes, no shadows. Used by the dashboard,
+ * archive, and shipment workspace so the screens
+ * feel continuous. */
+.xb-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8125rem 0.25rem;
+  border-top: var(--xb-border-width) solid var(--xb-border);
+  min-width: 0;
+}
+
+.xb-row:hover {
+  background: var(--xb-surface);
+}
+
+.xb-row__dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
+  border-radius: var(--xb-radius-full);
+  flex-shrink: 0;
+}
+
+.xb-row__dot--success {
+  background: var(--xb-success);
+}
+
+.xb-row__dot--warning {
+  background: var(--xb-warning);
+}
+
+.xb-row__dot--danger {
+  background: var(--xb-danger);
+}
+
+.xb-row__dot--info {
+  background: var(--xb-info);
+}
+
+.xb-row__dot--neutral {
+  background: var(--xb-text-muted);
+}
+
+.xb-row__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.xb-row__link {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--xb-text-primary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.xb-row__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.xb-row__route {
+  font-size: 0.8125rem;
+  color: var(--xb-text-muted);
+  white-space: nowrap;
+}
+
+.xb-row__state {
+  font-size: 0.78125rem;
+  color: var(--xb-text-secondary);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.xb-row__go {
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--xb-brand);
+  background: none;
+  border: none;
+  padding: 0.75rem 0.25rem;
+  margin: -0.75rem 0;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+a.xb-row__go {
+  display: inline-block;
+}
+
+.xb-row__go:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.xb-row--dimmed .xb-row__link {
+  color: var(--xb-text-secondary);
+}
+
+.xb-row__forget {
+  font: inherit;
+  font-size: 0.78125rem;
+  color: var(--xb-text-muted);
+  background: none;
+  border: none;
+  padding: 0.75rem 0.25rem;
+  margin: -0.75rem 0;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.xb-row__forget:hover {
+  color: var(--xb-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Requirement ledger rows (approved reference):
+ * dot, name, one-line why, right-aligned state
+ * phrase, optional evidence line. One button per
+ * row opens the requirement drawer. */
+.xb-ledger {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.xb-ledger-row {
+  border-top: var(--xb-border-width) solid var(--xb-border);
+}
+
+.xb-ledger-row__button {
+  font: inherit;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 1rem 0.25rem;
+  cursor: pointer;
+  color: var(--xb-text-primary);
+  min-height: 2.75rem;
+}
+
+.xb-ledger-row__button:hover {
+  background: var(--xb-surface);
+}
+
+.xb-ledger-row__static {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 1rem 0.25rem;
+}
+
+.xb-ledger-row__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--xb-radius-full);
+  margin-top: 0.375rem;
+  flex-shrink: 0;
+}
+
+.xb-ledger-row__dot--success {
+  background: var(--xb-success);
+}
+
+.xb-ledger-row__dot--warning {
+  background: var(--xb-warning);
+}
+
+.xb-ledger-row__dot--danger {
+  background: var(--xb-danger);
+}
+
+.xb-ledger-row__dot--info {
+  background: var(--xb-info);
+}
+
+.xb-ledger-row__dot--neutral {
+  background: var(--xb-text-muted);
+}
+
+.xb-ledger-row__main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.1875rem;
+}
+
+.xb-ledger-row__name {
+  display: block;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--xb-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.xb-ledger-row__why {
+  display: block;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--xb-text-secondary);
+}
+
+.xb-ledger-row__evidence {
+  display: block;
+  font-size: 0.78125rem;
+  color: var(--xb-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.xb-ledger-row__state {
+  font-size: 0.78125rem;
+  white-space: nowrap;
+  margin-left: auto;
+  padding-top: 0.125rem;
+  flex-shrink: 0;
+}
+
+.xb-ledger-row__state--success {
+  color: var(--xb-success);
+}
+
+.xb-ledger-row__state--warning {
+  color: var(--xb-warning);
+}
+
+.xb-ledger-row__state--danger {
+  color: var(--xb-danger);
+}
+
+.xb-ledger-row__state--info {
+  color: var(--xb-info);
+}
+
+.xb-ledger-row__state--neutral {
+  color: var(--xb-text-secondary);
+}
+
+/* Shipment summary: structured definition rows. */
+.xb-summary {
+  display: grid;
+  gap: var(--xb-space-xs) var(--xb-space-lg);
+  margin: 0;
+}
+
+.xb-summary > div {
+  display: grid;
+  gap: var(--xb-space-2xs);
+  align-content: start;
+  min-width: 0;
+}
+
+.xb-summary dt {
+  font-size: var(--xb-text-meta);
+  font-weight: var(--xb-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--xb-text-muted);
+}
+
+.xb-summary dd {
+  margin: 0;
+  color: var(--xb-text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* Requirement card: minimal name + status +
+ * single action (grid composition is 10.8E). */
+.xb-req-card {
+  background: var(--xb-surface);
+  border: var(--xb-border-width) solid var(--xb-border);
+  border-radius: var(--xb-radius-md);
+  padding: var(--xb-card-padding);
+  display: grid;
+  gap: var(--xb-space-xs);
+  align-content: start;
+  min-width: 0;
+}
+
+.xb-req-card__name {
+  font-size: var(--xb-text-card);
+  font-weight: var(--xb-weight-medium);
+  color: var(--xb-text-primary);
+  margin: 0;
+}
+
+/* Theme control: native radios, visible focus. */.xb-theme-control {
+  border: var(--xb-border-width) solid var(--xb-border-strong);
+  border-radius: var(--xb-radius-sm);
+  padding: var(--xb-space-sm) var(--xb-space-md);
+  margin: 0;
+  background: var(--xb-surface);
+  display: grid;
+  gap: var(--xb-space-xs);
+}
+
+.xb-theme-control legend {
+  padding: 0 var(--xb-space-xs);
+  font-weight: var(--xb-weight-bold);
+  font-size: var(--xb-text-small);
+}
+
+.xb-theme-control__option {
+  display: flex;
+  gap: var(--xb-space-xs);
+  align-items: center;
+  cursor: pointer;
+  font-size: var(--xb-text-small);
+}
+
+/* New shipment: single centered column. The
+ * first fields stand alone; follow-up fields
+ * sit in a distinct inset block. */
+.xb-newship {
+  max-width: 35rem;
+  margin: 2.5rem auto;
+  padding: 0 1.5rem;
+}
+
+.xb-newship .xb-form {
+  max-width: none;
+}
+
+.xb-newship__adaptive {
+  margin-top: 1.75rem;
+  padding: 1.25rem;
+  border-left: 2px solid var(--xb-border-strong);
+  background: var(--xb-surface);
+  border-radius: 0 var(--xb-radius-md) var(--xb-radius-md) 0;
+}
+
+.xb-newship__adaptive-note {
+  margin: 0;
+  font-size: 0.78125rem;
+  color: var(--xb-text-muted);
+}
+
+.xb-newship__progress {
+  margin: 0;
+  padding-top: 1.25rem;
+  border-top: var(--xb-border-width) solid var(--xb-border);
+  font-size: 0.78125rem;
+  color: var(--xb-text-muted);
+}
+
+/* Forms: focused operational intake. Labels,
+ * inputs, hints, and field errors consume
+ * tokens only; grids collapse naturally on
+ * narrow screens (no second breakpoint
+ * system). */
+.xb-form {
+  display: grid;
+  gap: var(--xb-space-lg);
+  max-width: 44rem;
+}
+
+.xb-form-section {
+  display: grid;
+  gap: var(--xb-space-md);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.xb-form-section__title {
+  font-family: var(--xb-font-display);
+  font-size: var(--xb-text-section);
+  font-weight: var(--xb-weight-medium);
+  line-height: var(--xb-leading-tight);
+  color: var(--xb-text-primary);
+  margin: 0;
+}
+
+.xb-form-section__help {
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-secondary);
+  margin: 0;
+  max-width: var(--xb-measure);
+}
+
+.xb-field {
+  display: grid;
+  gap: var(--xb-space-2xs);
+  align-content: start;
+}
+
+.xb-field__label {
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-bold);
+  color: var(--xb-text-primary);
+}
+
+.xb-field__hint {
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-muted);
+  margin: 0;
+}
+
+.xb-input {
+  font: inherit;
+  font-size: var(--xb-text-body);
+  min-height: var(--xb-control-height);
+  padding: var(--xb-space-xs) var(--xb-space-sm);
+  border: var(--xb-border-width) solid var(--xb-border-strong);
+  border-radius: var(--xb-radius-sm);
+  background: var(--xb-surface);
+  color: var(--xb-text-primary);
+  width: 100%;
+  max-width: 28rem;
+}
+
+.xb-input::placeholder {
+  color: var(--xb-text-muted);
+  opacity: 1;
+}
+
+.xb-input:disabled {
+  color: var(--xb-disabled);
+  border-color: var(--xb-border);
+  background: var(--xb-neutral-bg);
+  cursor: not-allowed;
+}
+
+.xb-input[aria-invalid="true"] {
+  border-color: var(--xb-danger);
+}
+
+.xb-field__error {
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  color: var(--xb-danger);
+  margin: 0;
+}
+
+.xb-check {
+  display: flex;
+  gap: var(--xb-space-xs);
+  align-items: center;
+  cursor: pointer;
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-secondary);
+  min-height: var(--xb-control-height);
+}
+
+.xb-check input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: var(--xb-brand);
+  flex-shrink: 0;
+}
+
+.xb-form-actions {
+  display: flex;
+  gap: var(--xb-space-sm);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.xb-back:focus-visible,
+.xb-breadcrumbs a:focus-visible,
+.xb-card__link:focus-visible,
+.xb-row__link:focus-visible,
+.xb-row__go:focus-visible,
+.xb-row__forget:focus-visible,
+.xb-ledger-row__button:focus-visible,
+.xb-theme-control input:focus-visible,
+.xb-input:focus-visible,
+.xb-check input:focus-visible {
+  outline: var(--xb-focus-ring-width) solid var(--xb-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 860px) {
+  .xb-workspace {
+    padding: var(--xb-space-md) var(--xb-space-md) var(--xb-space-xl);
+  }
+
+  .xb-card-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .xb-topbar {
+    flex-wrap: wrap;
+  }
+
+  /* Narrow rows keep name + state readable;
+   * the secondary route column drops out. */
+  .xb-row__route {
+    display: none;
+  }
+
+  .xb-row__link,
+  .xb-row__go,
+  .xb-ledger-row__button {
+    min-height: 2.75rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .xb-workspace {
+    padding-left: var(--xb-space-md);
+    padding-right: var(--xb-space-md);
+  }
+
+  .xb-page-header__actions {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xb-spinner {
+    animation: none;
+  }
+
+  .xb-sidebar {
+    transition: none;
+  }
+}

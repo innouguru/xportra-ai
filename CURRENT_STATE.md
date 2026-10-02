@@ -1,10 +1,33 @@
 # CURRENT_STATE.md — Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-09-27
-> Phase: Phase 10 complete through 10.5 (hardening,
+> Updated: 2026-09-28
+> Phase: Phase 10 complete through 10.7B (hardening,
 > conversational backend foundation, evidence upload
-> backend + UX); post-Phase-10 scope audit complete.
+> backend + UX, product information architecture,
+> visual system); post-Phase-10 scope audit complete;
+> Phase 10.8 redesign requirements approved
+> (docs-only); Phase 10.8A redesign foundation
+> complete (frontend only); Phase 10.8B
+> application shell complete (frontend only);
+> Phase 10.8C dashboard complete (frontend
+> only, real registry data); Phase 10.8D New
+> Shipment complete (frontend intake only,
+> existing creation boundary); Phase 10.8E
+> shipment workspace complete (frontend only,
+> real record/report data); Phase 10.8F
+> document verification complete (frontend
+> only, real upload/link/finding/preview);
+> Phase 10.8G archive + history complete
+> (frontend only, registry/stored data);
+> Phase 10.8H landing complete (frontend
+> public route only, R-10.8.12 copy);
+> Phase 10.8A.1 typography correction
+> complete (canonical scale only);
+> Phase 10.8I settings/notifications/
+> responsive complete (utility only);
+> Phase 10.8J accessibility/visual QA
+> complete (audit + corrections).
 > Checkpoint: 9249544 (origin/main aligned).
 > No active implementation task. No live infrastructure
 > verified (44 gated skips).
@@ -426,6 +449,68 @@ from repr) is the only behavior-neutral change.
 - No active task remains. Next phases need
   `REQUIREMENTS.md` entries and scheduling via `tasks/`.
 
+## Phase 10.7A — Public Landing Page & Application Information Architecture (Complete, 2026-09-27)
+
+- Frontend-only restructuring under `REQUIREMENTS.md`
+  R-10.7A (no backend file changed): public landing
+  page at `/` (product/how-it-works/audience/resources,
+  no unsupported claims) with Start-a-shipment and
+  See-how-it-works CTAs; new-shipment form collects a
+  human profile while UUIDs generate behind the UI and
+  the profile is remembered device-locally (display
+  metadata only, never sent); authenticated shell
+  offers Overview, Shipments, Documents, Requirements,
+  Assessment plus Ask Xportra and Settings; shipment
+  workspace gains profile hero and four contextual
+  tabs; Overview is the command center (next action,
+  summaries, attention); Documents tabs compose the
+  unchanged evidence/gaps/request screens; Assessment
+  stages the unchanged analysis/findings/review/
+  package/history screens; established routes stay
+  mounted as deep links; new Shipments and Settings
+  pages; session and empty-state actions retargeted
+  to `/start`.
+- Verification: focused new suites 28/28; updated
+  AppShell/Workspace/Overview suites preserved at
+  equal strictness; full frontend suite 36 files /
+  208 tests passing (baseline 30/181); `npx tsc
+  --noEmit` clean; `npm run build` succeeds. Backend
+  untouched; live services and browser engine not
+  available (no pixel claim). No packages installed.
+  Task record:
+  `tasks/completed/phase-10-7a-product-information-architecture.md`;
+  implementation record:
+  `docs/phases/phase-10-7a-product-information-architecture.md`.
+- No active task remains. Next phases need
+  `REQUIREMENTS.md` entries and scheduling via `tasks/`.
+
+## Phase 10.7B — Xportra Visual System & Brand Direction (Complete, 2026-09-27)
+
+- Frontend visual system under `REQUIREMENTS.md`
+  R-10.7B (no backend file changed): centralized dark
+  design tokens (near-black foundation, off-white
+  type, electric-lime brand accent, restrained
+  semantic colors); sidebar application shell at
+  1100px and above with unchanged wrapping topbar
+  below; BrandMark logo seam (no final mark
+  invented); landing hero composition with approved
+  copy only; restrained workspace tab selection;
+  lime-primary/outlined-secondary/text-tertiary
+  button hierarchy; compliance tones preserved
+  (brand never carries compliance meaning);
+  conversation drawer behavior untouched.
+- Verification: focused suites 19/19; full frontend
+  suite 39 files / 227 tests passing (baseline
+  36/208); `npx tsc --noEmit` clean; `npm run build`
+  succeeds. Backend untouched; live services and
+  browser engine not available (no pixel claim). No
+  packages installed. Task record:
+  `tasks/completed/phase-10-7b-visual-system-brand-direction.md`;
+  implementation record:
+  `docs/phases/phase-10-7b-visual-system-brand-direction.md`.
+- No active task remains. Next phases need
+  `REQUIREMENTS.md` entries and scheduling via `tasks/`.
+
 ## Post-Phase-10 Product & Scope Audit (Complete, 2026-09-27)- Documentation-only audit at checkpoint `9249544`
   (origin/main aligned; no behavior changed; no phase
   started). Findings:
@@ -447,6 +532,402 @@ from repr) is the only behavior-neutral change.
   historical "no commit/push" lines.
 - No active task remains. Next phases need
   `REQUIREMENTS.md` entries and scheduling via `tasks/`.
+
+## Phase 10.8 — UI/UX Redesign Requirements & Architecture (Approved docs-only, 2026-09-28)
+
+- Requirements task, not implementation:
+  product-owner-approved calm-compliance-workspace
+  direction recorded as `REQUIREMENTS.md` R-10.8
+  (R-10.8.1–R-10.8.16: authenticated navigation,
+  public/authenticated separation, sidebar shell,
+  account menu, notifications entry point, theme
+  behavior, dashboard purpose, shipment-first
+  navigation, progressive verification, completed-
+  shipment immutability, historical report,
+  landing page, responsive, accessibility, visual
+  language, out-of-scope boundaries); binding
+  shell direction in
+  `docs/decisions/ADR-0012-authenticated-shell-restructure.md`;
+  task record in
+  `tasks/active/phase-10-8-ui-ux-redesign-requirements.md`;
+  implementation record in
+  `docs/phases/phase-10-8-ui-ux-redesign-requirements.md`.
+- Explicit supersessions (history preserved —
+  Phase 10.7A/10.7B records unchanged): R-10.7A.2
+  nav direction → R-10.8.1; R-10.7B.3 shell model
+  → R-10.8.3/ADR-0012; R-10.7B.5 theme-switcher
+  exclusion → R-10.8.6; notifications exclusions
+  (R-10.1.9/R-10.4.8/R-10.5.4/R-10.6.6) narrowed
+  to entry-point scope only (R-10.8.5). The
+  running UI is untouched until Phase 10.8B.
+- Approved implementation sequence defined but
+  NOT started: 10.8A Redesign foundation, 10.8B
+  Application shell, 10.8C Dashboard, 10.8D New
+  Shipment, 10.8E Shipment Workspace, 10.8F
+  Document Verification, 10.8G View Shipments +
+  Historical Report, 10.8H Public Landing Page,
+  10.8I Settings / Notifications / Responsive,
+  10.8J Accessibility / Visual QA. Next: 10.8A.
+- Verification: frontend suite re-run unchanged,
+  0 failures; `npx tsc --noEmit` clean; `git
+  status` confirms no application source, style,
+  route, or test file changed. No packages
+  installed. No commit or push performed.
+
+## Phase 10.8A — Redesign Foundation (Complete, 2026-09-28)
+
+- Frontend-only foundation under
+  `REQUIREMENTS.md` R-10.8 and ADR-0012 (no
+  backend/domain/API change, no product pages,
+  no shell migration, no new routes): canonical
+  `xb-` tokens (`theme/tokens.css`, dark
+  default + light override in color only),
+  theme infrastructure (`theme/theme.tsx` —
+  provider, localStorage, system fallback,
+  `data-theme`, accessible selector), reusable
+  primitives (`primitives/` — layout, status,
+  feedback, shipment/requirement display-only
+  components, drawer helpers) with responsive
+  (860px/640px) and accessibility foundations;
+  `main.tsx` wiring only. Audit: KEEP
+  (api/app/lib/conversation/pages/BrandMark/
+  index.css frozen), ADAPT (StatusBits shapes
+  mirrored), REPLACE deferred to 10.8B+,
+  REMOVE none. Task record:
+  `tasks/active/phase-10-8a-redesign-foundation.md`;
+  implementation record:
+  `docs/phases/phase-10-8a-redesign-foundation.md`;
+  prior 10.8 requirements task moved to
+  `tasks/completed/`.
+- Verification: focused 8 files / 39 tests
+  passing; full suite 47 files / 266 tests, 0
+  failures (baseline 39/227; none weakened);
+  `npx tsc --noEmit` clean; `npm run build`
+  succeeds; footprint confirmed as `main.tsx` +
+  `theme/` + `primitives/` only. No packages
+  installed. No commit or push performed.
+- Next: Phase 10.8B — Application Shell (not
+  yet started).
+
+## Phase 10.8B — Application Shell (Complete, 2026-09-28)
+
+- Frontend-only shell under `REQUIREMENTS.md`
+  R-10.8 and ADR-0012, composed from the 10.8A
+  foundation (no backend/domain/API change, no
+  dashboard content, shipments table,
+  workspace, settings, or landing work):
+  `shell/AuthenticatedShell.tsx` (expandable
+  240px sidebar with Dashboard + View Shipments
+  only, persisted collapse with auto-collapse
+  default, mobile dialog drawer with trap/
+  restore/Escape, new-tab brand, account menu
+  on `useAuth`, unwired notification entry,
+  theme toggle on `useTheme`, breadcrumb
+  context bar, skip link), `shell/shell.css`
+  (token-only), additive `BrandMark`
+  `newTab`/`compact` props (default
+  byte-identical), transitional `DashboardPage`
+  placeholder, `/dashboard` + `/shipments`
+  routes (old `/workspace` tree and public `/`
+  untouched). Task record:
+  `tasks/active/phase-10-8b-application-shell.md`;
+  implementation record:
+  `docs/phases/phase-10-8b-application-shell.md`;
+  prior 10.8A task moved to `tasks/completed/`.
+- Verification: focused 5 files / 31 tests
+  passing; full suite 51 files / 295 tests, 0
+  failures (baseline 47/266; none weakened);
+  `npx tsc --noEmit` clean; `npm run build`
+  succeeds; footprint confirmed as `App.tsx`,
+  `BrandMark.tsx`, `main.tsx`, `shell/`, and
+  `features/dashboard/` only. No packages
+  installed. No commit or push performed.
+- Next: Phase 10.8C — Dashboard (complete;
+  see section below).
+
+## Phase 10.8J — Accessibility / Visual QA (Complete, 2026-09-28)
+
+- Final audit over 10.8A–10.8I (no
+  redesign, no backend/domain/API change):
+  static scans clean; computed contrast
+  found light muted text at 4.49:1 →
+  corrected to `#646f5a` (4.87–5.30:1)
+  with an in-suite guard; notification
+  outside-click dismissal added; archive
+  overflow-wrap added. No browser engine
+  exists — responsive verified by contract
+  + structure; human visual review remains
+  the gate. Task record:
+  `tasks/completed/phase-10-8j-accessibility-visual-qa.md`;
+  implementation record:
+  `docs/phases/phase-10-8j-accessibility-visual-qa.md`.
+- Verification: full suite 61 files / 398
+  tests, 0 failures (baseline 61/395;
+  none weakened); `npx tsc --noEmit`
+  clean; `npm run build` succeeds. No
+  packages installed. No commit or push
+  performed.
+- Phase 10.8 UI/UX redesign is complete
+  and ready for final human visual review.
+
+## Phase 10.8I — Settings / Notifications / Responsive (Complete, 2026-09-28)
+
+- Utility + integration work under
+  `REQUIREMENTS.md` R-10.8 and ADR-0012 (no
+  backend/domain/API change, no redesigns):
+  rewritten `/settings` surface (real
+  session/theme/facts, honest unavailable
+  states), verified-subtle notifications
+  (unpersisted, no center), minimal
+  responsive corrections (contextbar wrap,
+  dvh viewports; no new breakpoints), with
+  the 10.8A.1 scale preserved throughout.
+  Task record:
+  `tasks/completed/phase-10-8i-settings-notifications-responsive.md`
+  (filed complete per task instruction);
+  implementation record:
+  `docs/phases/phase-10-8i-settings-notifications-responsive.md`;
+  prior 10.8H task moved to `tasks/completed/`.
+- Verification: focused settings + shell
+  files green; full suite 61 files / 395
+  tests, 0 failures (none weakened);
+  `npx tsc --noEmit` clean; `npm run build`
+  succeeds. No packages installed. No
+  commit or push performed.
+- Next: Phase 10.8J — Accessibility /
+  Visual QA (not yet started).
+
+## Phase 10.8A.1 — Typography & Readability Correction (Complete, 2026-09-28)
+
+- Focused correction over the unchanged
+  Phase 10.8A foundation: canonical type
+  tokens retuned in both themes (body
+  16px, meta 13px minimum, title 30px,
+  clamp hero 40–52px, new lead token),
+  16px baseline on app/landing roots,
+  status line separation, lead page/hero
+  descriptions. No page redesign,
+  navigation, routes, colors, spacing, or
+  backend change. Task record:
+  `tasks/completed/phase-10-8a-1-typography-readability-correction.md`
+  (filed complete per task instruction);
+  implementation record:
+  `docs/phases/phase-10-8a-1-typography-readability-correction.md`.
+- Verification: focused 13 files green;
+  full suite 60 files / 388 tests, 0
+  failures (baseline 60/383; none
+  weakened); `npx tsc --noEmit` clean;
+  `npm run build` succeeds. No packages
+  installed. No commit or push performed.
+- Next: Phase 10.8I — Settings /
+  Notifications / Responsive (not yet
+  started).
+
+## Phase 10.8H — Public Landing Page (Complete, 2026-09-28)
+
+- Frontend public-route work under
+  `REQUIREMENTS.md` R-10.8 and ADR-0012 (no
+  auth/backend/domain/API change, no
+  unsupported claims): rewritten
+  `LandingPage` with dedicated chrome
+  (identical signed in or out — the old
+  `AppShell` leaked workspace nav when a
+  record existed), R-10.8.12 hero/steps/
+  CTAs, value/trust/audience sections,
+  captioned static preview from real
+  primitives, quiet CTA, minimal footer,
+  token-only `landing.css`. Copy notes:
+  four steps over the brief's three
+  (canonical R-10.8.12 wins); "Start a
+  Shipment"/"Sign In" labels likewise.
+  Task record:
+  `tasks/active/phase-10-8h-public-landing-page.md`;
+  implementation record:
+  `docs/phases/phase-10-8h-public-landing-page.md`;
+  prior 10.8G task moved to `tasks/completed/`.
+- Verification: focused 12/12 passing; full
+  suite 60 files / 383 tests, 0 failures
+  (baseline 59/376; none weakened);
+  `npx tsc --noEmit` clean; `npm run build`
+  succeeds; footprint confirmed as
+  `main.tsx` + `features/landing/` only. No
+  packages installed. No commit or push
+  performed.
+- Next: Phase 10.8I — Settings /
+  Notifications / Responsive (not yet
+  started).
+
+## Phase 10.8G — View Shipments + Historical Report (Complete, 2026-09-28)
+
+- Frontend-only archive/history under
+  `REQUIREMENTS.md` R-10.8 and ADR-0012 (no
+  backend/domain/API change, no mutations,
+  scores, or PDF invention):
+  `shipmentsArchive.ts` (local search/
+  honest filters/stable order),
+  rewritten `ShipmentsPage` (table + mobile
+  cards, contextual opens, device-only
+  forget), token-only `shipments.css`,
+  `HistoricalReportPage` at
+  `/shipments/:caseId/report` (profile,
+  final result, requirements, evidence,
+  safe-string sources, round-count
+  completion; active/unknown refs get
+  honest notices), terminal report links
+  retargeted from dashboard + workspace.
+  No timestamps/activity exist — omitted;
+  no PDF boundary — control omitted and
+  pinned absent. Task record:
+  `tasks/active/phase-10-8g-view-shipments-historical-report.md`;
+  implementation record:
+  `docs/phases/phase-10-8g-view-shipments-historical-report.md`;
+  prior 10.8F task moved to `tasks/completed/`.
+- Verification: focused 29/29 passing; full
+  suite 59 files / 376 tests, 0 failures
+  (baseline 56/351; none weakened);
+  `npx tsc --noEmit` clean; `npm run build`
+  succeeds; footprint confirmed as
+  `App.tsx`, `main.tsx`,
+  `features/shipment/`,
+  `features/dashboard/`,
+  `features/workspace/` only. No packages
+  installed. No commit or push performed.
+- Next: Phase 10.8H — Public Landing Page
+  (not yet started).
+
+## Phase 10.8F — Document Verification (Complete, 2026-09-28)
+
+- Frontend-only verification under
+  `REQUIREMENTS.md` R-10.8 and ADR-0012 (no
+  backend/domain/API change, no invented
+  capabilities): `features/verification/`
+  (verdict mapping over recorded findings),
+  rewritten `DocumentDrawer` (real upload
+  with backend constraints, per-document
+  Verify via `supply-evidence` + finding
+  lookup, missing/explanation rendering,
+  on-demand preview and authorized open,
+  human errors, terminal read-only),
+  `requirementId` threading. No verify/
+  extract/OCR endpoint exists — analysis
+  runs stay explicit on their route; sync =
+  `setRecord` on the supply response.
+  Task record:
+  `tasks/active/phase-10-8f-document-verification.md`;
+  implementation record:
+  `docs/phases/phase-10-8f-document-verification.md`;
+  prior 10.8E task moved to `tasks/completed/`.
+- Verification: focused suites passing; full
+  suite 56 files / 349 of 351 in parallel
+  (known pre-existing flake in unrelated
+  evidence tests — 6/6 serially, none
+  weakened); `npx tsc --noEmit` clean;
+  `npm run build` succeeds; footprint
+  confirmed as `features/verification/` +
+  `features/workspace/` only. No packages
+  installed. No commit or push performed.
+- Next: Phase 10.8G — View Shipments +
+  Historical Report (not yet started).
+
+## Phase 10.8E — Shipment Workspace (Complete, 2026-09-28)
+
+- Frontend-only workbench under `REQUIREMENTS.md`
+  R-10.8 and ADR-0012 (no backend/domain/API
+  change, no verification/archive/report/
+  settings/scores): `features/workspace/`
+  (`workspace.ts` mapping over record +
+  profile + case-matched report,
+  `ShipmentWorkspacePage` at
+  `/shipments/:caseId`, `DocumentDrawer`
+  10.8F seam, token-only `workspace.css`),
+  dashboard entry opens retargeted to the new
+  route, additive `RequirementCard` children.
+  Findings render only when case-matched;
+  sources/activity/timestamps omitted (no
+  safe source); completed records read-only.
+  Task record:
+  `tasks/active/phase-10-8e-shipment-workspace.md`;
+  implementation record:
+  `docs/phases/phase-10-8e-shipment-workspace.md`;
+  prior 10.8D task moved to `tasks/completed/`.
+- Verification: focused 16/16 passing; full
+  suite 54 files / 334 tests, 0 failures
+  (baseline 52/318; none weakened);
+  `npx tsc --noEmit` clean; `npm run build`
+  succeeds; footprint confirmed as `App.tsx`,
+  `main.tsx`, `features/workspace/`,
+  `features/dashboard/`,
+  `primitives/shipment.tsx` only. No packages
+  installed. No commit or push performed.
+- Next: Phase 10.8F — Document Verification
+  (not yet started).
+
+## Phase 10.8D — New Shipment (Complete, 2026-09-28)
+
+- Frontend-only intake under `REQUIREMENTS.md`
+  R-10.8 and ADR-0012 (no backend/domain/API
+  change, no workspace/verification/archive/
+  dashboard work): rewritten `NewShipmentPage`
+  (product + country first, details second, no
+  port; device-honest datalists; explicit
+  unknown for optional fields; field-level
+  validation + focus; BackButton + crumbs;
+  unchanged `startWorkflow` + registry +
+  `/workspace` completion), additive token-only
+  `xb-form` family in `primitives.css`.
+  Catalog/country-list/port/questionnaire
+  omitted (none exist); draft autosave absent
+  by guardrail (no backing boundary — only
+  submitted shipments persist, resumable from
+  dashboard). Task record:
+  `tasks/active/phase-10-8d-new-shipment.md`;
+  implementation record:
+  `docs/phases/phase-10-8d-new-shipment.md`;
+  prior 10.8C task moved to `tasks/completed/`.
+- Verification: focused 16/16 passing; full
+  suite 52 files / 318 tests, 0 failures
+  (baseline 52/313; none weakened);
+  `npx tsc --noEmit` clean; `npm run build`
+  succeeds; footprint confirmed as
+  `NewShipmentPage.*` + `primitives.css` /
+  `primitives.test.ts` only. No packages
+  installed. No commit or push performed.
+- Next: Phase 10.8E — Shipment Workspace (not
+  yet started).
+
+## Phase 10.8C — Dashboard: Your Shipments (Complete, 2026-09-28)
+
+- Frontend-only resumption workspace under
+  `REQUIREMENTS.md` R-10.8 and ADR-0012 (no
+  backend/domain/API change, no New Shipment
+  form, workspace, verification, archive, or
+  analytics): `features/dashboard/dashboard.ts`
+  (pure mapping over `lib/shipments` +
+  `lib/workflow` — greeting, plain-English
+  status/attention/action per state, 3-item
+  recent partition, defensive load, existing
+  open mechanism), rewritten `DashboardPage`
+  (counts, attention above recent, actionable
+  cards, honest empty/loading/error), additive
+  `ShipmentCard.onSelect`. Unavailable facts
+  (timestamps, detail counts, scores) omitted,
+  never fabricated. Task record:
+  `tasks/active/phase-10-8c-dashboard.md`;
+  implementation record:
+  `docs/phases/phase-10-8c-dashboard.md`;
+  prior 10.8B task moved to `tasks/completed/`.
+- Verification: focused 26/26 passing; full
+  suite 52 files / 313 tests passing (51/307
+  parallel + 6 serially for a pre-existing
+  parallel-timing flake in unrelated
+  `AdditionalEvidencePage` tests — none
+  weakened); `npx tsc --noEmit` clean;
+  `npm run build` succeeds; footprint
+  confirmed as `primitives/shipment.*` +
+  `features/dashboard/` only. No packages
+  installed. No commit or push performed.
+- Next: Phase 10.8D — New Shipment (not yet
+  started).
 
 ## Conversational Product Architecture (Design only, 2026-09-25)
 
@@ -2373,3 +2854,118 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   passed + 44 skipped (1902 + 20 new), 0 failures.
 - Guide: `docs/local-development.md`. No secrets
   committed; no commit/push performed.
+
+## Secure CORS Boundary for Local Frontend ↔ API Development (Complete, 2026-09-27)
+
+- Explicit CORS boundary at the FastAPI application
+  layer (R-10.1.6): `CORSMiddleware` wired in
+  `xportra/api/app.py` with origins resolved by
+  `cors_allowed_origins()` in `xportra/api/runtime.py`.
+  Development/test permit exactly `http://localhost:5173`
+  and `http://127.0.0.1:5173`; production uses only
+  `CORS_ALLOWED_ORIGINS` (fail-closed when empty) with
+  wildcards and malformed values rejected at startup.
+  Exact methods (`GET`, `POST`) and headers
+  (`Content-Type`, `Authorization`,
+  `X-Development-Tenant-ID`); credentials support stays
+  disabled. No auth/tenant-isolation change, no frontend
+  change, no other behavior change.
+- Verification: 17/17 focused tests (+15 subtests);
+  related API/security suites 175/175; full suite 1939
+  passed + 44 skipped (1922 + 17 new), 0 failures.
+  Manual preflight check: `OPTIONS
+  /compliance/workflows/start` returns 200 with correct
+  `access-control-allow-origin` for both loopback
+  origins, 400 with no permissive headers for
+  disallowed origins. Note: a running uvicorn process
+  serves pre-change code until restarted.
+- Config documented in `.env.example` and
+  `docs/architecture/environment-schema.md`. No secrets
+  committed; no commit/push performed.
+
+## Approved-Reference Frontend Convergence (Complete, 2026-09-28)
+
+- Frontend-only convergence of the shipped
+  application onto the approved visual/UX
+  reference (`docs/design/xportra-ui-redesign.html`
+  + `docs/design/xportra-ui-redesign.txt`), preserving
+  all real functionality, data boundaries,
+  routing, authorization, workflow semantics,
+  and backend/API contracts. No backend,
+  domain, API, migration, or compliance-logic
+  file changed.
+- Tokens: dark `xb-` values retargeted to the
+  reference palette (`#0D1512` foundation,
+  `#C7F464` lime, five semantic colors);
+  Inter + Source Serif stacks; 3px/6px radii.
+  Light theme kept (color-only override).
+  In-suite WCAG AA guards green.
+- Landing: nav offers only Sign In (`/session`,
+  also `/signin`) and Get Started (`/start`,
+  also `/signup`); no public Start-a-Shipment
+  CTA; single-sentence serif hero with no
+  forced breaks; hairline strip + three text
+  columns + minimal footer.
+- Dashboard "Your shipments": attention block
+  + recent worklist (dot/name/route/state) +
+  View all; no greeting, counts, cards, or
+  analytics. Recent limit 3 → 5 (reference:
+  last 4–6).
+- New Shipment: centered 560px column, "What
+  are you exporting?" + "Where is it going?"
+  first, follow-up fields in an adaptive inset;
+  same validation/creation/registry logic.
+- Workspace: vertical identity → state →
+  briefing → attention → full ledger; rows
+  open the 460px drawer (back-link close,
+  dot+word status, focus trap/return);
+  no parallel Documents section, no cards.
+- Archive: search + All/Active/Incomplete/
+  Completed chips, grouped worklist rows,
+  dimmed completed history, device-only
+  Forget preserved. Historical report: exact
+  persistent read-only banner, static final-
+  state ledger, readable documents, no pills,
+  no invented dates. Settings: quiet two-
+  column nav + label/value rows, real
+  controls only.
+- Verification: full frontend suite 61 files /
+  398 tests passing (none weakened);
+  `npx tsc --noEmit` clean; `npm run build`
+  succeeds. Legacy `/workspace/*` deep-link
+  tree preserved untouched for compatibility.
+  No browser/pixel review available — human
+  visual review remains the gate. No commit
+  or push performed.
+
+## Landing Page Motion & Sticky Header (Complete, 2026-09-28)
+
+- Public landing page only: sticky header
+  (`position: sticky`, page-background base,
+  quiet `--xb-surface` + stronger border once
+  scrolled past 8px, smooth token-timed
+  transition, no blur/glass); one-shot hero
+  entrance (heading → paragraph → CTAs →
+  strip, 90ms staggers, 10px rise + fade);
+  IntersectionObserver viewport reveal with
+  stagger for the "Three things" columns
+  (immediate-visible fallback where
+  unsupported); editorial workflow diagram
+  (Shipment → Requirements → Evidence →
+  Ready) as an ordered list on one hairline
+  with a slow 12s dot/name highlight walking
+  the stages (lime = active stage only).
+  Public nav, routes, copy, and all other
+  screens untouched; no new dependencies; no
+  metrics, scores, or invented claims.
+- Reduced motion: entrance/reveal/workflow
+  transforms and loops disabled with content
+  immediately visible; sticky header retained
+  (layout, not decoration).
+- Verification: full frontend suite 62 files /
+  410 tests passing (none weakened);
+  `npx tsc --noEmit` clean; `npm run build`
+  succeeds; production preview serves `/` at
+  200. No browser/pixel review available —
+  human visual review remains the gate. No
+  commit or push performed.

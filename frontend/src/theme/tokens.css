@@ -1,0 +1,193 @@
+/* Xportra AI — canonical design tokens.
+ *
+ * The `xb-` namespaced system below is the single
+ * authority for interface work. Dark values follow
+ * the approved redesign reference
+ * (`docs/design/xportra-ui-redesign.*`):
+ * deep green-black foundation, off-white type,
+ * electric lime as the single action accent,
+ * restrained semantic colors (dot + words,
+ * never large badges). `[data-theme="light"]`
+ * overrides color only for daytime use.
+ *
+ * Token contract (queried by tests — do not rename):
+ * backgrounds, surfaces, borders, text tiers,
+ * brand + foreground, semantic colors + subtle
+ * tints, focus, disabled, type scale, spacing,
+ * radii, elevation, motion.
+ *
+ * Rules: dark is the default brand experience;
+ * `[data-theme="light"]` overrides it. Component
+ * styles must consume these tokens via `var()`
+ * and must not introduce gradients or
+ * glassmorphism as visual language. Lime means
+ * "act on this"; semantic colors communicate
+ * state — never combined.
+ */
+
+:root,
+:root[data-theme="dark"] {
+  /* Page + surfaces: deep green-black foundation. */
+  --xb-background: #0d1512;
+  --xb-surface: #131c18;
+  --xb-surface-elevated: #17211c;
+  /* Borders: hairline dividers first, stronger
+   * edges only where separation is needed. */
+  --xb-border: #1d2721;
+  --xb-border-strong: #253128;
+  --xb-border-width: 1px;
+  /* Typography: off-white primary, muted tiers. */
+  --xb-text-primary: #edebe1;
+  --xb-text-secondary: #a8b3a9;
+  /* Muted is a slightly lifted cut of the
+   * reference faint tier so hints stay
+   * WCAG AA-readable on both dark surfaces
+   * (verified in-suite; see reference §M). */
+  --xb-text-muted: #93a094;
+  /* Brand: electric lime — primary actions,
+   * selected navigation, key emphasis only. */
+  --xb-brand: #c7f464;
+  --xb-brand-hover: #d6ff80;
+  --xb-brand-foreground: #0d1512;
+  --xb-brand-bg: #1d2614;
+  /* Semantics: visually distinct from brand,
+   * always paired with text + indicator. */
+  --xb-success: #7fbf8c;
+  --xb-success-bg: #122619;
+  --xb-warning: #e0a94c;
+  --xb-warning-bg: #2b1f0e;
+  --xb-danger: #d9776b;
+  --xb-danger-bg: #2e1414;
+  --xb-info: #a796d9;
+  --xb-info-bg: #221f38;
+  --xb-neutral-bg: #1a201b;
+  /* Interaction + state. */
+  --xb-focus: #c7f464;
+  --xb-focus-ring-width: 3px;
+  --xb-disabled: #6b746d;
+  /* Type: Source Serif for record identity,
+   * Inter for UI/body. Readable baseline with
+   * strong hierarchy. Body is 16px; display
+   * clamps so the hero stays strong on small
+   * screens without new breakpoints. */
+  --xb-font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --xb-font-display: "Source Serif Pro", "Source Serif 4", Georgia, "Times New Roman", serif;
+  --xb-text-display: clamp(2.5rem, 1.25rem + 5vw, 3.25rem);
+  --xb-text-title: 1.875rem;
+  --xb-text-section: 1.375rem;
+  --xb-text-card: 1.125rem;
+  --xb-text-lead: 1.125rem;
+  --xb-text-body: 1rem;
+  --xb-text-small: 0.9375rem;
+  --xb-text-meta: 0.8125rem;
+  --xb-leading-tight: 1.2;
+  --xb-leading-body: 1.6;
+  --xb-weight-regular: 400;
+  --xb-weight-medium: 600;
+  --xb-weight-bold: 700;
+  /* Spacing: moderately spacious 8-point scale. */
+  --xb-space-2xs: 0.25rem;
+  --xb-space-xs: 0.5rem;
+  --xb-space-sm: 0.75rem;
+  --xb-space-md: 1rem;
+  --xb-space-lg: 1.5rem;
+  --xb-space-xl: 2rem;
+  --xb-space-2xl: 3rem;
+  --xb-page-gutter: 1.5rem;
+  --xb-card-padding: 1.25rem;
+  --xb-control-height: 2.75rem;
+  --xb-measure: 72ch;
+  /* Radius: hairlines need almost none —
+   * 3px controls, 6px genuine panels. */
+  --xb-radius-sm: 3px;
+  --xb-radius-md: 6px;
+  --xb-radius-lg: 6px;
+  --xb-radius-full: 999px;
+  /* Elevation: restrained shadows. */
+  --xb-shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+  --xb-shadow-md: 0 2px 8px rgb(0 0 0 / 0.45);
+  --xb-shadow-lg: 0 8px 24px rgb(0 0 0 / 0.5);
+  /* Motion: restrained transitions only. */
+  --xb-motion-fast: 120ms;
+  --xb-motion-base: 180ms;
+  --xb-motion-ease: ease-out;
+}
+
+:root[data-theme="light"] {
+  /* Page + surfaces: pale green-tinted paper. */
+  --xb-background: #f4f6f1;
+  --xb-surface: #ffffff;
+  --xb-surface-elevated: #eef1e8;
+  --xb-border: #dfe3d6;
+  --xb-border-strong: #b9c2ab;
+  --xb-border-width: 1px;
+  /* Typography: near-black green ink. */
+  --xb-text-primary: #1a2114;
+  --xb-text-secondary: #43503c;
+  /* Muted passes AA on both light surfaces (4.87–5.30:1, verified 2026-09-28). */
+  --xb-text-muted: #646f5a;
+  /* Brand: deep lime for contrast on light;
+   * foreground stays readable on brand fills. */
+  --xb-brand: #4d7c0f;
+  --xb-brand-hover: #3f6212;
+  --xb-brand-foreground: #f7fee7;
+  --xb-brand-bg: #ecfccb;
+  /* Semantics: deeper values for light contrast. */
+  --xb-success: #15803d;
+  --xb-success-bg: #e5f2e8;
+  --xb-warning: #b45309;
+  --xb-warning-bg: #fdf0dc;
+  --xb-danger: #b91c1c;
+  --xb-danger-bg: #fbe7e7;
+  --xb-info: #1d4ed8;
+  --xb-info-bg: #e7eefc;
+  --xb-neutral-bg: #eef1e8;
+  --xb-focus: #4d7c0f;
+  --xb-focus-ring-width: 3px;
+  --xb-disabled: #9aa39c;
+  /* Type, spacing, radius, motion: shared with
+   * dark — themes differ in color only. */
+  --xb-font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --xb-font-display: "Source Serif Pro", "Source Serif 4", Georgia, "Times New Roman", serif;
+  --xb-text-display: clamp(2.5rem, 1.25rem + 5vw, 3.25rem);
+  --xb-text-title: 1.875rem;
+  --xb-text-section: 1.375rem;
+  --xb-text-card: 1.125rem;
+  --xb-text-lead: 1.125rem;
+  --xb-text-body: 1rem;
+  --xb-text-small: 0.9375rem;
+  --xb-text-meta: 0.8125rem;
+  --xb-leading-tight: 1.2;
+  --xb-leading-body: 1.6;
+  --xb-weight-regular: 400;
+  --xb-weight-medium: 600;
+  --xb-weight-bold: 700;
+  --xb-space-2xs: 0.25rem;
+  --xb-space-xs: 0.5rem;
+  --xb-space-sm: 0.75rem;
+  --xb-space-md: 1rem;
+  --xb-space-lg: 1.5rem;
+  --xb-space-xl: 2rem;
+  --xb-space-2xl: 3rem;
+  --xb-page-gutter: 1.5rem;
+  --xb-card-padding: 1.25rem;
+  --xb-control-height: 2.75rem;
+  --xb-measure: 72ch;
+  --xb-radius-sm: 3px;
+  --xb-radius-md: 6px;
+  --xb-radius-lg: 6px;
+  --xb-radius-full: 999px;
+  --xb-shadow-sm: 0 1px 2px rgb(26 33 20 / 0.08);
+  --xb-shadow-md: 0 2px 8px rgb(26 33 20 / 0.1);
+  --xb-shadow-lg: 0 8px 24px rgb(26 33 20 / 0.14);
+  --xb-motion-fast: 120ms;
+  --xb-motion-base: 180ms;
+  --xb-motion-ease: ease-out;
+}
+
+/* Responsive breakpoints (documented contract):
+ * wide ≥1100px (sidebar shell), narrow ≤860px
+ * (drawer + stacked layouts), compact ≤640px
+ * (tight gutters). Primitives reference these
+ * same breakpoints; do not invent new ones
+ * without a 10.8B+ task recording the change. */

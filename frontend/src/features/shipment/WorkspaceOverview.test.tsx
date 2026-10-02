@@ -1,6 +1,6 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { useEffect } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AnalysisProvider, useAnalysis } from "../../app/AnalysisContext";
 import { AuthProvider } from "../../app/AuthContext";
@@ -140,5 +140,47 @@ describe("WorkspaceOverview", () => {
     expect(
       screen.getByRole("link", { name: "Start a new shipment" }),
     ).toBeInTheDocument();
+  });
+
+  it("states the next action from process state without judging", () => {
+    renderOverview({ ...RECORD, state: "evidence_pending", open_requirements: [] });
+    expect(screen.getByRole("heading", { name: "Next action" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Supply evidence" })).toBeInTheDocument();
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/score|verdict|passed|failed|compliant/i);
+  });
+
+  it("summarizes requirements, documents, and rounds with existing routes", () => {
+    renderOverview(RECORD);
+    expect(screen.getByRole("heading", { name: "Shipment summary" })).toBeInTheDocument();
+    const summary = screen.getByRole("region", { name: "Shipment summary" });
+    const withinSummary = (name: string) =>
+      within(summary).getByRole("link", { name });
+    expect(withinSummary("Review requirements").getAttribute("href")).toContain("requirements");
+    expect(withinSummary("Open documents").getAttribute("href")).toContain("documents");
+    expect(withinSummary("Open assessment").getAttribute("href")).toContain("assessment");
+  });
+
+  it("shows the remembered human shipment identity", () => {
+    sessionStorage.setItem(
+      "xportra.shipments.v1",
+      JSON.stringify([
+        {
+          caseId: RECORD.case_id,
+          shipmentId: RECORD.shipment_id,
+          profile: {
+            product: "Cocoa beans",
+            origin: "Nigeria",
+            destination: "Netherlands",
+            quantity: "",
+            unit: "",
+            shipmentDate: "",
+          },
+          record: RECORD,
+        },
+      ]),
+    );
+    renderOverview(RECORD);
+    expect(screen.getByText("Cocoa beans · Nigeria → Netherlands")).toBeInTheDocument();
   });
 });

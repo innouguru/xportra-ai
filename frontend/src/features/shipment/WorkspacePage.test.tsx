@@ -3,6 +3,7 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
+import { ConversationProvider } from "../conversation/ConversationContext";
 import { WorkspacePage } from "./WorkspacePage";
 import { Stepper } from "../../components/Stepper";
 import type { WorkflowRecord } from "../../types/api";
@@ -29,13 +30,15 @@ function renderWorkspace(record: WorkflowRecord | null) {
   render(
     <MemoryRouter initialEntries={["/workspace"]}>
       <AuthProvider>
-        <WorkflowProvider>
-          <Routes>
-            <Route path="/workspace" element={<WorkspacePage />}>
-              <Route index element={<div>Section</div>} />
-            </Route>
-          </Routes>
-        </WorkflowProvider>
+        <ConversationProvider>
+          <WorkflowProvider>
+            <Routes>
+              <Route path="/workspace" element={<WorkspacePage />}>
+                <Route index element={<div>Section</div>} />
+              </Route>
+            </Routes>
+          </WorkflowProvider>
+        </ConversationProvider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -50,14 +53,14 @@ describe("WorkspacePage", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows shipment reference, process state, and section nav", () => {
+  it("shows shipment reference, process state, and contextual sections", () => {
     renderWorkspace(RECORD);
     expect(screen.getByText("Evidence pending")).toBeInTheDocument();
     expect(
       screen.getByText("process position, not a compliance verdict", { exact: false }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("navigation", { name: "Workspace sections" }),
+      screen.getByRole("navigation", { name: "Shipment sections" }),
     ).toBeInTheDocument();
   });
 
@@ -67,19 +70,44 @@ describe("WorkspacePage", () => {
     expect(screen.getByText("Active shipment")).toBeInTheDocument();
   });
 
-  it("groups section navigation into workspace and assessment areas", () => {
+  it("shows human shipment identity when the profile is remembered", () => {
+    sessionStorage.setItem(
+      "xportra.shipments.v1",
+      JSON.stringify([
+        {
+          caseId: RECORD.case_id,
+          shipmentId: RECORD.shipment_id,
+          profile: {
+            product: "Cocoa beans",
+            origin: "Nigeria",
+            destination: "Netherlands",
+            quantity: "",
+            unit: "",
+            shipmentDate: "",
+          },
+          record: RECORD,
+        },
+      ]),
+    );
     renderWorkspace(RECORD);
-    const nav = screen.getByRole("navigation", { name: "Workspace sections" });
-    expect(nav).toHaveTextContent("Workspace");
-    expect(nav).toHaveTextContent("Assessment");
-    // Journey order is preserved within each group.
-    expect(
-      screen.getByRole("link", { name: "Shipment information" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Final review" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "Assessment package" }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Nigeria → Netherlands")).toBeInTheDocument();
+    expect(screen.getByText("Cocoa beans", { exact: false })).toBeInTheDocument();
+  });
+
+  it("groups section navigation into the four product concepts", () => {
+    renderWorkspace(RECORD);
+    const nav = screen.getByRole("navigation", { name: "Shipment sections" });
+    for (const name of ["Overview", "Documents", "Requirements", "Assessment"]) {
+      expect(nav).toHaveTextContent(name);
+    }
+    // Internal workflow stages are details, not section tabs.
+    for (const name of ["Analysis", "Review", "Final review", "Evidence gaps"]) {
+      expect(screen.queryByRole("link", { name })).toBeNull();
+    }
+    // Details group keeps established screens reachable.
+    expect(screen.getByRole("link", { name: "Shipment details" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "All shipments" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "History" })).toBeInTheDocument();
     // No rounds recorded yet, so no report link is offered.
     expect(screen.queryByRole("link", { name: "Latest report" })).toBeNull();
   });

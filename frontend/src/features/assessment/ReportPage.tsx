@@ -71,7 +71,7 @@ export function ReportPage() {
               Go to the assessment package
             </Link>
           ) : (
-            <Link className="primary-button" to="/">
+            <Link className="primary-button" to="/start">
               Start a new shipment
             </Link>
           )

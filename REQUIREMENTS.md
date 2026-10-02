@@ -436,12 +436,278 @@ workflow semantics change.
   migration, deployment changes, backend redesign,
   in-chat upload, and unrelated redesign are excluded.
 
+## R-10.7A: Product Information Architecture (Phase 10.7A) — Approved
+
+Phase 10.7A restructures the frontend information
+architecture only. The exporter journey becomes
+landing → start → workspace (overview, documents,
+requirements, assessment); internal workflow stages
+stop being top-level destinations while every
+capability stays reachable. No backend, domain,
+compliance, API-contract, tenant-isolation, or
+deterministic-semantics change.
+
+- R-10.7A.1 (Public entry): a landing page stating
+  only implemented behavior, with working product
+  and workflow entry points. No customer numbers,
+  certifications, partnerships, guarantees, or
+  statistics may be claimed.
+- R-10.7A.2 (Authenticated navigation): Overview,
+  Shipments, Documents, Requirements, Assessment as
+  the main concepts; Ask Xportra and Settings
+  secondary. Established screens remain mounted.
+- R-10.7A.3 (Shipment UX): human profile fields up
+  front; technical identifiers generated behind the
+  UI; device-local shipment registry is display
+  metadata only, never a compliance fact.
+- R-10.7A.4 (Concept consolidation): Documents holds
+  supplied/processing/needed/requested; Assessment
+  holds analysis/findings/review/package/history as
+  stages. Upload, processing, gap, download,
+  analysis, review, finalization, report, and history
+  behavior is preserved verbatim.
+- R-10.7A.5 (Out of scope): visual redesign, backend
+  endpoints or contract changes, compliance-rule or
+  reasoning changes, conversational upload, chat
+  changes, deletion, retention, reopening, queue,
+  notifications, RAG changes, provider migration,
+  deployment infrastructure, and unrelated redesign
+  are excluded.
+
+## R-10.7B: Visual System & Brand Direction (Phase 10.7B) — Approved
+
+Phase 10.7B applies a cohesive commercial visual system
+to the Phase 10.7A experience. Frontend presentation
+only. No backend, domain, compliance, API-contract,
+tenant-isolation, or deterministic-semantics change.
+
+- R-10.7B.1 (Tokens): colors flow through centralized
+  `:root` tokens — dark foundation, off-white type,
+  one electric-lime brand accent, restrained semantic
+  colors. No literal colors in components.
+- R-10.7B.2 (Brand): the lime accent marks identity
+  and primary actions only; compliance states keep
+  distinct semantic colors with text + indicator,
+  never color alone. No final logo mark is invented;
+  the glyph slot awaits explicit asset approval.
+- R-10.7B.3 (Surfaces): dark shell (sidebar layout
+  at 1100px and above), elevated content surfaces, subtle borders, landing
+  hero composition with approved copy only, restrained
+  tab selection, consistent button hierarchy.
+- R-10.7B.4 (Integrity): keyboard access, visible
+  focus, semantic controls, accessible contrast,
+  required labels, non-color-only status, and existing
+  responsive behavior are preserved.
+- R-10.7B.5 (Out of scope): final logo artwork, theme
+  switcher, new capabilities, conversational upload,
+  chat changes, deletion, retention, reopening, queue,
+  notifications, RAG, reasoning, or compliance-rule
+  changes, provider migration, deployment
+  infrastructure, and unrelated redesign are excluded.
+- Note (2026-09-28): the "theme switcher" exclusion
+  above is superseded by `R-10.8.6` below
+  (product-owner-approved redesign direction). All
+  other R-10.7B.5 exclusions stand. Historical Phase
+  10.7B records are unchanged; the supersession is
+  recorded here and in
+  `docs/decisions/ADR-0012-authenticated-shell-restructure.md`.
+
+## R-10.8: UI/UX Redesign — Calm Compliance Workspace (Phase 10.8) — Approved
+
+Phase 10.8 approves the product-owner redesign
+direction for a calm, shipment-first compliance
+workspace ("This app is easy to use and
+intuitive"), primarily for exporters/business
+owners and export operations staff — not a
+specialist compliance-lawyer interface, generic
+SaaS administration, database, document-management,
+analytics, or AI-chatbot experience. The user
+mental model is: which shipments are in progress,
+what is happening, what needs attention, and what
+to do next.
+
+This section authorizes requirements and
+architecture only. No implementation is authorized
+by R-10.8 alone; each implementation subtask
+(10.8A–10.8J) traces to the sub-requirement named
+below. No backend, domain, compliance,
+API-contract, tenant-isolation, or
+deterministic-semantics change is authorized by
+this redesign.
+
+- R-10.8.1 (Authenticated navigation): the primary
+  authenticated navigation is Xportra brand,
+  Dashboard, View Shipments, and Account.
+  Documents, Requirements, Evidence, and Assessment
+  are NOT primary navigation items; those concepts
+  are encountered within a shipment. The sidebar
+  label is "Dashboard"; the visible dashboard page
+  title is "Your shipments". This supersedes
+  R-10.7A.2 as the navigation direction for future
+  implementation; the existing implementation stays
+  in place until Phase 10.8B.
+- R-10.8.2 (Public/authenticated separation): the
+  public `/` experience is the Xportra
+  marketing/product landing page; the authenticated
+  application is a separate workspace experience.
+  Clicking the Xportra logo from the authenticated
+  application opens the public landing page in a
+  new browser tab and must not log the user out.
+  Exact routing implementation is deferred to
+  Phase 10.8B.
+- R-10.8.3 (Sidebar shell): the authenticated
+  shell is an expandable sidebar (~240px expanded
+  desktop width) with user-controlled collapse,
+  automatic collapse at smaller desktop widths, a
+  mobile hamburger-triggered drawer, the Xportra
+  brand mark retained when collapsed, Dashboard and
+  View Shipments navigation, an avatar/account
+  control, and a subtle notification entry point.
+  The shell provides a stable workspace frame for
+  contextual page layouts. No bottom navigation.
+  This supersedes the R-10.7B.3 topbar-oriented
+  shell model as the direction for future
+  implementation; the existing shell stays until
+  Phase 10.8B.
+- R-10.8.4 (Account): the avatar menu contains
+  Profile, Organization, Settings, and Sign out.
+  Settings scope is Account, Organization,
+  Notifications, and Security. These pages are
+  deferred to Phase 10.8I (menu shell placement
+  may arrive with 10.8B).
+- R-10.8.5 (Notifications): a subtle, quiet,
+  informational notification entry point exists
+  near the avatar. The first implementation does
+  NOT include a full notification center. This
+  narrows (for the entry-point scope only) the
+  notifications exclusions in R-10.1.9, R-10.4.8,
+  R-10.5.4, and R-10.6.6; a full notification
+  center remains out of scope.
+- R-10.8.6 (Theme): dark and light themes are
+  supported; the default is dark. The existing
+  palette is retained (dark green / near-black,
+  off-white typography, electric lime primary
+  accent, restrained semantic colors); the
+  redesign does not authorize replacing it. This
+  explicitly supersedes the R-10.7B.5 theme-
+  switcher exclusion (see note under R-10.7B.5).
+- R-10.8.7 (Dashboard purpose): the authenticated
+  dashboard is a shipment-resumption workspace
+  showing where the user left off and what to do
+  next (greeting, shipment counts, needs-attention
+  section, recent shipments). Cards are
+  briefing-focused (~3 across on broad desktop),
+  entirely clickable, with a dynamic primary
+  action performing the immediate action, minimal
+  metadata, indicator + text status, subtle
+  blockers (the attention section already
+  surfaces them), automatic updates on state
+  change, and a friendly action-oriented empty
+  state. Implementation is deferred to Phase
+  10.8C.
+- R-10.8.8 (Shipment-first structure): the
+  shipment is the primary user-facing object.
+  Inside a shipment users encounter shipment
+  details, requirements, documents, evidence,
+  verification, assessment, and actions, in
+  plain-English user-facing states (e.g. Waiting
+  for you, Needs attention, Still checking,
+  Addressed, Ready). Internal technical states
+  (e.g. applicability UNKNOWN, evidence
+  sufficiency, retrieval state, confidence
+  internals) must not be exposed.
+- R-10.8.9 (Progressive verification): the
+  interaction model is Upload → Verify →
+  Assessment updates → Continue. There is no
+  universal "Run Compliance" operation. Documents
+  upload incrementally and each is individually
+  verifiable; assessment updates progressively.
+  Verification means evaluating whether evidence
+  extracted from the uploaded document satisfies
+  the relevant requirement (Requirement →
+  Required evidence → Uploaded document →
+  Evidence extraction → Requirement evaluation →
+  Addressed / Needs attention / Still checking);
+  comparison against a master/reference document
+  is NOT required in the general case. Progress
+  may show Reading document → Checking evidence
+  → Assessing requirement; the interface must not
+  emphasize "AI thinking."
+- R-10.8.10 (Completed shipments): completed
+  shipments are immutable historical records
+  opened as dedicated historical compliance
+  reports — never reopened as active workspaces.
+  Users may access uploaded documents, download
+  the historical report as PDF, and create a new
+  shipment based on a completed one. Reopening,
+  mutating, or re-finalizing a completed shipment
+  is forbidden (Phase 7.5 holds).
+- R-10.8.11 (View Shipments): the page title is
+  "Your shipments". Default ordering is active,
+  then incomplete, then completed. Search +
+  filters are required and must understand
+  shipment information (product, destination,
+  shipment information). Desktop results use a
+  table; mobile results may scroll horizontally.
+  Implementation is deferred to Phase 10.8G.
+- R-10.8.12 (Public landing page): the landing
+  page is a product/marketing experience with hero
+  direction "Xportra / Export compliance, without
+  the guesswork.", supporting message "Know what
+  your shipment needs. Understand why. Resolve
+  what's missing.", primary CTA Start a Shipment,
+  secondary CTA Sign In, and a realistic product
+  UI preview (no cargo illustrations, shipping
+  metaphors, AI robots, or generic AI imagery).
+  Structure: Navigation → Hero → Problem/context
+  → How Xportra works → Key capabilities → Trust
+  / authoritative sources → CTA → Footer. How-it-
+  works steps: 01 Create shipment, 02 Determine
+  requirements, 03 Verify evidence, 04 Get
+  shipment ready. AI is explicitly part of the
+  positioning; authoritative regulatory sources
+  are prominently represented. Implementation is
+  deferred to Phase 10.8H.
+- R-10.8.13 (Responsive): desktop-first and
+  mobile-capable; hamburger navigation on mobile;
+  full-width stacked shipment cards; requirement
+  grid becomes accordion/list; document drawer
+  becomes modal; desktop shipment tables may
+  scroll horizontally on mobile. No bottom
+  navigation.
+- R-10.8.14 (Accessibility): strong
+  accessibility is required — keyboard
+  navigation, semantic HTML, visible focus,
+  screen-reader support, accessible status
+  communication, drawer/modal focus management,
+  reduced motion, and status never relying on
+  color alone.
+- R-10.8.15 (Visual language): retain the
+  accepted visual direction — dark green /
+  near-black, off-white, electric lime,
+  restrained semantic colors, moderate spacing,
+  8–12px radius, clean/friendly typography,
+  line/filled icons as appropriate, subtle
+  transitions, no visual metaphor. The public
+  site may be slightly more expressive than the
+  authenticated app, which remains restrained.
+- R-10.8.16 (Out of scope for Phase 10.8):
+  requirements/architecture only — no new shell,
+  dashboard, new-shipment flow, shipment
+  workspace, document drawer, historical report,
+  landing page, or settings pages. Those are
+  Phases 10.8A–10.8J. No compliance-rule,
+  reasoning, retrieval, provider, deployment, or
+  reopening/versioning changes.
+
 ## R-1..R-10: Future Phases — Partially Scoped
 
 Phases 1–10 (see `ROADMAP.md`) have no approved detailed functional
 requirements at this time, except for Phase 10.1 (`R-10.1` above),
 Phase 10.2 (`R-10.2` above), Phase 10.4 (`R-10.4` above),
-Phase 10.5 (`R-10.5` above), and Phase 10.6 (`R-10.6` above).
+Phase 10.5 (`R-10.5` above), Phase 10.6 (`R-10.6` above),
+Phase 10.7A (`R-10.7A` above), Phase 10.7B (`R-10.7B` above),
+and Phase 10.8 (`R-10.8` above).
 Requirements for each remaining phase will be added here
 when defined and approved. In particular, no regulatory requirements and
 no detailed product functionality beyond the sections above have been

@@ -1,0 +1,109 @@
+/* Settings (approved redesign reference
+ * `docs/design/xportra-ui-redesign.*`).
+ *
+ * Secondary, quiet layout: left-hand text nav
+ * plus right-hand content of label/value rows.
+ * No colored panels, no large headings beyond
+ * the page H1. Every value flows through
+ * `theme/tokens.css` (`var(--xb-…)`); no
+ * literal colors, no gradients, no
+ * glassmorphism.
+ *
+ * Class contract (do not rename without a task
+ * recording the change):
+ * .xb-settings-wrap, .xb-settings-nav,
+ * .xb-settings-panel, .xb-settings-row.
+ */
+
+.xb-settings-wrap {
+  display: flex;
+  gap: 3rem;
+  max-width: 51.25rem;
+}
+
+.xb-settings-nav {
+  width: 10rem;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.xb-settings-nav a {
+  font-size: 0.84375rem;
+  padding: 0.4375rem 0;
+  color: var(--xb-text-secondary);
+  text-decoration: none;
+}
+
+.xb-settings-nav a:hover {
+  color: var(--xb-text-primary);
+}
+
+.xb-settings-panel {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: var(--xb-space-xl);
+  align-content: start;
+}
+
+.xb-settings-section-title {
+  font-family: var(--xb-font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--xb-text-secondary);
+  margin: 0 0 0.25rem;
+}
+
+h3.xb-settings-section-title {
+  margin-top: var(--xb-space-md);
+}
+
+.xb-settings-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--xb-space-md);
+  padding: 1rem 0;
+  border-top: var(--xb-border-width) solid var(--xb-border);
+}
+
+.xb-settings-row:first-of-type {
+  border-top: none;
+}
+
+.xb-settings-row__label {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--xb-text-primary);
+}
+
+.xb-settings-row__desc {
+  margin: 0.125rem 0 0;
+  font-size: 0.78125rem;
+  color: var(--xb-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.xb-settings-nav a:focus-visible,
+.xb-settings-panel a:focus-visible,
+.xb-settings-panel button:focus-visible {
+  outline: var(--xb-focus-ring-width) solid var(--xb-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 860px) {
+  .xb-settings-wrap {
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .xb-settings-nav {
+    width: 100%;
+    flex-direction: row;
+    gap: 1rem;
+    overflow-x: auto;
+  }
+}

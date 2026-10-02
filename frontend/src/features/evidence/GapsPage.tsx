@@ -40,7 +40,7 @@ export function GapsPage() {
         title="No active shipment"
         body="Open a compliance case first."
         action={
-          <Link className="primary-button" to="/">
+          <Link className="primary-button" to="/start">
             Start a new shipment
           </Link>
         }

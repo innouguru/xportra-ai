@@ -1,0 +1,550 @@
+/* Xportra AI — public landing page.
+ *
+ * Approved redesign reference
+ * (`docs/design/xportra-ui-redesign.*`): quiet
+ * wordmark nav, one natural-sentence serif hero,
+ * hairline strip + three text columns, an
+ * editorial workflow diagram, minimal footer.
+ * Every value flows through
+ * `theme/tokens.css` (`var(--xb-…)`); no literal
+ * colors, no gradients, no glassmorphism, no
+ * card grids, no decorative imagery.
+ *
+ * Calm motion only (see `landingMotion.ts`):
+ * sticky header with a quiet scrolled state,
+ * one-shot hero entrance, viewport reveals,
+ * and a slow workflow highlight. All decorative
+ * motion stops under `prefers-reduced-motion`.
+ *
+ * Class contract (do not rename without a task
+ * recording the change):
+ * .xb-land, .xb-land-nav,
+ * .xb-land-nav--scrolled, .xb-land-wordmark,
+ * .xb-land-nav__links, .xb-land-signin,
+ * .xb-land-main, .xb-land-hero,
+ * .xb-land-display, .xb-land-lede,
+ * .xb-land-ctas, .xb-land-strip,
+ * .xb-land-section, .xb-land-cols,
+ * .xb-land-reveal, .xb-land-flow,
+ * .xb-land-footer.
+ */
+
+.xb-land {
+  background: var(--xb-background);
+  color: var(--xb-text-primary);
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  font-size: var(--xb-text-body);
+  line-height: var(--xb-leading-body);
+}
+
+/* Public nav: wordmark left, two actions right.
+ * Sticky so it stays reachable while scrolling;
+ * the scrolled state is a quiet surface lift,
+ * never a dominating bar. No blur, no glass. */
+.xb-land-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--xb-space-md);
+  padding: 1.375rem 3rem;
+  border-bottom: var(--xb-border-width) solid var(--xb-border);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--xb-background);
+  transition:
+    background-color var(--xb-motion-base) var(--xb-motion-ease),
+    border-color var(--xb-motion-base) var(--xb-motion-ease);
+}
+
+.xb-land-nav--scrolled {
+  background: var(--xb-surface);
+  border-bottom-color: var(--xb-border-strong);
+}
+
+.xb-land-wordmark {
+  font-family: var(--xb-font-display);
+  font-size: 1.1875rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--xb-text-primary);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+}
+
+.xb-land-wordmark__dot {
+  color: var(--xb-brand);
+}
+
+/* Brand lockup: the glyph slot is reused from the
+ * established `components/BrandMark.tsx` mark
+ * (same `.brand-glyph` asset, same "X" content —
+ * no new logo invented here). Landing re-points
+ * it at canonical `xb-` tokens and sizes it
+ * relative to the wordmark, mirroring the
+ * `shell/shell.css` re-pointing of the same
+ * legacy markup. The glyph is decorative: the
+ * parent link keeps the accessible name. */
+.xb-land-wordmark .brand-glyph {
+  width: 1.75rem;
+  height: 1.75rem;
+  font-size: 1rem;
+  background: var(--xb-brand);
+  color: var(--xb-brand-foreground);
+  border-radius: var(--xb-radius-sm);
+  flex-shrink: 0;
+}
+
+.xb-land-nav__links {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.xb-land-signin {
+  color: var(--xb-text-secondary);
+  text-decoration: none;
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  padding: 0.5625rem 0.5rem;
+}
+
+.xb-land-signin:hover {
+  color: var(--xb-text-primary);
+}
+
+/* Landing-scoped buttons on canonical tokens. */
+.xb-land .primary-button {
+  background: var(--xb-brand);
+  color: var(--xb-brand-foreground);
+  border: 1px solid var(--xb-brand);
+  border-radius: var(--xb-radius-sm);
+  font-size: 0.84375rem;
+  font-weight: 600;
+}
+
+.xb-land .primary-button:hover:not(:disabled) {
+  background: var(--xb-brand-hover);
+  border-color: var(--xb-brand-hover);
+}
+
+.xb-land .secondary-button {
+  background: transparent;
+  color: var(--xb-text-primary);
+  border: 1px solid var(--xb-border-strong);
+  border-radius: var(--xb-radius-sm);
+  font-size: 0.84375rem;
+  font-weight: 600;
+}
+
+.xb-land .secondary-button:hover:not(:disabled) {
+  border-color: var(--xb-text-muted);
+  color: var(--xb-text-primary);
+  background: transparent;
+}
+
+.xb-land-cta-primary {
+  padding: 0.75rem 1.375rem;
+  font-size: 0.875rem;
+}
+
+/* Hero: one natural sentence on a broad canvas.
+ * Composition (desktop): the content canvas spans
+ * the viewport behind comfortable 48px gutters; a
+ * wide heading (~1168px cap, ~two lines at the
+ * reference scale), then a narrower lede for
+ * reading, then a compact CTA row, then the
+ * full-canvas supporting strip. Caps are maximums
+ * only — below them blocks narrow with the
+ * viewport and wrap naturally, so no extra
+ * breakpoint is needed and no horizontal overflow
+ * is introduced. Left gutter and editorial
+ * alignment are unchanged. */
+.xb-land-main {
+  width: 100%;
+  max-width: 88rem;
+  margin: 0 auto;
+  padding: 0 3rem;
+  display: grid;
+}
+
+.xb-land-hero {
+  padding: 5.5rem 0 6rem;
+  display: grid;
+  gap: 0;
+  justify-items: start;
+}
+
+/* Hero entrance: one gentle rise per block —
+ * heading, paragraph, CTAs, strip last. Short,
+ * restrained, and fully stopped under
+ * reduced-motion (see below). */
+.xb-land-hero [data-anim] {
+  transition:
+    opacity 480ms var(--xb-motion-ease),
+    transform 480ms var(--xb-motion-ease);
+}
+
+.xb-land-hero [data-anim="lede"] {
+  transition-delay: 90ms;
+}
+
+.xb-land-hero [data-anim="ctas"] {
+  transition-delay: 180ms;
+}
+
+.xb-land-hero [data-anim="strip"] {
+  transition-delay: 270ms;
+}
+
+.xb-land-hero[data-ready="false"] [data-anim] {
+  opacity: 0;
+  transform: translateY(10px);
+}
+
+.xb-land-hero[data-ready="true"] [data-anim] {
+  opacity: 1;
+  transform: none;
+}
+
+.xb-land-display {
+  font-family: var(--xb-font-display);
+  font-size: clamp(1.5625rem, 1.125rem + 3.15vw, 2.5rem);
+  line-height: 1.22;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--xb-text-primary);
+  margin: 0;
+  max-width: 73rem;
+  text-align: left;
+}
+
+.xb-land-lede {
+  margin: 1.375rem 0 0;
+  font-size: 1.03125rem;
+  line-height: 1.65;
+  color: var(--xb-text-secondary);
+  max-width: 56rem;
+}
+
+.xb-land-ctas {
+  margin-top: 2.5rem;
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Quiet information strip, not cards: three equal
+ * columns distributed across the content canvas
+ * (the hairline above spans the same width). Each
+ * item keeps a readable internal measure while its
+ * column occupies one third of the canvas. */
+.xb-land-strip {
+  margin-top: 4.5rem;
+  border-top: var(--xb-border-width) solid var(--xb-border);
+  padding-top: 1.75rem;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem 3.25rem;
+  width: 100%;
+}
+
+.xb-land-strip__item {
+  max-width: 13.75rem;
+}
+
+.xb-land-strip__label {
+  margin: 0;
+  font-size: var(--xb-text-small);
+  font-weight: 600;
+  color: var(--xb-text-primary);
+}
+
+.xb-land-strip__text {
+  margin: 0.25rem 0 0;
+  font-size: var(--xb-text-small);
+  line-height: 1.5;
+  color: var(--xb-text-muted);
+}
+
+/* Three text columns, not cards. */
+.xb-land-section {
+  padding: 4rem 0;
+  border-top: var(--xb-border-width) solid var(--xb-border);
+}
+
+.xb-land-section h2 {
+  font-family: var(--xb-font-display);
+  font-size: 1.375rem;
+  line-height: var(--xb-leading-tight);
+  font-weight: 600;
+  color: var(--xb-text-primary);
+  margin: 0 0 1.75rem;
+  max-width: 32.5rem;
+}
+
+.xb-land-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2.25rem;
+}
+
+.xb-land-col__num {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--xb-text-muted);
+}
+
+.xb-land-col h3 {
+  margin: 0.625rem 0 0.5rem;
+  font-family: var(--xb-font-body);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--xb-text-primary);
+}
+
+.xb-land-col p {
+  margin: 0;
+  font-size: 0.84375rem;
+  line-height: 1.6;
+  color: var(--xb-text-secondary);
+}
+
+.xb-land-col p + p {
+  margin-top: 0.5rem;
+}
+
+/* Scroll reveal for editorial columns: barely
+ * there — a small rise with a per-column
+ * stagger that sharpens hierarchy. */
+.xb-land-reveal:not(.is-visible) {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.xb-land-reveal.is-visible {
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity 480ms var(--xb-motion-ease),
+    transform 480ms var(--xb-motion-ease);
+  transition-delay: calc(var(--reveal-index, 0) * 90ms);
+}
+
+/* Workflow diagram: an editorial stepper, not
+ * cards — four stages joined by one hairline,
+ * each a small dot plus restrained type. A very
+ * slow highlight walks the stages in order so
+ * the diagram reads as a compliance process
+ * progressing. Dots are decorative; the stage
+ * names and sentences carry the meaning. */
+.xb-land-flow__steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2.25rem;
+  position: relative;
+}
+
+.xb-land-flow__steps::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 0.5rem;
+  right: 0.5rem;
+  border-top: var(--xb-border-width) solid var(--xb-border-strong);
+}
+
+.xb-land-flow__step {
+  position: relative;
+  padding-top: 1.5rem;
+  min-width: 0;
+}
+
+.xb-land-flow__dot {
+  position: absolute;
+  top: 0;
+  left: 0.5rem;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--xb-background);
+  border: 1px solid var(--xb-text-muted);
+  animation: xb-land-flow-dot 12s ease-in-out infinite;
+  animation-delay: calc(var(--step-index, 0) * -3s);
+}
+
+.xb-land-flow__name {
+  margin: 0;
+  font-size: var(--xb-text-small);
+  font-weight: 600;
+  color: var(--xb-text-secondary);
+  animation: xb-land-flow-name 12s ease-in-out infinite;
+  animation-delay: calc(var(--step-index, 0) * -3s);
+}
+
+.xb-land-flow__text {
+  margin: 0.25rem 0 0;
+  font-size: 0.78125rem;
+  line-height: 1.55;
+  color: var(--xb-text-muted);
+}
+
+@keyframes xb-land-flow-dot {
+  0%,
+  100% {
+    background: var(--xb-background);
+    border-color: var(--xb-text-muted);
+  }
+
+  4%,
+  22% {
+    background: var(--xb-brand);
+    border-color: var(--xb-brand);
+  }
+
+  30%,
+  92% {
+    background: var(--xb-background);
+    border-color: var(--xb-text-muted);
+  }
+}
+
+@keyframes xb-land-flow-name {
+  0%,
+  100% {
+    color: var(--xb-text-secondary);
+  }
+
+  4%,
+  22% {
+    color: var(--xb-text-primary);
+  }
+
+  30%,
+  92% {
+    color: var(--xb-text-secondary);
+  }
+}
+
+/* Minimal footer. */
+.xb-land-footer {
+  margin-top: auto;
+  padding: 2.25rem 3rem;
+  border-top: var(--xb-border-width) solid var(--xb-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--xb-space-md);
+  font-size: 0.78125rem;
+  color: var(--xb-text-muted);
+}
+
+.xb-land-footer nav {
+  display: flex;
+  gap: 1.375rem;
+}
+
+.xb-land-footer a {
+  color: var(--xb-text-secondary);
+  text-decoration: none;
+}
+
+.xb-land-footer a:hover {
+  color: var(--xb-text-primary);
+}
+
+.xb-land-nav a:focus-visible,
+.xb-land-ctas a:focus-visible,
+.xb-land-footer a:focus-visible,
+.xb-land-wordmark:focus-visible {
+  outline: var(--xb-focus-ring-width) solid var(--xb-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 860px) {
+  .xb-land-nav,
+  .xb-land-main,
+  .xb-land-footer {
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+
+  .xb-land-hero {
+    padding: 3.5rem 0 4rem;
+  }
+
+  .xb-land-cols {
+    grid-template-columns: 1fr;
+    gap: 1.875rem;
+  }
+
+  .xb-land-strip {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .xb-land-strip__item {
+    max-width: none;
+  }
+
+  .xb-land-flow__steps {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .xb-land-flow__steps::before {
+    top: 0.5rem;
+    bottom: 0.5rem;
+    left: 3px;
+    right: auto;
+    border-top: none;
+    border-left: var(--xb-border-width) solid var(--xb-border-strong);
+  }
+
+  .xb-land-flow__step {
+    padding-top: 0;
+    padding-left: 1.5rem;
+  }
+
+  .xb-land-flow__dot {
+    top: 5px;
+    left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xb-land {
+    scroll-behavior: auto;
+  }
+
+  /* Decorative motion stops; content stays
+   * immediately visible. The sticky header is
+   * layout, not motion, so it remains. */
+  .xb-land-hero [data-anim],
+  .xb-land-reveal,
+  .xb-land-reveal.is-visible {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+
+  .xb-land-flow__dot,
+  .xb-land-flow__name {
+    animation: none;
+  }
+
+  .xb-land-nav {
+    transition: none;
+  }
+}

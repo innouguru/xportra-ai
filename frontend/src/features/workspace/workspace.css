@@ -1,0 +1,416 @@
+/* Xportra AI — shipment workspace.
+ *
+ * Approved redesign reference
+ * (`docs/design/xportra-ui-redesign.*`): one
+ * continuous vertical workspace — identity,
+ * current state, quiet briefing, attention,
+ * requirement ledger. Hairline dividers carry
+ * the structure; the briefing panel and the
+ * drawer are the only genuine panels. Every
+ * value flows through `theme/tokens.css`
+ * (`var(--xb-…)`); no literal colors, no
+ * gradients, no glassmorphism.
+ *
+ * Class contract (do not rename without a task
+ * recording the change):
+ * .xb-ws-layout, .xb-ws-main, .xb-ws-aside,
+ * .xb-ws-identity, .xb-ws-eyebrow,
+ * .xb-ws-title, .xb-ws-meta, .xb-ws-state,
+ * .xb-ws-briefing, .xb-hist-banner,
+ * .xb-ws-readonly, .xb-ws-section-title,
+ * .xb-ws-disclosure, .xb-doc-drawer,
+ * .xb-doc-scrim.
+ */
+
+.xb-ws-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: var(--xb-space-xl);
+  align-items: start;
+}
+
+.xb-ws-main {
+  display: grid;
+  gap: var(--xb-space-xl);
+  min-width: 0;
+}
+
+.xb-ws-aside {
+  display: grid;
+  gap: var(--xb-space-md);
+  min-width: 0;
+}
+
+/* Shipment identity: eyebrow, serif record
+ * title, quiet facts the boundary provides. */
+.xb-ws-identity {
+  padding-bottom: 1.375rem;
+  border-bottom: var(--xb-border-width) solid var(--xb-border);
+}
+
+.xb-ws-eyebrow {
+  margin: 0;
+  font-size: 0.78125rem;
+  color: var(--xb-text-muted);
+}
+
+.xb-ws-title {
+  margin: 0.375rem 0 0;
+  font-family: var(--xb-font-display);
+  font-size: 1.625rem;
+  line-height: var(--xb-leading-tight);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--xb-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.xb-ws-meta {
+  margin: 0.625rem 0 0;
+  display: flex;
+  gap: 1.125rem;
+  flex-wrap: wrap;
+  font-size: 0.8125rem;
+  color: var(--xb-text-secondary);
+}
+
+/* Current state: the most important line. */
+.xb-ws-state {
+  margin: 1.625rem 0 1.875rem;
+  display: flex;
+  gap: 0.875rem;
+  align-items: flex-start;
+}
+
+.xb-ws-state .xb-row__dot {
+  width: 0.5625rem;
+  height: 0.5625rem;
+  margin-top: 0.375rem;
+}
+
+.xb-ws-state__text {
+  margin: 0;
+  font-size: 0.96875rem;
+  font-weight: 500;
+  color: var(--xb-text-primary);
+}
+
+.xb-ws-state__sub {
+  margin: 0.1875rem 0 0;
+  font-size: 0.84375rem;
+  color: var(--xb-text-secondary);
+  max-width: 35rem;
+}
+
+/* Briefing: a quiet panel, no border. */
+.xb-ws-briefing {
+  background: var(--xb-surface);
+  border: none;
+  border-radius: var(--xb-radius-md);
+  padding: 1.25rem 1.375rem;
+  margin-bottom: 2.25rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.xb-ws-briefing__label {
+  margin: 0;
+  font-size: 0.71875rem;
+  font-weight: 600;
+  color: var(--xb-text-muted);
+}
+
+.xb-ws-briefing__text {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--xb-text-secondary);
+  max-width: 40rem;
+}
+
+.xb-ws-briefing__message {
+  font-family: var(--xb-font-display);
+  font-size: var(--xb-text-title);
+  line-height: var(--xb-leading-tight);
+  font-weight: var(--xb-weight-medium);
+  color: var(--xb-text-primary);
+  margin: 0;
+  max-width: 32rem;
+}
+
+.xb-ws-briefing__detail {
+  font-size: var(--xb-text-body);
+  color: var(--xb-text-secondary);
+  margin: 0;
+  max-width: var(--xb-measure);
+}
+
+.xb-ws-briefing__action {
+  margin: 0.25rem 0 0;
+}
+
+/* Historical banner: persistent, plain. */
+.xb-hist-banner {
+  background: var(--xb-surface);
+  border-bottom: var(--xb-border-width) solid var(--xb-border);
+  padding: 0.6875rem var(--xb-space-md);
+  font-size: 0.78125rem;
+  color: var(--xb-text-secondary);
+  text-align: center;
+  margin: 0 0 var(--xb-space-md);
+}
+
+.xb-hist-banner strong {
+  color: var(--xb-text-primary);
+}
+
+/* Read-only banner: text + structure, calm. */
+.xb-ws-readonly {
+  border: var(--xb-border-width) solid var(--xb-border-strong);
+  border-left: 4px solid var(--xb-text-muted);
+  border-radius: var(--xb-radius-sm);
+  background: var(--xb-neutral-bg);
+  padding: var(--xb-space-sm) var(--xb-space-md);
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-secondary);
+}
+
+.xb-ws-readonly strong {
+  color: var(--xb-text-primary);
+}
+
+/* Section titles: quiet sentence-case heads. */
+.xb-ws-section-title {
+  font-family: var(--xb-font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--xb-text-secondary);
+  margin: 2.25rem 0 0.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--xb-space-sm);
+}
+
+.xb-ws-section-title__count {
+  color: var(--xb-text-muted);
+  font-weight: 400;
+}
+
+/* Requirement list: rows, never cards. */
+.xb-ws-req-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+.xb-ws-req-grid > li {
+  min-width: 0;
+}
+
+/* Progressive disclosure for "why required". */
+.xb-ws-disclosure {
+  margin-top: var(--xb-space-xs);
+}
+
+.xb-ws-disclosure__body {
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-secondary);
+  margin: var(--xb-space-xs) 0 0;
+  max-width: var(--xb-measure);
+}
+
+.xb-ws-missing {
+  list-style: none;
+  margin: var(--xb-space-xs) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--xb-space-2xs);
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-secondary);
+}
+
+.xb-ws-missing > li {
+  border-left: 2px solid var(--xb-warning);
+  padding-left: var(--xb-space-xs);
+}
+
+/* Requirement drawer: right-side panel on
+ * desktop (460px), full-screen sheet on
+ * mobile. The workspace stays visible behind
+ * a dim overlay. */
+.xb-doc-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 28.75rem;
+  max-width: 100%;
+  z-index: 50;
+  overflow-y: auto;
+  background: var(--xb-background);
+  border-left: var(--xb-border-width) solid var(--xb-border-strong);
+  box-shadow: var(--xb-shadow-lg);
+  padding: 1.75rem 1.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: var(--xb-space-sm);
+}
+
+.xb-doc-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--xb-background);
+  opacity: 0.6;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.xb-doc-drawer__back {
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--xb-text-secondary);
+  background: none;
+  border: none;
+  padding: 0.5rem 0;
+  margin-bottom: 1.375rem;
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.xb-doc-drawer__back:hover {
+  color: var(--xb-text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.xb-doc-drawer__eyebrow {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--xb-text-muted);
+}
+
+.xb-doc-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--xb-space-sm);
+}
+
+.xb-doc-drawer__head .xb-page-header__eyebrow {
+  margin: 0;
+}
+
+.xb-doc-drawer__title {
+  font-family: var(--xb-font-display);
+  font-size: 1.25rem;
+  line-height: var(--xb-leading-tight);
+  font-weight: 600;
+  color: var(--xb-text-primary);
+  margin: 0.25rem 0 0;
+}
+
+.xb-doc-drawer__block {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: var(--xb-border-width) solid var(--xb-border);
+}
+
+.xb-doc-drawer__block-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.71875rem;
+  font-weight: 600;
+  color: var(--xb-text-muted);
+}
+
+.xb-doc-drawer__body {
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-secondary);
+  margin: 0;
+}
+
+.xb-doc-drawer__actions {
+  display: flex;
+  gap: var(--xb-space-xs);
+  flex-wrap: wrap;
+  margin-top: var(--xb-space-xs);
+}
+
+.xb-doc-drawer .xb-icon-btn svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* Quiet secondary text and text-button for
+ * new surfaces (legacy muted/link classes
+ * stay frozen for existing components). */
+.xb-ws-muted {
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-muted);
+  margin: 0;
+}
+
+.xb-ws-link {
+  font: inherit;
+  font-size: var(--xb-text-small);
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--xb-text-secondary);
+  font-weight: var(--xb-weight-medium);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.xb-ws-link:hover {
+  color: var(--xb-text-primary);
+}
+
+.xb-ws-briefing__action:focus-visible,
+.xb-ws-link:focus-visible,
+.xb-doc-drawer__back:focus-visible,
+.xb-doc-drawer a:focus-visible,
+.xb-doc-drawer button:focus-visible {
+  outline: var(--xb-focus-ring-width) solid var(--xb-focus);
+  outline-offset: 2px;
+}
+
+.xb-ws-status-line {
+  margin: var(--xb-space-xl) 0 0;
+  padding-top: var(--xb-space-md);
+  border-top: var(--xb-border-width) solid var(--xb-border);
+}
+
+@media (max-width: 960px) {
+  .xb-ws-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .xb-ws-briefing__message {
+    font-size: var(--xb-text-section);
+  }
+}
+
+@media (max-width: 860px) {
+  .xb-doc-drawer {
+    left: 0;
+    width: 100%;
+    border-left: none;
+  }
+
+  .xb-ws-title {
+    font-size: 1.375rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xb-doc-drawer {
+    transition: none;
+  }
+}

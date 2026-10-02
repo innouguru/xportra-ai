@@ -1,26 +1,35 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
 import { useWorkflow } from "../app/WorkflowContext";
-import { isTerminalState, workflowStateLabel } from "../lib/workflow";
+import { workflowStateLabel } from "../lib/workflow";
+import { BrandMark } from "./BrandMark";
 
 /**
- * Persistent application shell: brand, workflow context,
- * primary navigation, session area. Navigation follows the
- * shipment workflow; no hypothetical modules.
+ * Persistent application shell: brand, primary navigation,
+ * session area. Navigation follows product concepts, not
+ * internal workflow stages:
+ *
+ * - Without an active shipment: the public site map
+ *   (Product, How It Works, For Exporters, Resources)
+ *   plus Sign in and Start a shipment.
+ * - With an active shipment: Overview, Shipments,
+ *   Documents, Requirements, Assessment, plus secondary
+ *   Ask Xportra (provided by the workspace) and Settings.
  */
-export function AppShell({ title, actions, children }: {
+export function AppShell({ title, actions, askAction, children }: {
   title: string;
   actions?: React.ReactNode;
+  /** Secondary conversational entry; rendered only where provided. */
+  askAction?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const auth = useAuth();
   const { record, clear } = useWorkflow();
   const navigate = useNavigate();
-  const closed = record !== null && isTerminalState(record.state);
 
   const startOver = () => {
     clear();
-    navigate("/");
+    navigate("/start");
   };
 
   return (
@@ -29,72 +38,72 @@ export function AppShell({ title, actions, children }: {
         Skip to content
       </a>
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-glyph" aria-hidden="true">
-            X
-          </span>
-          <span className="brand-stack">
-            <Link to="/" className="brand-mark" aria-label="Xportra AI home">
-              Xportra&nbsp;AI
-            </Link>
-            <span className="brand-sub">Export Compliance Intelligence</span>
-          </span>
-        </div>
-        <nav className="primary-nav" aria-label="Primary">
-          <NavLink to="/" end className={({ isActive }) => (isActive ? "active" : undefined)}>
-            New shipment
-          </NavLink>
-          <NavLink
-            to="/workspace"
-            className={({ isActive }) => (isActive ? "active" : undefined)}
-          >
-            Workspace
-          </NavLink>
-        </nav>
+        <BrandMark />
         {record ? (
-          <nav className="shipment-nav" aria-label="Current shipment">
-            <span className="shipment-nav__label" aria-hidden="true">
-              Current shipment
-            </span>
-            <NavLink
-              to="/workspace"
-              end
-              className={({ isActive }) => (isActive ? "active" : undefined)}
-            >
-              Overview
-            </NavLink>
-            <NavLink
-              to="/workspace/info"
-              className={({ isActive }) => (isActive ? "active" : undefined)}
-            >
-              Information
-            </NavLink>
-            <NavLink
-              to="/workspace/requirements"
-              className={({ isActive }) => (isActive ? "active" : undefined)}
-            >
-              Requirements
-            </NavLink>
-            <NavLink
-              to="/workspace/evidence"
-              className={({ isActive }) => (isActive ? "active" : undefined)}
-            >
-              Evidence
-            </NavLink>
-            <NavLink
-              to="/workspace/analysis"
-              className={({ isActive }) => (isActive ? "active" : undefined)}
-            >
-              Analysis
-            </NavLink>
-            <NavLink
-              to={closed ? "/workspace/package" : "/workspace/final-review"}
-              className={({ isActive }) => (isActive ? "active" : undefined)}
-            >
-              Assessment
-            </NavLink>
-          </nav>
-        ) : null}
+          <>
+            <nav className="primary-nav" aria-label="Primary">
+              <NavLink to="/workspace" end className={({ isActive }) => (isActive ? "active" : undefined)}>
+                Overview
+              </NavLink>
+              <NavLink
+                to="/workspace/shipments"
+                className={({ isActive }) => (isActive ? "active" : undefined)}
+              >
+                Shipments
+              </NavLink>
+              <NavLink
+                to="/workspace/documents"
+                className={({ isActive }) => (isActive ? "active" : undefined)}
+              >
+                Documents
+              </NavLink>
+              <NavLink
+                to="/workspace/requirements"
+                className={({ isActive }) => (isActive ? "active" : undefined)}
+              >
+                Requirements
+              </NavLink>
+              <NavLink
+                to="/workspace/assessment"
+                className={({ isActive }) => (isActive ? "active" : undefined)}
+              >
+                Assessment
+              </NavLink>
+            </nav>
+            <nav className="shipment-nav" aria-label="Secondary">
+              {askAction}
+              <NavLink
+                to="/settings"
+                className={({ isActive }) => (isActive ? "active" : undefined)}
+              >
+                Settings
+              </NavLink>
+            </nav>
+          </>
+        ) : (
+          <>
+            <nav className="primary-nav" aria-label="Primary">
+              <a href="/#product">Product</a>
+              <a href="/#how-it-works">How It Works</a>
+              <a href="/#for-exporters">For Exporters</a>
+              <a href="/#resources">Resources</a>
+            </nav>
+            <nav className="shipment-nav" aria-label="Secondary">
+              <NavLink
+                to="/session"
+                className={({ isActive }) => (isActive ? "active" : undefined)}
+              >
+                Sign in
+              </NavLink>
+              <NavLink
+                to="/start"
+                className={({ isActive }) => (isActive ? "active" : undefined)}
+              >
+                Start a shipment
+              </NavLink>
+            </nav>
+          </>
+        )}
         <div className="session-area">
           {record ? (
             <span className="session-context" title={`Workflow ${record.id}`}>

@@ -32,10 +32,17 @@ describe("AppShell", () => {
     expect(screen.getByText("Page body")).toBeInTheDocument();
   });
 
+  it("renders the brand lockup without fabricated artwork", () => {
+    renderShell();
+    const glyph = document.querySelector(".brand-glyph");
+    expect(glyph).not.toBeNull();
+    expect(glyph?.querySelector("svg, path, img, canvas")).toBeNull();
+  });
+
   it("shows the empty workspace state and a sign-in action when unconfigured", () => {
     renderShell();
     expect(screen.getByText("No active shipment")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Sign in" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBeGreaterThan(0);
   });
 
   it("exposes a skip link for keyboard users", () => {
@@ -43,12 +50,16 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "Skip to content" })).toBeInTheDocument();
   });
 
-  it("marks the active navigation item for assistive technology", () => {
+  it("shows the public site map without an active shipment", () => {
     renderShell();
-    expect(screen.getByRole("link", { name: "New shipment" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    for (const name of ["Product", "How It Works", "For Exporters", "Resources"]) {
+      expect(primary).toHaveTextContent(name);
+    }
+    expect(screen.getByRole("link", { name: "Start a shipment" })).toBeInTheDocument();
+    // No workflow concepts leak into public navigation.
+    expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
   });
 
   it("shows session status without leaking credentials", () => {
@@ -67,13 +78,19 @@ describe("AppShell", () => {
     expect(container.textContent).not.toMatch(/bearer|token|secret|password/i);
   });
 
-  it("hides current-shipment navigation without an active record", () => {
+  it("shows public navigation without an active record", () => {
     renderShell();
-    expect(screen.queryByRole("navigation", { name: "Current shipment" })).toBeNull();
+    // Without a shipment the secondary group carries the public
+    // entry points, never workflow concepts.
+    const secondary = screen.getByRole("navigation", { name: "Secondary" });
+    expect(secondary).toHaveTextContent("Sign in");
+    expect(secondary).toHaveTextContent("Start a shipment");
     expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
   });
 
-  it("shows current-shipment navigation with an active record", () => {
+  it("shows the five product concepts with an active record", () => {
     sessionStorage.setItem(
       "xportra.workflow-record.v1",
       JSON.stringify({
@@ -88,7 +105,7 @@ describe("AppShell", () => {
       }),
     );
     render(
-      <MemoryRouter initialEntries={["/workspace/evidence"]}>
+      <MemoryRouter initialEntries={["/workspace/documents"]}>
         <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
           <WorkflowProvider>
             <AppShell title="Test page">
@@ -98,14 +115,20 @@ describe("AppShell", () => {
         </AuthProvider>
       </MemoryRouter>,
     );
-    const shipmentNav = screen.getByRole("navigation", { name: "Current shipment" });
-    for (const name of ["Overview", "Information", "Requirements", "Evidence", "Analysis", "Assessment"]) {
-      expect(shipmentNav).toHaveTextContent(name);
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    for (const name of ["Overview", "Shipments", "Documents", "Requirements", "Assessment"]) {
+      expect(primary).toHaveTextContent(name);
     }
+    // Internal workflow stages are not top-level destinations.
+    for (const name of ["Information", "Evidence gaps", "Analysis", "Review", "Final review"]) {
+      expect(screen.queryByRole("link", { name })).toBeNull();
+    }
+    // Secondary navigation carries Ask Xportra slot and Settings.
+    expect(screen.getByRole("navigation", { name: "Secondary" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Settings" })).toBeInTheDocument();
     // Application and shipment navigation stay distinct; the active
-    // shipment section is marked for assistive technology.
-    expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Evidence" })).toHaveAttribute(
+    // product concept is marked for assistive technology.
+    expect(screen.getByRole("link", { name: "Documents" })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -137,7 +160,7 @@ describe("AppShell", () => {
       </MemoryRouter>,
     );
     expect(screen.getByRole("link", { name: "Assessment" }).getAttribute("href")).toBe(
-      "/workspace/package",
+      "/workspace/assessment",
     );
   });
 });

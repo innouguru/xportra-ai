@@ -23,7 +23,7 @@ export function SessionPage() {
       auth.setToken(null);
       auth.setDevTenantId(devTenantId.trim());
     }
-    navigate("/");
+    navigate("/start");
   };
 
   return (

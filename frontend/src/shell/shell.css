@@ -1,0 +1,386 @@
+/* Xportra AI — Phase 10.8B authenticated shell.
+ *
+ * Sidebar + workspace layout for the shipment-first
+ * shell (R-10.8.1–R-10.8.3, ADR-0012). Every value
+ * flows through `theme/tokens.css` (`var(--xb-…)`);
+ * this file carries no literal colors, no gradients,
+ * and no glassmorphism (pinned by test). Legacy
+ * `index.css` classes stay untouched; where the
+ * shell reuses legacy brand markup, the overrides
+ * below re-point it at canonical tokens.
+ *
+ * Class contract (queried by tests — do not rename
+ * without a task recording the change):
+ * .xb-app, .xb-app-sidebar, .xb-app-main,
+ * .xb-app-contextbar, .xb-hamburger,
+ * .xb-app-nav-link, .xb-app-nav-label,
+ * .xb-app-drawer, .xb-app-scrim,
+ * .xb-app-account-btn, .xb-avatar, .xb-menu,
+ * .xb-icon-btn, .xb-popover, .xb-footer-row.
+ */
+
+.xb-app {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: stretch;
+  background: var(--xb-background);
+  color: var(--xb-text-primary);
+  font-size: var(--xb-text-body);
+  line-height: var(--xb-leading-body);
+}
+
+/* Sidebar: substantial but quiet (~240px);
+ * sticky full-height column on desktop. */
+.xb-app-sidebar {
+  width: 240px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: auto;
+}
+
+.xb-app-sidebar.xb-sidebar--collapsed {
+  width: 72px;
+}
+
+/* Legacy brand markup re-pointed at tokens so
+ * the mark reads correctly in both themes. */
+.xb-app-sidebar .brand-mark {
+  color: var(--xb-text-primary);
+}
+
+.xb-app-sidebar .brand-sub {
+  color: var(--xb-text-muted);
+}
+
+.xb-app-sidebar .brand-glyph {
+  background: var(--xb-brand);
+  color: var(--xb-brand-foreground);
+}
+
+.brand-glyph--link {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Primary navigation: exactly Dashboard +
+ * View Shipments. Selected state is text +
+ * indicator bar (never color alone). */
+.xb-app-nav-link {
+  display: flex;
+  align-items: center;
+  gap: var(--xb-space-sm);
+  padding: var(--xb-space-xs) var(--xb-space-sm);
+  min-height: var(--xb-control-height);
+  border-radius: var(--xb-radius-sm);
+  color: var(--xb-text-secondary);
+  text-decoration: none;
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  line-height: var(--xb-leading-tight);
+}
+
+.xb-app-nav-link:hover {
+  color: var(--xb-text-primary);
+  background: var(--xb-neutral-bg);
+}
+
+.xb-app-nav-link.active {
+  color: var(--xb-text-primary);
+  font-weight: var(--xb-weight-bold);
+  background: var(--xb-brand-bg);
+  box-shadow: inset 3px 0 0 var(--xb-brand);
+}
+
+.xb-app-nav-link svg {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+
+.xb-sidebar--collapsed .xb-app-nav-link {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.xb-sidebar--collapsed .xb-app-nav-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Sidebar footer: notification + theme row,
+ * account control, collapse toggle. */
+.xb-footer-row {
+  display: flex;
+  align-items: center;
+  gap: var(--xb-space-2xs);
+}
+
+.xb-sidebar--collapsed .xb-footer-row {
+  flex-direction: column;
+}
+
+.xb-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--xb-radius-sm);
+  border: var(--xb-border-width) solid transparent;
+  background: transparent;
+  color: var(--xb-text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.xb-icon-btn:hover {
+  color: var(--xb-text-primary);
+  border-color: var(--xb-border);
+  background: var(--xb-neutral-bg);
+}
+
+.xb-icon-btn svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+/* Account control: compact avatar + label. */
+.xb-app-account-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--xb-space-sm);
+  width: 100%;
+  padding: var(--xb-space-xs);
+  min-height: var(--xb-control-height);
+  border-radius: var(--xb-radius-sm);
+  border: var(--xb-border-width) solid transparent;
+  background: transparent;
+  color: var(--xb-text-primary);
+  font: inherit;
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  cursor: pointer;
+  text-align: left;
+}
+
+.xb-app-account-btn:hover {
+  border-color: var(--xb-border);
+  background: var(--xb-neutral-bg);
+}
+
+.xb-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--xb-radius-full);
+  border: var(--xb-border-width) solid var(--xb-border-strong);
+  background: var(--xb-neutral-bg);
+  color: var(--xb-text-secondary);
+  flex-shrink: 0;
+}
+
+.xb-avatar svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.xb-sidebar--collapsed .xb-app-account-btn {
+  justify-content: center;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Overlay menu + popover: quiet surfaces. */
+.xb-menu-wrap {
+  position: relative;
+}
+
+.xb-menu,
+.xb-popover {
+  position: absolute;
+  bottom: calc(100% + var(--xb-space-xs));
+  left: 0;
+  min-width: 14rem;
+  max-width: 90vw;
+  background: var(--xb-surface-elevated);
+  border: var(--xb-border-width) solid var(--xb-border-strong);
+  border-radius: var(--xb-radius-md);
+  box-shadow: var(--xb-shadow-md);
+  padding: var(--xb-space-xs);
+  z-index: 30;
+}
+
+.xb-menu {
+  list-style: none;
+  margin: 0;
+}
+
+.xb-menu__header {
+  font-size: var(--xb-text-meta);
+  font-weight: var(--xb-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--xb-text-muted);
+  padding: var(--xb-space-xs) var(--xb-space-sm);
+}
+
+.xb-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--xb-space-sm);
+  width: 100%;
+  padding: var(--xb-space-xs) var(--xb-space-sm);
+  min-height: var(--xb-control-height);
+  border-radius: var(--xb-radius-sm);
+  color: var(--xb-text-primary);
+  text-decoration: none;
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+a.xb-menu__item,
+button.xb-menu__item {
+  font: inherit;
+  font-size: var(--xb-text-small);
+}
+
+.xb-menu__item:hover {
+  background: var(--xb-neutral-bg);
+}
+
+.xb-menu__item--disabled {
+  color: var(--xb-disabled);
+  cursor: default;
+}
+
+.xb-menu__item--disabled:hover {
+  background: transparent;
+}
+
+.xb-menu__soon {
+  font-size: var(--xb-text-meta);
+  font-weight: var(--xb-weight-regular);
+  color: var(--xb-text-muted);
+}
+
+.xb-popover p {
+  font-size: var(--xb-text-small);
+  color: var(--xb-text-secondary);
+  margin: var(--xb-space-xs) var(--xb-space-sm);
+}
+
+.xb-popover strong {
+  color: var(--xb-text-primary);
+}
+
+/* Workspace: contextual bar + page container. */
+.xb-app-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.xb-app-contextbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--xb-space-sm);
+  padding: var(--xb-space-sm) var(--xb-page-gutter);
+  border-bottom: var(--xb-border-width) solid var(--xb-border);
+  background: var(--xb-background);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.xb-app-contextbar .xb-breadcrumbs {
+  min-width: 0;
+}
+
+.xb-app-contextbar .xb-breadcrumbs ol {
+  margin: 0;
+}
+
+.xb-hamburger {
+  display: none;
+}
+
+/* Mobile drawer: fixed panel + scrim. */
+.xb-app-drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(280px, 85vw);
+  z-index: 50;
+  overflow-y: auto;
+  box-shadow: var(--xb-shadow-lg);
+}
+
+.xb-app-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--xb-background);
+  opacity: 0.6;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.xb-app-drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.xb-app-nav-link:focus-visible,
+.xb-app-account-btn:focus-visible,
+.xb-icon-btn:focus-visible,
+.xb-hamburger:focus-visible,
+.xb-menu__item:focus-visible,
+.xb-app-scrim:focus-visible,
+.brand-glyph--link:focus-visible {
+  outline: var(--xb-focus-ring-width) solid var(--xb-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+  .xb-app-contextbar {
+    padding-left: var(--xb-space-md);
+    padding-right: var(--xb-space-md);
+  }
+}
+
+@media (max-width: 860px) {
+  .xb-app-sidebar--desktop {
+    display: none;
+  }
+
+  .xb-hamburger {
+    display: inline-flex;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .xb-app-drawer,
+  .xb-app-nav-link {
+    transition: none;
+  }
+}

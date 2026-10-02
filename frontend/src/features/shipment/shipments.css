@@ -1,0 +1,101 @@
+/* Shipment archive (approved redesign reference
+ * `docs/design/xportra-ui-redesign.*`).
+ *
+ * One search field, four filter chips, results
+ * grouped under quiet labels — the same
+ * worklist language as the dashboard, never
+ * bordered cards. Every value flows through
+ * `theme/tokens.css` (`var(--xb-…)`); no
+ * literal colors, no gradients, no
+ * glassmorphism.
+ *
+ * Class contract (do not rename without a task
+ * recording the change):
+ * .xb-archive-toolbar, .xb-archive-search,
+ * .xb-archive-chips, .xb-chip,
+ * .xb-archive-group-label.
+ */
+
+.xb-archive-toolbar {
+  display: flex;
+  gap: 0.625rem;
+  margin: 0 0 1.25rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.xb-archive-search {
+  flex: 1;
+  min-width: 12rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.xb-archive-search__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.xb-archive-search .xb-input {
+  max-width: none;
+}
+
+.xb-archive-chips {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.xb-chip {
+  font: inherit;
+  font-size: 0.78125rem;
+  font-weight: 500;
+  padding: 0.4375rem 0.8125rem;
+  min-height: 2.75rem;
+  border: var(--xb-border-width) solid var(--xb-border-strong);
+  border-radius: var(--xb-radius-full);
+  background: transparent;
+  color: var(--xb-text-secondary);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.xb-chip:hover {
+  color: var(--xb-text-primary);
+  border-color: var(--xb-text-muted);
+}
+
+.xb-chip--active {
+  background: var(--xb-surface-elevated);
+  color: var(--xb-text-primary);
+  border-color: var(--xb-text-muted);
+}
+
+.xb-archive-group-label {
+  margin: 1.75rem 0 0.25rem;
+  font-family: var(--xb-font-body);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--xb-text-muted);
+}
+
+.xb-archive-toolbar input:focus-visible,
+.xb-archive-toolbar button:focus-visible,
+.xb-chip:focus-visible {
+  outline: var(--xb-focus-ring-width) solid var(--xb-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 860px) {
+  .xb-archive-toolbar {
+    align-items: stretch;
+  }
+
+  .xb-archive-search {
+    flex-basis: 100%;
+  }
+}
