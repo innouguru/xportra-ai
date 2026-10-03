@@ -2969,3 +2969,36 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   200. No browser/pixel review available —
   human visual review remains the gate. No
   commit or push performed.
+
+## Server-Persisted Workflow Record (Complete, 2026-10-03)
+
+- Implements the Phase 8 integration-audit blocker:
+  `xportra.compliance_workflows` through migration
+  012 (plus rollback) makes the workflow record
+  (`state`, `shipment_id`, `supplied_evidence_ids`,
+  `open_requirements`) server-owned. Mutations load
+  the authoritative row, reject stale/forged snapshots
+  (`StaleAnalysisError` with field-level reasons),
+  apply the unchanged domain transition, and persist
+  the outcome; result/package writes carry the
+  workflow update in the same transaction. Tenant
+  scoping enforced on every read/write;
+  `supply_evidence` additionally requires
+  tenant-owned recorded evidence when both
+  boundaries are wired. No transition-rule,
+  contract, frontend, or result-architecture change.
+- Verification: new unit suite 15/15
+  (`tests/unit/test_workflow_record_persistence.py`);
+  new DATABASE_URL-gated HTTP end-to-end suite skips
+  without a live database
+  (`tests/integration/test_workflow_record_postgresql.py`);
+  full backend 1954 passed + 46 skipped (gated
+  Postgres/Qdrant/OpenRouter-live), 0 failures. One
+  existing assertion updated for the intended new
+  evidence-lookup collaborator (statelessness intent
+  preserved). Frontend untouched.
+- Task record:
+  `tasks/completed/server-persist-workflow-record.md`.
+  Deferred (not implemented): `requirement_id`
+  linkage, read-projection anchoring, shipment
+  modeling, frontend registry/fallback/duplication.

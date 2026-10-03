@@ -14,8 +14,11 @@ Every handler follows the same shape:
 Handlers own no transitions, readiness math, reasoning,
 retrieval, or tenant-ownership logic beyond invoking the
 boundaries that do. Workflow records travel in the body
-because no workflow store exists — the server holds no
-session and no process-global registry.
+as continuity snapshots; where the deployment wires
+the workflow-record boundary the server loads the
+authoritative row, verifies the snapshot, and persists
+each transition — the server holds no session and no
+process-global registry.
 
 Result-dependent reads that the normalized result
 store (Phase 8.4) makes safe — finalize from the
@@ -82,6 +85,23 @@ def _workflow_response(record: dict[str, Any], summary: dict[str, Any]):
     return {"workflow": record, "summary": summary}
 
 
+def _workflow_service(services, *, with_evidence: bool = False):
+    """Build the workflow use-case service with configured stores.
+
+    Stores resolve to ``None`` where the deployment has
+    not wired them, preserving the previous client-held
+    behavior; wired deployments load, verify, and
+    persist the authoritative workflow record.
+    """
+    kwargs: dict[str, Any] = {
+        "result_store": getattr(services, "result_store", None),
+    }
+    if with_evidence:
+        kwargs["evidence_service"] = getattr(
+            services, "evidence", None)
+    return WorkflowApplicationService(**kwargs)
+
+
 @router.post(
     "/compliance/workflows/start",
     response_model=WorkflowActionResponse,
@@ -89,13 +109,14 @@ def _workflow_response(record: dict[str, Any], summary: dict[str, Any]):
 )
 def start_workflow(
     payload: StartWorkflowRequest,
+    services: ServicesDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(PROGRESS_COMPLIANCE_WORKFLOW))
     ],
     actor_id: Annotated[UUID | None, Depends(get_request_actor)],
 ):
     """Begin a workflow, binding the shipment when given."""
-    service = WorkflowApplicationService()
+    service = _workflow_service(services)
     record, dto = service.start_workflow(
         _context(member, actor_id),
         payload.case_id,
@@ -110,13 +131,14 @@ def start_workflow(
 )
 def provide_information(
     payload: WorkflowActionRequest,
+    services: ServicesDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(PROGRESS_COMPLIANCE_WORKFLOW))
     ],
     actor_id: Annotated[UUID | None, Depends(get_request_actor)],
 ):
     """Record that shipment information was provided."""
-    service = WorkflowApplicationService()
+    service = _workflow_service(services)
     record, dto = service.provide_information(
         _context(member, actor_id), payload.workflow.model_dump())
     return _workflow_response(record, dto.to_dict())
@@ -128,13 +150,14 @@ def provide_information(
 )
 def note_evidence_pending(
     payload: WorkflowActionRequest,
+    services: ServicesDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(PROGRESS_COMPLIANCE_WORKFLOW))
     ],
     actor_id: Annotated[UUID | None, Depends(get_request_actor)],
 ):
     """Record that evidence is awaited."""
-    service = WorkflowApplicationService()
+    service = _workflow_service(services)
     record, dto = service.note_evidence_pending(
         _context(member, actor_id), payload.workflow.model_dump())
     return _workflow_response(record, dto.to_dict())
@@ -146,13 +169,14 @@ def note_evidence_pending(
 )
 def record_applicability(
     payload: WorkflowActionRequest,
+    services: ServicesDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(PROGRESS_COMPLIANCE_WORKFLOW))
     ],
     actor_id: Annotated[UUID | None, Depends(get_request_actor)],
 ):
     """Record the deterministic applicability outcome."""
-    service = WorkflowApplicationService()
+    service = _workflow_service(services)
     record, dto = service.record_applicability(
         _context(member, actor_id), payload.workflow.model_dump())
     return _workflow_response(record, dto.to_dict())
@@ -164,13 +188,14 @@ def record_applicability(
 )
 def submit_for_review(
     payload: WorkflowActionRequest,
+    services: ServicesDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(PROGRESS_COMPLIANCE_WORKFLOW))
     ],
     actor_id: Annotated[UUID | None, Depends(get_request_actor)],
 ):
     """Hand the available analysis to user review."""
-    service = WorkflowApplicationService()
+    service = _workflow_service(services)
     record, dto = service.submit_for_review(
         _context(member, actor_id), payload.workflow.model_dump())
     return _workflow_response(record, dto.to_dict())
@@ -182,13 +207,14 @@ def submit_for_review(
 )
 def request_additional_evidence(
     payload: RequestEvidenceRequest,
+    services: ServicesDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(PROGRESS_COMPLIANCE_WORKFLOW))
     ],
     actor_id: Annotated[UUID | None, Depends(get_request_actor)],
 ):
     """Flag requirements needing user action."""
-    service = WorkflowApplicationService()
+    service = _workflow_service(services)
     record, dto = service.request_additional_evidence(
         _context(member, actor_id),
         payload.workflow.model_dump(),
@@ -203,13 +229,14 @@ def request_additional_evidence(
 )
 def supply_evidence(
     payload: SupplyEvidenceRequest,
+    services: ServicesDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(PROGRESS_COMPLIANCE_WORKFLOW))
     ],
     actor_id: Annotated[UUID | None, Depends(get_request_actor)],
 ):
     """Hand recorded evidence to the workflow for its case."""
-    service = WorkflowApplicationService()
+    service = _workflow_service(services, with_evidence=True)
     record, dto = service.supply_evidence(
         _context(member, actor_id),
         payload.workflow.model_dump(),

@@ -1514,6 +1514,103 @@ class ComplianceWorkflowRoundRepository:
         )
 
 
+class ComplianceWorkflowRepository:
+    """Tenant-scoped server-owned workflow progression rows.
+
+    Persists the mutable workflow record the client used
+    to echo back each request: identity binding, current
+    state, supplied evidence references, and open
+    requirements. This is storage for the existing domain
+    record, not a second workflow model — transition rules
+    stay domain-owned, round linkage stays in
+    ``compliance_workflow_rounds``, and result content
+    stays in the result tables. One row per workflow;
+    ``save_in_transaction`` overwrites only the stored
+    row and reports ``None`` when no row exists (the
+    caller fails closed instead of resurrecting state).
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        workflow_id: UUID,
+        case_id: UUID,
+        shipment_id: UUID | None,
+        state: str,
+    ) -> Row:
+        return _insert_in_transaction(
+            connection,
+            "compliance workflow creation",
+            """
+            INSERT INTO xportra.compliance_workflows
+                (tenant_id, workflow_id, case_id, shipment_id,
+                 state)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                tenant.tenant_id,
+                workflow_id,
+                case_id,
+                shipment_id,
+                state,
+            ),
+        )
+
+    def get(
+        self, tenant: TenantContext, workflow_id: UUID
+    ) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.compliance_workflows
+               WHERE tenant_id = %s AND workflow_id = %s""",
+            (tenant.tenant_id, workflow_id),
+        )
+
+    def save_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        workflow_id: UUID,
+        case_id: UUID,
+        shipment_id: UUID | None,
+        state: str,
+        supplied_evidence_ids: list[UUID],
+        open_requirements: list[UUID],
+    ) -> Row | None:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE xportra.compliance_workflows
+                    SET case_id = %s,
+                        shipment_id = %s,
+                        state = %s,
+                        supplied_evidence_ids = %s,
+                        open_requirements = %s
+                    WHERE tenant_id = %s AND workflow_id = %s
+                    RETURNING *
+                    """,
+                    (
+                        case_id,
+                        shipment_id,
+                        state,
+                        supplied_evidence_ids,
+                        open_requirements,
+                        tenant.tenant_id,
+                        workflow_id,
+                    ),
+                )
+                return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError(
+                "compliance workflow save", cause) from cause
+
+
 class FinalAssessmentPackageRepository:
     """Tenant-scoped linkage for produced final packages.
 

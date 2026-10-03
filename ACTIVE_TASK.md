@@ -1,21 +1,21 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: Landing Page Motion & Sticky Header
+## Task: Server-Persist the Compliance Workflow Record
 
-**Status:** Complete (2026-09-28).
+**Status:** Complete (2026-10-03).
 
-Focused public-landing enhancement on the
-approved redesign: sticky header with quiet
-scrolled treatment, restrained hero entrance,
-scroll reveals, and one editorial workflow
-diagram (Shipment → Requirements → Evidence
-→ Ready). Reduced-motion support, no new
-dependencies, no other screens touched.
+Implements the Phase 8 integration-audit blocker:
+`xportra.compliance_workflows` (migration 012) makes
+the workflow record server-owned; mutations load,
+verify (stale/forged snapshots rejected), transition
+via the unchanged domain, and persist. Analysis/result/
+finalization persistence unchanged; tenant isolation
+server-side; frontend contract unchanged.
 
-Verification: full frontend suite 62 files /
-410 tests, 0 failures (none weakened);
-`npx tsc --noEmit` clean; `npm run build`
-succeeds; production preview serves `/` at
-200. No browser engine exists: final human
-visual review remains the gate. No commit or
-push performed.
+Verification: new unit suite 15/15; gated HTTP
+integration suite skips without `DATABASE_URL`;
+required existing groups green; full backend
+1954 passed + 46 skipped (gated), 0 failures.
+Frontend untouched. Task record:
+`tasks/completed/server-persist-workflow-record.md`.
+Committed; push not requested.

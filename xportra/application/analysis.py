@@ -58,6 +58,7 @@ from .errors import (
     TerminalWorkflowError,
     sanitized_detail,
 )
+from .result_store import store_supports_workflow_records
 
 
 class AnalysisApplicationService:
@@ -115,8 +116,12 @@ class AnalysisApplicationService:
         reference when supplied.
         """
         ctx = checked_context(ctx)
-        workflow = workflow_from_record(workflow_record)
-        ensure_tenant_match(ctx, workflow.tenant_id, "workflow")
+        if store_supports_workflow_records(self._result_store):
+            workflow = self._result_store.resolve_authoritative_workflow(
+                ctx, workflow_record)
+        else:
+            workflow = workflow_from_record(workflow_record)
+            ensure_tenant_match(ctx, workflow.tenant_id, "workflow")
         self._ensure_open(ctx, workflow)
         checked_cases = [coerce_case_identities(case)
                          for case in _checked_cases(cases)]

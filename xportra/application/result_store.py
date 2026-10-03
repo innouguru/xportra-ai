@@ -29,6 +29,16 @@ Reconstruction is strict data assembly with linkage
 validation (tenant/case/report/analysis/trace
 cross-checks); malformed or inconsistent rows fail
 closed. Corrupt storage never becomes a result.
+
+Where the deployment provisions the workflow-record
+repository, the store additionally owns workflow
+continuity: creation persists the begun row,
+``resolve_authoritative_workflow`` loads it and
+rejects stale/forged snapshots, and every result or
+package write carries the workflow state update in
+the same transaction. Transition rules stay
+domain-owned; this layer only retains what the
+domain decided.
 """
 
 from __future__ import annotations
@@ -67,12 +77,17 @@ from xportra.domain.reasoning_application import (
 )
 from xportra.persistence.errors import PersistenceIntegrityError
 
-from ._guards import checked_context, ensure_tenant_match
+from ._guards import (
+    checked_context,
+    ensure_tenant_match,
+    workflow_from_record,
+)
 from .context import ApplicationContext
 from .errors import (
     ApplicationNotFoundError,
     ApplicationValidationError,
     InfrastructureError,
+    StaleAnalysisError,
     sanitized_detail,
 )
 
@@ -100,6 +115,7 @@ class ComplianceResultStore:
         traces: Any,
         rounds: Any,
         packages: Any,
+        workflows: Any = None,
     ) -> None:
         if database is None or not callable(
                 getattr(database, "transaction", None)):
@@ -115,12 +131,19 @@ class ComplianceResultStore:
             if not callable(getattr(repository, method, None)):
                 raise ApplicationValidationError(
                     f"a result {name} repository is required")
+        if workflows is not None:
+            for method in ("create_in_transaction", "get",
+                           "save_in_transaction"):
+                if not callable(getattr(workflows, method, None)):
+                    raise ApplicationValidationError(
+                        "a workflow record repository is required")
         self._database = database
         self._reports = reports
         self._analyses = analyses
         self._traces = traces
         self._rounds = rounds
         self._packages = packages
+        self._workflows = workflows
 
     # ------------------------------------------------------------------
     # writes (single transaction per result)
@@ -178,6 +201,9 @@ class ComplianceResultStore:
                     connection, ctx, workflow, result)
                 self._store_round(
                     connection, ctx, workflow, latest)
+                if self._workflows is not None:
+                    self._save_workflow_in_transaction(
+                        connection, ctx, workflow)
         except PersistenceIntegrityError:
             return self._adopt_after_conflict(
                 ctx, workflow, result, latest)
@@ -281,6 +307,9 @@ class ComplianceResultStore:
             with self._database.transaction() as connection:
                 self._store_round(
                     connection, ctx, workflow, latest)
+                if self._workflows is not None:
+                    self._save_workflow_in_transaction(
+                        connection, ctx, workflow)
         except PersistenceIntegrityError:
             stored = self._rounds.get(
                 ctx.tenant, workflow.id, latest.round_index)
@@ -348,6 +377,9 @@ class ComplianceResultStore:
                     round_index,
                     [str(v) for v in open_requirements],
                 )
+                if self._workflows is not None:
+                    self._save_workflow_in_transaction(
+                        connection, ctx, workflow)
         except (PersistenceIntegrityError,
                 DomainPersistenceError) as cause:
             raise InfrastructureError(
@@ -357,6 +389,195 @@ class ComplianceResultStore:
             "report_id": report_id,
             "round_index": round_index,
         }
+
+    # ------------------------------------------------------------------
+    # workflow-record continuity (server-owned progression state)
+    # ------------------------------------------------------------------
+
+    def create_workflow_record(
+        self,
+        ctx: ApplicationContext,
+        workflow: ComplianceWorkflow,
+    ) -> ComplianceWorkflow:
+        """Persist a newly begun workflow progression row.
+
+        Retried creation converges: the deterministic
+        workflow identity means a conflicting insert can
+        only be the same progression, so the stored row
+        is adopted after scope verification instead of
+        duplicating state. Without a configured
+        workflow-record repository the input is returned
+        unchanged (previous client-held behavior).
+        """
+        ctx = checked_context(ctx)
+        if not isinstance(workflow, ComplianceWorkflow):
+            raise ApplicationValidationError(
+                "a compliance workflow is required")
+        ensure_tenant_match(ctx, workflow.tenant_id, "workflow")
+        workflows = self._workflows
+        if workflows is None:
+            return workflow
+        try:
+            with self._database.transaction() as connection:
+                row = workflows.create_in_transaction(
+                    connection,
+                    ctx.tenant,
+                    workflow.id,
+                    workflow.case_id,
+                    workflow.shipment_id,
+                    workflow.state,
+                )
+        except PersistenceIntegrityError:
+            row = workflows.get(ctx.tenant, workflow.id)
+            if row is None:
+                raise InfrastructureError(
+                    "workflow creation conflicted without "
+                    "a stored row")
+            if (row["case_id"] != workflow.case_id
+                    or row["shipment_id"]
+                    != workflow.shipment_id):
+                raise InfrastructureError(
+                    "stored workflow scope does not match "
+                    "the begun workflow")
+            return self._build_stored_workflow(ctx, row, [])
+        except DomainPersistenceError as cause:
+            raise InfrastructureError(
+                sanitized_detail(cause), cause=cause) from cause
+        return self._build_stored_workflow(ctx, row, [])
+
+    def resolve_authoritative_workflow(
+        self,
+        ctx: ApplicationContext,
+        workflow_record: dict[str, Any],
+    ) -> ComplianceWorkflow:
+        """Load the server-owned workflow and verify the snapshot.
+
+        The submitted record is shape-validated and then
+        compared field-by-field against the stored row
+        plus the recorded round linkage: a stale or forged
+        snapshot fails closed with ``StaleAnalysisError``
+        instead of driving a transition. Returns the
+        stored workflow (with recorded rounds attached)
+        for the domain transition to advance. Without a
+        configured workflow-record repository the
+        validated submitted workflow is returned
+        (previous client-held behavior).
+        """
+        ctx = checked_context(ctx)
+        submitted = workflow_from_record(workflow_record)
+        ensure_tenant_match(ctx, submitted.tenant_id, "workflow")
+        if self._workflows is None:
+            return submitted
+        row = self._workflows.get(ctx.tenant, submitted.id)
+        if row is None:
+            raise ApplicationNotFoundError(
+                "no stored workflow for this workflow identity")
+        server_rounds = self.rounds_for_workflow(
+            ctx, submitted.id)
+        _assert_snapshot_current(row, server_rounds, submitted)
+        return self._build_stored_workflow(ctx, row, server_rounds)
+
+    def save_workflow_record(
+        self,
+        ctx: ApplicationContext,
+        workflow: ComplianceWorkflow,
+    ) -> None:
+        """Persist the advanced workflow progression row.
+
+        Update-only: a missing row fails closed instead
+        of resurrecting state the server never owned.
+        Without a configured workflow-record repository
+        this is a no-op (previous client-held behavior).
+        """
+        ctx = checked_context(ctx)
+        if not isinstance(workflow, ComplianceWorkflow):
+            raise ApplicationValidationError(
+                "a compliance workflow is required")
+        ensure_tenant_match(ctx, workflow.tenant_id, "workflow")
+        if self._workflows is None:
+            return
+        try:
+            with self._database.transaction() as connection:
+                row = self._save_workflow_in_transaction(
+                    connection, ctx, workflow)
+        except DomainPersistenceError as cause:
+            raise InfrastructureError(
+                sanitized_detail(cause), cause=cause) from cause
+        if row is None:
+            raise ApplicationNotFoundError(
+                "no stored workflow for this workflow identity")
+
+    def _save_workflow_in_transaction(
+        self,
+        connection,
+        ctx: ApplicationContext,
+        workflow: ComplianceWorkflow,
+    ) -> Any:
+        """Write the workflow row inside the caller's transaction.
+
+        Lets result/package writes carry the workflow
+        state update atomically instead of committing
+        partial progress across separate transactions.
+        Callers only invoke this where the repository is
+        configured.
+        """
+        try:
+            return self._workflows.save_in_transaction(
+                connection,
+                ctx.tenant,
+                workflow.id,
+                workflow.case_id,
+                workflow.shipment_id,
+                workflow.state,
+                list(workflow.supplied_evidence_ids),
+                list(workflow.open_requirements),
+            )
+        except DomainPersistenceError as cause:
+            raise InfrastructureError(
+                sanitized_detail(cause), cause=cause) from cause
+
+    def _build_stored_workflow(
+        self,
+        ctx: ApplicationContext,
+        row: dict[str, Any],
+        server_rounds: list[dict[str, Any]],
+    ) -> ComplianceWorkflow:
+        """Rebuild the domain workflow from its stored parts."""
+        rounds = tuple(
+            WorkflowAnalysisRound(
+                round_index=round_row["round_index"],
+                report_id=round_row["report_id"]
+                if isinstance(round_row["report_id"], UUID)
+                else UUID(str(round_row["report_id"])),
+                analysis_ids=tuple(
+                    a if isinstance(a, UUID) else UUID(str(a))
+                    for a in round_row["analysis_ids"]),
+                trace_ids=tuple(
+                    t if isinstance(t, UUID) else UUID(str(t))
+                    for t in round_row["trace_ids"]),
+                input_fingerprints=tuple(
+                    round_row["input_fingerprints"]),
+            )
+            for round_row in server_rounds
+        )
+        return ComplianceWorkflow(
+            id=row["workflow_id"]
+            if isinstance(row["workflow_id"], UUID)
+            else UUID(str(row["workflow_id"])),
+            tenant_id=ctx.tenant_id,
+            case_id=row["case_id"]
+            if isinstance(row["case_id"], UUID)
+            else UUID(str(row["case_id"])),
+            shipment_id=(
+                None if row["shipment_id"] is None
+                else row["shipment_id"]
+                if isinstance(row["shipment_id"], UUID)
+                else UUID(str(row["shipment_id"]))),
+            state=row["state"],
+            rounds=rounds,
+            supplied_evidence_ids=tuple(row["supplied_evidence_ids"]),
+            open_requirements=tuple(row["open_requirements"]),
+        )
 
     def _store_report(self, connection, ctx, workflow,
                       result) -> None:
@@ -571,12 +792,77 @@ class ComplianceResultStore:
         }
 
 
+def store_supports_workflow_records(store: Any) -> bool:
+    """Report whether a store carries the workflow-record boundary.
+
+    Lets use cases adopt server-authoritative workflows
+    only where the store implements it; older doubles
+    keep the previous client-held behavior unchanged.
+    """
+    if store is None:
+        return False
+    return all(callable(getattr(store, method, None))
+               for method in ("create_workflow_record",
+                              "resolve_authoritative_workflow",
+                              "save_workflow_record"))
+
+
+def _assert_snapshot_current(
+    row: dict[str, Any],
+    server_rounds: list[dict[str, Any]],
+    submitted: ComplianceWorkflow,
+) -> None:
+    """Fail closed when a submitted snapshot left the server behind.
+
+    Compares every continuity-bearing field — identity
+    binding, state, supplied evidence, open requirements,
+    and round linkage — using the existing stale-analysis
+    error shape. A mismatch means the client acted on a
+    stale or forged record; the mutation must not proceed.
+    """
+    if (row["case_id"] != submitted.case_id
+            or row["shipment_id"] != submitted.shipment_id):
+        raise StaleAnalysisError(
+            "submitted workflow record does not match "
+            "the stored workflow",
+            reasons=(("stale_workflow_identity",
+                      "stored workflow binding does not match"),))
+    if row["state"] != submitted.state:
+        raise StaleAnalysisError(
+            "submitted workflow record does not match "
+            "the stored workflow",
+            reasons=(("stale_workflow_state",
+                      "stored workflow state does not match"),))
+    if (tuple(row["supplied_evidence_ids"])
+            != submitted.supplied_evidence_ids
+            or tuple(row["open_requirements"])
+            != submitted.open_requirements):
+        raise StaleAnalysisError(
+            "submitted workflow record does not match "
+            "the stored workflow",
+            reasons=(("stale_workflow_references",
+                      "stored workflow references do not "
+                      "match"),))
+    recorded = [(round_row["round_index"],
+                 str(round_row["report_id"]))
+                for round_row in server_rounds]
+    claimed = [(round.round_index, str(round.report_id))
+               for round in submitted.rounds]
+    if claimed != recorded:
+        raise StaleAnalysisError(
+            "stored rounds do not match the submitted "
+            "workflow record",
+            reasons=(("stale_round_linkage",
+                      "stored rounds do not match"),))
+
+
 __all__ = [
     "ComplianceResultStore",
     "rebuild_analysis",
     "rebuild_report",
     "rebuild_result",
     "rebuild_trace",
+    "store_supports_workflow_records",
 ]
 
 

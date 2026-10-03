@@ -579,7 +579,7 @@ class OrchestrationTests(unittest.TestCase):
         self.assertEqual(
             set(service.__dict__),
             {"_workflows", "_intake", "_readiness", "_history",
-             "_result_store"})
+             "_result_store", "_evidence_service"})
 
 
 class EvidenceTests(unittest.TestCase):

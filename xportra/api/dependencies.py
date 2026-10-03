@@ -28,6 +28,7 @@ from xportra.persistence.repositories import (
     ComplianceAnalysisRepository,
     ComplianceAnalysisTraceRepository,
     ComplianceEvidenceRepository,
+    ComplianceWorkflowRepository,
     ComplianceWorkflowRoundRepository,
     DestinationMarketRepository,
     EvidenceDocumentRepository,
@@ -117,6 +118,7 @@ class ApplicationServices:
                 traces=ComplianceAnalysisTraceRepository(database),
                 rounds=ComplianceWorkflowRoundRepository(database),
                 packages=FinalAssessmentPackageRepository(database),
+                workflows=ComplianceWorkflowRepository(database),
             ),
         )
 

@@ -14,12 +14,14 @@ domain services — never reimplementing them:
 
 Use cases are stateless: callers pass the workflow's
 ``to_record()`` form in and receive the updated record
-form back. No workflow persistence exists in the domain,
-and this layer invents none — live result/package
-objects travel in-session with the caller, while records
-(and DTOs) are the wire-stable surface. A future Phase 8
-store may persist records; the contract already supports
-it without change.
+form back. No workflow persistence exists in the domain.
+Where the injected result store carries the
+workflow-record boundary, this layer additionally
+loads the authoritative row, rejects stale snapshots,
+and persists each transition — the returned record is
+then a representation of server state rather than the
+only copy of it. Without that boundary the previous
+client-held behavior holds unchanged.
 
 Tenant safety is deterministic and never message-based:
 record tenant is compared against the context tenant
@@ -86,6 +88,7 @@ from .errors import (
     TerminalWorkflowError,
     WorkflowNotReadyError,
 )
+from .result_store import store_supports_workflow_records
 
 
 class WorkflowApplicationService:
@@ -99,6 +102,7 @@ class WorkflowApplicationService:
         readiness_service: AssessmentReadinessService | None = None,
         history_service: WorkflowHistoryService | None = None,
         result_store: Any | None = None,
+        evidence_service: Any | None = None,
     ) -> None:
         self._workflows = (
             workflow_service or ComplianceWorkflowService())
@@ -122,7 +126,12 @@ class WorkflowApplicationService:
                 if not callable(getattr(result_store, method, None)):
                     raise ApplicationValidationError(
                         "a result store is required")
+        if evidence_service is not None and not callable(
+                getattr(evidence_service, "get", None)):
+            raise ApplicationValidationError(
+                "an evidence lookup service is required")
         self._result_store = result_store
+        self._evidence_service = evidence_service
 
     # ------------------------------------------------------------------
     # progression use cases (items 1, 2, 3, 8, 10)
@@ -134,7 +143,12 @@ class WorkflowApplicationService:
         case_id: UUID,
         shipment_id: UUID | None = None,
     ) -> tuple[dict[str, Any], WorkflowDTO]:
-        """Begin a workflow, binding the shipment when given."""
+        """Begin a workflow, binding the shipment when given.
+
+        Where the workflow-record boundary is configured
+        the begun row is persisted before returning, so the
+        record is a representation of server state.
+        """
         ctx = checked_context(ctx)
         checked_uuid(case_id, "case")
         if shipment_id is not None:
@@ -152,6 +166,9 @@ class WorkflowApplicationService:
                 ShipmentIntakeError) as cause:
             raise InvalidTransitionError(
                 str(cause), cause=cause) from cause
+        records = self._workflow_records()
+        if records is not None:
+            workflow = records.create_workflow_record(ctx, workflow)
         return workflow.to_record(), self._describe(ctx, workflow)
 
     def provide_information(
@@ -160,8 +177,8 @@ class WorkflowApplicationService:
         workflow_record: dict[str, Any],
     ) -> tuple[dict[str, Any], WorkflowDTO]:
         """Record that shipment information was provided."""
-        workflow = self._checked_open(ctx, workflow_record)
-        return self._transition(
+        workflow = self._authoritative_open(ctx, workflow_record)
+        return self._transition_and_save(
             workflow, ctx, "provide_information")
 
     def note_evidence_pending(
@@ -170,8 +187,8 @@ class WorkflowApplicationService:
         workflow_record: dict[str, Any],
     ) -> tuple[dict[str, Any], WorkflowDTO]:
         """Record that evidence is awaited."""
-        workflow = self._checked_open(ctx, workflow_record)
-        return self._transition(
+        workflow = self._authoritative_open(ctx, workflow_record)
+        return self._transition_and_save(
             workflow, ctx, "note_evidence_pending")
 
     def record_applicability(
@@ -180,8 +197,8 @@ class WorkflowApplicationService:
         workflow_record: dict[str, Any],
     ) -> tuple[dict[str, Any], WorkflowDTO]:
         """Record the deterministic applicability outcome."""
-        workflow = self._checked_open(ctx, workflow_record)
-        return self._transition(
+        workflow = self._authoritative_open(ctx, workflow_record)
+        return self._transition_and_save(
             workflow, ctx, "record_applicability_determined")
 
     def submit_for_review(
@@ -190,8 +207,8 @@ class WorkflowApplicationService:
         workflow_record: dict[str, Any],
     ) -> tuple[dict[str, Any], WorkflowDTO]:
         """Hand the available analysis to user review."""
-        workflow = self._checked_open(ctx, workflow_record)
-        return self._transition(
+        workflow = self._authoritative_open(ctx, workflow_record)
+        return self._transition_and_save(
             workflow, ctx, "submit_for_review")
 
     def supply_evidence(
@@ -201,12 +218,30 @@ class WorkflowApplicationService:
         evidence_id: UUID,
         requirement_id: UUID | None = None,
     ) -> tuple[dict[str, Any], WorkflowDTO]:
-        """Hand recorded evidence to the workflow for its case."""
+        """Hand recorded evidence to the workflow for its case.
+
+        Where the server owns workflow continuity, the
+        evidence identity must additionally resolve to
+        recorded tenant-owned evidence before it can
+        attach — another tenant's (or unknown) identity
+        fails closed instead of entering the workflow.
+        """
         ctx = checked_context(ctx)
-        workflow = self._owned_workflow(ctx, workflow_record)
+        records = self._workflow_records()
+        if records is not None:
+            workflow = records.resolve_authoritative_workflow(
+                ctx, workflow_record)
+        else:
+            workflow = self._owned_workflow(ctx, workflow_record)
         checked_uuid(evidence_id, "evidence")
         if requirement_id is not None:
             checked_uuid(requirement_id, "requirement")
+        if records is not None and self._evidence_service is not None:
+            recorded = self._evidence_service.get(
+                ctx.tenant, evidence_id)
+            if recorded is None:
+                raise ApplicationNotFoundError(
+                    "recorded evidence is unknown for this tenant")
         self._ensure_open(ctx, workflow)
         try:
             reference = SuppliedEvidenceReference(
@@ -221,6 +256,8 @@ class WorkflowApplicationService:
                 ShipmentIntakeError) as cause:
             raise InvalidTransitionError(
                 str(cause), cause=cause) from cause
+        if records is not None:
+            records.save_workflow_record(ctx, advanced)
         return advanced.to_record(), self._describe(ctx, advanced)
 
     def request_additional_evidence(
@@ -230,7 +267,7 @@ class WorkflowApplicationService:
         requirement_ids: list[UUID] | tuple[UUID, ...],
     ) -> tuple[dict[str, Any], WorkflowDTO]:
         """Flag requirements needing user action."""
-        workflow = self._checked_open(ctx, workflow_record)
+        workflow = self._authoritative_open(ctx, workflow_record)
         checked_ids = checked_uuid_list(
             requirement_ids, "requirement")
         try:
@@ -240,6 +277,9 @@ class WorkflowApplicationService:
         except ComplianceWorkflowError as cause:
             raise InvalidTransitionError(
                 str(cause), cause=cause) from cause
+        records = self._workflow_records()
+        if records is not None:
+            records.save_workflow_record(ctx, advanced)
         return advanced.to_record(), self._describe(ctx, advanced)
 
     def check_readiness(
@@ -420,6 +460,11 @@ class WorkflowApplicationService:
         """
         store = self._require_store()
         ctx = checked_context(ctx)
+        records = self._workflow_records()
+        if records is not None:
+            authoritative = records.resolve_authoritative_workflow(
+                ctx, workflow_record)
+            workflow_record = authoritative.to_record()
         workflow = self._owned_workflow(ctx, workflow_record)
         self._ensure_open(ctx, workflow)
         server_rounds = store.rounds_for_workflow(
@@ -548,6 +593,62 @@ class WorkflowApplicationService:
         workflow = self._owned_workflow(ctx, workflow_record)
         self._ensure_open(ctx, workflow)
         return workflow
+
+    def _workflow_records(self) -> Any | None:
+        """Return the workflow-record boundary when configured.
+
+        Older stores (and every existing unit double)
+        predate server-owned progression; those callers
+        keep the previous client-held behavior unchanged.
+        """
+        if store_supports_workflow_records(self._result_store):
+            return self._result_store
+        return None
+
+    def _authoritative_open(
+        self,
+        ctx: ApplicationContext,
+        workflow_record: dict[str, Any],
+    ) -> ComplianceWorkflow:
+        """Load the server-owned workflow and enforce openness.
+
+        The submitted snapshot is verified against the
+        stored row (plus recorded round linkage) before
+        any transition runs; stale or forged snapshots
+        fail closed here, ahead of the domain call.
+        """
+        ctx = checked_context(ctx)
+        records = self._workflow_records()
+        if records is not None:
+            workflow = records.resolve_authoritative_workflow(
+                ctx, workflow_record)
+        else:
+            workflow = self._owned_workflow(ctx, workflow_record)
+        self._ensure_open(ctx, workflow)
+        return workflow
+
+    def _transition_and_save(
+        self,
+        workflow: ComplianceWorkflow,
+        ctx: ApplicationContext,
+        operation: str,
+    ) -> tuple[dict[str, Any], WorkflowDTO]:
+        """Apply the domain transition and persist the outcome.
+
+        The domain service alone decides the next state;
+        this layer only retains what it decided, in the
+        same step, when the boundary is configured.
+        """
+        try:
+            advanced = getattr(self._workflows, operation)(
+                workflow, tenant_id=ctx.tenant)
+        except ComplianceWorkflowError as cause:
+            raise InvalidTransitionError(
+                str(cause), cause=cause) from cause
+        records = self._workflow_records()
+        if records is not None:
+            records.save_workflow_record(ctx, advanced)
+        return advanced.to_record(), self._describe(ctx, advanced)
 
     def _ensure_open(
         self,
