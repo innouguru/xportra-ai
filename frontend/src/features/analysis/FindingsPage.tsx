@@ -1,9 +1,16 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useAnalysis } from "../../app/AnalysisContext";
+import { ApiError } from "../../api/client";
+import { useStoredReport } from "../../app/useStoredReport";
 import { useWorkflow } from "../../app/WorkflowContext";
 import { FindingCard } from "../../components/FindingCard";
-import { EmptyState, Field, Identifier } from "../../components/StatusBits";
+import {
+  EmptyState,
+  ErrorNotice,
+  Field,
+  Identifier,
+  LoadingState,
+} from "../../components/StatusBits";
 import { isUuidLike } from "../../lib/conversation";
 import { AskXportraButton } from "../conversation/AskXportraButton";
 
@@ -18,7 +25,10 @@ import { AskXportraButton } from "../conversation/AskXportraButton";
  */
 export function FindingsPage() {
   const { record } = useWorkflow();
-  const { report } = useAnalysis();
+  // In-memory report first, else the persisted report
+  // rehydrated from the latest recorded round — the
+  // rendering below is identical either way.
+  const { report, status, error } = useStoredReport();
 
   type FindingGroup =
     | "all"
@@ -43,6 +53,25 @@ export function FindingsPage() {
   }
 
   if (!report) {
+    if (status === "loading") {
+      return <LoadingState text="Reading the stored analysis…" />;
+    }
+    if (status === "error") {
+      // A missing stored report is absence; any other
+      // failure is an error, never a clean "no analysis".
+      if (
+        error instanceof ApiError &&
+        (error.code === "not_found" || error.code === "resource_not_found")
+      ) {
+        return (
+          <EmptyState
+            title="Report unavailable"
+            body="The stored report could not be loaded for this workspace."
+          />
+        );
+      }
+      return <ErrorNotice error={error} />;
+    }
     return (
       <EmptyState
         title="No analysis yet"

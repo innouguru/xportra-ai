@@ -3002,3 +3002,30 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   Deferred (not implemented): `requirement_id`
   linkage, read-projection anchoring, shipment
   modeling, frontend registry/fallback/duplication.
+
+## Persisted Report Rehydration (Complete, 2026-10-03)
+
+- Frontend-only follow-on to server-owned workflow
+  and result persistence: shared `useStoredReport`
+  hook (`frontend/src/app/useStoredReport.ts`)
+  resolves the effective report (in-memory first,
+  else the latest recorded round's report fetched
+  once through the existing
+  `GET /compliance/reports/{report_id}` endpoint
+  and adopted into `AnalysisContext`), so
+  FindingsPage and the shipment workspace render a
+  persisted report after reload. Distinct loading
+  ("Reading the stored analysis…"), genuine
+  absence ("No analysis yet"), stored-but-missing
+  ("Report unavailable" on 404-shaped errors), and
+  failure (`ErrorNotice`) states; one fetch per
+  report; never clobbers a newer in-memory report;
+  nothing duplicated into browser persistence. No
+  UI redesign, no backend/API change, no
+  data-model change.
+- Verification: new hook suite 4/4; FindingsPage
+  +4, workspace +1; full frontend suite 63 files /
+  426 tests, 0 failures; `npx tsc --noEmit` clean;
+  `npm run build` succeeds.
+- Task record:
+  `tasks/completed/persisted-report-rehydration.md`.

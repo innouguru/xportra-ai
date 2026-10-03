@@ -1,6 +1,6 @@
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, vi } from "vitest";
 import { useEffect } from "react";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
@@ -70,6 +70,7 @@ const REPORT: AnalysisReport = {
 
 afterEach(() => {
   sessionStorage.clear();
+  vi.unstubAllGlobals();
 });
 
 const NO_CASES: Array<Record<string, unknown>> = [];
@@ -173,5 +174,105 @@ describe("FindingsPage", () => {
     await user.click(screen.getByRole("button", { name: "Contradictions (1)" }));
     expect(screen.getByText("Label goods in English.")).toBeInTheDocument();
     expect(screen.queryByText("File form X before export.")).toBeNull();
+  });
+});
+
+describe("FindingsPage persisted-report rehydration", () => {
+  const ROUNDED_RECORD: WorkflowRecord = {
+    ...RECORD,
+    state: "analysis_available",
+    rounds: [
+      {
+        round_index: 1,
+        report_id: REPORT.report_id,
+        analysis_ids: [],
+        trace_ids: [],
+        input_fingerprints: [],
+      },
+    ],
+  };
+
+  function stubJson(body: unknown, status = 200) {
+    const spy = vi.fn(async () => new Response(JSON.stringify(body), { status }));
+    vi.stubGlobal("fetch", spy);
+    return spy;
+  }
+
+  function renderReloaded() {
+    sessionStorage.setItem(
+      "xportra.workflow-record.v1",
+      JSON.stringify(ROUNDED_RECORD),
+    );
+    // No in-memory seeding: simulates a reload where only
+    // the workflow record (with recorded rounds) survives.
+    render(
+      <MemoryRouter initialEntries={["/workspace/review"]}>
+        <AuthProvider>
+          <WorkflowProvider>
+            <ConversationProvider>
+              <AnalysisProvider>
+                <Routes>
+                  <Route path="/workspace/review" element={<FindingsPage />} />
+                </Routes>
+              </AnalysisProvider>
+            </ConversationProvider>
+          </WorkflowProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("renders the persisted report after reload (Test B)", async () => {
+    const spy = stubJson(REPORT);
+    renderReloaded();
+    await waitFor(() => {
+      expect(
+        screen.getByText("Findings review — 2 requirements reviewed"),
+      ).toBeInTheDocument();
+    });
+    const urls = spy.mock.calls.map((call) => {
+      const [url] = call as unknown as [string, RequestInit];
+      return url;
+    });
+    expect(urls).toEqual([
+      `http://localhost:8000/compliance/reports/${REPORT.report_id}`,
+    ]);
+    expect(screen.queryByText("No analysis yet")).toBeNull();
+  });
+
+  it("shows a loading state before the persisted report arrives", () => {
+    let release!: (value: unknown) => void;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => gate.then(() => new Response(JSON.stringify(REPORT), { status: 200 }))),
+    );
+    renderReloaded();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Reading the stored analysis…",
+    );
+    expect(screen.queryByText("No analysis yet")).toBeNull();
+    release(null);
+  });
+
+  it("surfaces load failure distinctly from absence (Test D)", async () => {
+    stubJson({ error: { code: "unexpected_error", message: "boom" } }, 500);
+    renderReloaded();
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("No analysis yet")).toBeNull();
+    expect(screen.queryByText("Findings review")).toBeNull();
+  });
+
+  it("reports a missing stored report distinctly from failure", async () => {
+    stubJson({ error: { code: "not_found", message: "gone" } }, 404);
+    renderReloaded();
+    await waitFor(() => {
+      expect(screen.getByText("Report unavailable")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("No analysis yet")).toBeNull();
   });
 });

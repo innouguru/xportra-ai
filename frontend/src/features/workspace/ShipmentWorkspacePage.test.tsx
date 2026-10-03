@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useEffect } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AnalysisProvider, useAnalysis } from "../../app/AnalysisContext";
@@ -150,6 +150,7 @@ afterEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   delete document.documentElement.dataset.theme;
+  vi.unstubAllGlobals();
 });
 
 describe("workspace rendering", () => {
@@ -259,5 +260,42 @@ describe("workspace scope pins", () => {
     for (const name of ["Documents", "Requirements", "Evidence", "Assessment"]) {
       expect(screen.queryByRole("link", { name })).toBeNull();
     }
+  });
+});
+
+describe("workspace report rehydration", () => {
+  it("restores persisted findings after reload without in-memory report", async () => {
+    const rehydrated = analysisReport("case-1", ["satisfied", "not_satisfied"]);
+    const spy = vi.fn(
+      async () => new Response(JSON.stringify(rehydrated), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", spy);
+    // Reload: the registry entry carries recorded rounds
+    // but the analysis context starts empty.
+    seed([
+      seedEntry("analysis_available", {
+        rounds: [
+          {
+            round_index: 1,
+            report_id: rehydrated.report_id,
+            analysis_ids: [],
+            trace_ids: [],
+            input_fingerprints: [],
+          },
+        ],
+      }),
+    ]);
+    renderWorkspace("/shipments/case-1");
+    await waitFor(() => {
+      const requirements = screen.getByRole("heading", { name: /Requirements/ });
+      expect(requirements.textContent).toContain("1 of 2 addressed");
+    });
+    const urls = spy.mock.calls.map((call) => {
+      const [url] = call as unknown as [string, RequestInit];
+      return url;
+    });
+    expect(urls).toEqual([
+      "http://localhost:8000/compliance/reports/rep-1",
+    ]);
   });
 });

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { useAnalysis } from "../../app/AnalysisContext";
 import { useWorkflow } from "../../app/WorkflowContext";
+import { useStoredReport } from "../../app/useStoredReport";
 import { EmptyState } from "../../primitives/feedback";
 import { BackButton, PageHeader } from "../../primitives/layout";
 import { RequirementLedgerRow } from "../../primitives/shipment";
@@ -90,7 +90,9 @@ export function ShipmentWorkspacePage() {
   const { caseId } = useParams();
   const navigate = useNavigate();
   const { record, setRecord } = useWorkflow();
-  const { report } = useAnalysis();
+  // Rehydrated persisted report when memory is empty, so a
+  // reload never loses completed analysis from the workspace.
+  const { report } = useStoredReport();
   const [drawer, setDrawer] = useState<DrawerRequirement | null>(null);
 
   const entry = listShipments().find((item) => item.caseId === caseId) ?? null;
