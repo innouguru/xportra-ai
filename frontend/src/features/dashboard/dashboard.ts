@@ -78,6 +78,21 @@ export function describeShipment(entry: ShipmentEntry): DashboardShipment {
   const meta = profileMeta(entry);
   const base = { entry, title, meta };
 
+  if (record === null) {
+    // Server-owned draft with no workflow yet: incomplete
+    // by the same wording as early intake states. Resume
+    // binds through the existing start endpoint in the
+    // workspace; nothing is fabricated here.
+    return {
+      ...base,
+      tone: "warning",
+      statusLabel: "Incomplete",
+      attention: "Incomplete — continue where you left off",
+      action: { label: "Continue", destination: workspace },
+      complete: false,
+    };
+  }
+
   if (isTerminalState(record.state)) {
     return {
       ...base,
@@ -203,6 +218,15 @@ export function loadDashboard(): DashboardLoad {
   }
 }
 
+/** Describe already-resolved entries (server or cache — same mapping). */
+export function describeEntries(entries: ShipmentEntry[]): DashboardLoad {
+  try {
+    return { status: "ready", model: partitionDashboard(entries.map(describeShipment)) };
+  } catch {
+    return { status: "error" };
+  }
+}
+
 /**
  * Open a shipment in the workspace: load its
  * record into the existing workflow context,
@@ -211,7 +235,7 @@ export function loadDashboard(): DashboardLoad {
  */
 export function openShipment(
   entry: ShipmentEntry,
-  setRecord: (record: WorkflowRecord) => void,
+  setRecord: (record: WorkflowRecord | null) => void,
   navigate: (path: string) => void,
   destination: string,
 ): void {

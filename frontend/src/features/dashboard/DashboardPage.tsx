@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../app/AuthContext";
 import { useWorkflow } from "../../app/WorkflowContext";
 import { ErrorState, EmptyState, LoadingState } from "../../primitives/feedback";
 import { PageHeader } from "../../primitives/layout";
 import { ShipmentWorklistRow } from "../../primitives/shipment";
 import { AuthenticatedShell } from "../../shell/AuthenticatedShell";
+import { fetchShipmentList } from "../../api/shipments";
 import {
-  loadDashboard,
+  describeEntries,
   openShipment,
   type DashboardLoad,
   type DashboardShipment,
@@ -22,12 +24,12 @@ import "./dashboard.css";
  * block (hidden when empty), a compact recent
  * worklist, and a "View all" link. No KPI tiles,
  * no scores, no charts. All content derives from
- * the existing device-local registry
- * (`lib/shipments`) and existing process states
- * (`lib/workflow`); unavailable backend facts
- * (timestamps, missing-detail counts, scores)
- * are omitted, never fabricated. Rows open
- * through the existing workspace mechanism.
+ * the durable server shipment list with existing
+ * process states (`lib/workflow`); unavailable
+ * backend facts (timestamps, missing-detail
+ * counts, scores) are omitted, never fabricated.
+ * Rows open through the existing workspace
+ * mechanism.
  */
 
 function rowName(item: DashboardShipment): string {
@@ -41,17 +43,39 @@ function rowRoute(item: DashboardShipment): string | undefined {
 }
 
 export function DashboardPage() {
+  const auth = useAuth();
   const { setRecord } = useWorkflow();
   const navigate = useNavigate();
   const [load, setLoad] = useState<DashboardLoad | { status: "loading" }>({ status: "loading" });
 
   useEffect(() => {
-    setLoad(loadDashboard());
+    let cancelled = false;
+    setLoad({ status: "loading" });
+    // Durable history first: the server list is
+    // authoritative even in a fresh browser with an
+    // empty device registry.
+    fetchShipmentList(auth)
+      .then((entries) => {
+        if (!cancelled) {
+          setLoad(describeEntries(entries));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoad({ status: "error" });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const reload = () => {
     setLoad({ status: "loading" });
-    setLoad(loadDashboard());
+    fetchShipmentList(auth)
+      .then((entries) => setLoad(describeEntries(entries)))
+      .catch(() => setLoad({ status: "error" }));
   };
 
   const open = (item: DashboardShipment) =>

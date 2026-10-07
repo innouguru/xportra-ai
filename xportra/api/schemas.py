@@ -387,6 +387,46 @@ class WorkflowActionResponse(BaseModel):
     summary: WorkflowSummaryResponse
 
 
+class ShipmentWorkflowSummarySchema(BaseModel):
+    """Workflow progress behind one listed shipment (counts only)."""
+
+    workflow_id: UUID
+    state: str
+    is_closed: bool
+    supplied_evidence_count: int
+    open_requirements_count: int
+    round_count: int
+    latest_report_id: UUID | None = None
+
+
+class ShipmentItemSchema(BaseModel):
+    """One shipment with its workflow summary for discovery."""
+
+    shipment_id: UUID
+    case_id: UUID
+    product: str
+    origin_country: str
+    destination_country: str
+    quantity: str | None = None
+    unit: str | None = None
+    shipment_date: str | None = None
+    status: str
+    created_at: str
+    updated_at: str
+    workflow: ShipmentWorkflowSummarySchema | None = None
+    workflow_count: int
+    workflow_record: WorkflowRecordSchema | None = None
+
+
+class ShipmentListResponse(BaseModel):
+    """One page of tenant shipment discovery."""
+
+    shipments: list[ShipmentItemSchema]
+    limit: int
+    offset: int
+    total: int
+
+
 class RequirementFindingResponse(BaseModel):
     analysis_id: UUID
     requirement_id: UUID

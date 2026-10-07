@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../../app/AuthContext";
 import { useWorkflow } from "../../app/WorkflowContext";
 import { EmptyState, ErrorState, LoadingState } from "../../primitives/feedback";
 import { PageHeader } from "../../primitives/layout";
 import { ShipmentWorklistRow } from "../../primitives/shipment";
+import { fetchShipmentList } from "../../api/shipments";
 import {
   forgetShipment,
-  listShipments,
   type ShipmentEntry,
 } from "../../lib/shipments";
 import type { DashboardShipment } from "../dashboard/dashboard";
@@ -59,26 +60,38 @@ function rowRoute(item: DashboardShipment): string | undefined {
 }
 
 export function ShipmentsPage() {
+  const auth = useAuth();
   const { setRecord } = useWorkflow();
   const navigate = useNavigate();
   const [filter, setFilter] = useState<ArchiveFilter>(EMPTY_FILTER);
   const [load, setLoad] = useState<ArchiveLoad>({ status: "loading" });
 
   useEffect(() => {
-    try {
-      setLoad({ status: "ready", entries: listShipments() });
-    } catch {
-      setLoad({ status: "error" });
-    }
+    let cancelled = false;
+    // Durable archive first: persisted shipments
+    // appear even when this device remembers nothing.
+    fetchShipmentList(auth)
+      .then((entries) => {
+        if (!cancelled) {
+          setLoad({ status: "ready", entries });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLoad({ status: "error" });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const reload = () => {
     setLoad({ status: "loading" });
-    try {
-      setLoad({ status: "ready", entries: listShipments() });
-    } catch {
-      setLoad({ status: "error" });
-    }
+    fetchShipmentList(auth)
+      .then((entries) => setLoad({ status: "ready", entries }))
+      .catch(() => setLoad({ status: "error" }));
   };
 
   const entries = load.status === "ready" ? load.entries : [];
@@ -86,11 +99,12 @@ export function ShipmentsPage() {
   const filtered = filter.query.trim() !== "" || filter.status !== "all";
 
   const groups = useMemo(() => {
-    const active = results.filter((item) => !item.complete && item.entry.record.state !== "created" && item.entry.record.state !== "information_provided");
+    const stateOf = (item: (typeof results)[number]) => item.entry.record?.state ?? null;
+    const active = results.filter(
+      (item) => !item.complete && stateOf(item) !== null && stateOf(item) !== "created" && stateOf(item) !== "information_provided",
+    );
     const incomplete = results.filter(
-      (item) =>
-        !item.complete &&
-        (item.entry.record.state === "created" || item.entry.record.state === "information_provided"),
+      (item) => !item.complete && (stateOf(item) === null || stateOf(item) === "created" || stateOf(item) === "information_provided"),
     );
     const completed = results.filter((item) => item.complete);
     return [
@@ -107,13 +121,15 @@ export function ShipmentsPage() {
     navigate(item.action.destination);
   };
 
-  const remove = (caseId: string) => {
-    forgetShipment(caseId);
-    try {
-      setLoad({ status: "ready", entries: listShipments() });
-    } catch {
-      setLoad({ status: "error" });
-    }
+  const remove = (item: DashboardShipment) => {
+    // Device-local hiding only: the server row is
+    // untouched, and the row only stays hidden here.
+    forgetShipment(item.entry.caseId, item.entry.shipmentId);
+    setLoad((current) =>
+      current.status === "ready"
+        ? { status: "ready", entries: current.entries.filter((entry) => entry.caseId !== item.entry.caseId) }
+        : current,
+    );
   };
 
   return (
@@ -219,7 +235,7 @@ export function ShipmentsPage() {
                       secondaryAction={{
                         label: "Forget",
                         ariaLabel: `Forget ${item.title}`,
-                        onSelect: () => remove(item.entry.caseId),
+                        onSelect: () => remove(item),
                       }}
                     />
                   ))}

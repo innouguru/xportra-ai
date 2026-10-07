@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi, afterEach, type Mock } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -7,20 +7,32 @@ import { WorkflowProvider } from "../../app/WorkflowContext";
 import { ThemeProvider } from "../../theme/theme";
 import { AuthenticatedShell } from "../../shell/AuthenticatedShell";
 import { ShipmentsPage } from "./ShipmentsPage";
-import { rememberShipment, type ShipmentEntry } from "../../lib/shipments";
+import type { ShipmentEntry } from "../../lib/shipments";
 import type { WorkflowRecord } from "../../types/api";
 
 /**
  * Archive page contract (approved redesign
  * reference `docs/design/xportra-ui-redesign.*`).
  *
- * Entries are remembered through the real
- * device registry; fixtures are test-only.
- * One search field plus four chips filter a
- * grouped worklist (Active / Incomplete /
- * Completed) sharing the dashboard row
- * language — no tables, no cards.
+ * Entries arrive through the durable server list
+ * (`api/shipments`, mocked here); fixtures are
+ * test-only. One search field plus four chips
+ * filter a grouped worklist (Active / Incomplete
+ * / Completed) sharing the dashboard row
+ * language — no tables, no cards. Forgetting is
+ * device-local hiding: no backend call follows.
  */
+
+vi.mock("../../api/shipments", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/shipments")>();
+  return { ...actual, fetchShipmentList: (...args: unknown[]) => mockedFetch(...args) };
+});
+
+const { mockedFetch } = vi.hoisted(() => {
+  return {
+    mockedFetch: vi.fn() as unknown as Mock<(...args: unknown[]) => Promise<unknown>>,
+  };
+});
 
 function workflow(caseId: string, state: string, extra?: Partial<WorkflowRecord>): WorkflowRecord {
   return {
@@ -46,16 +58,14 @@ function seedEntry(
   const record = workflow(caseId, state, extra);
   return {
     caseId,
-    shipmentId: null,
+    shipmentId: `ship-${caseId}`,
     profile: { product, origin: "Lagos", destination, quantity: "", unit: "", shipmentDate: "" },
     record,
   };
 }
 
-function seed(entries: ShipmentEntry[]) {
-  for (const entry of entries) {
-    rememberShipment(entry);
-  }
+function serve(entries: ShipmentEntry[]) {
+  mockedFetch.mockResolvedValue(entries);
 }
 
 function stubMatchMedia() {
@@ -103,12 +113,14 @@ afterEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   delete document.documentElement.dataset.theme;
+  mockedFetch.mockReset();
 });
 
 describe("ShipmentsPage archive", () => {
-  it("titles the archive and explains the empty list", () => {
+  it("titles the archive and explains the empty list", async () => {
+    serve([]);
     renderPage();
-    expect(screen.getByRole("heading", { name: "Your shipments", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Your shipments", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "You don’t have any shipments yet." })).toBeInTheDocument();
     const actions = screen.getAllByRole("link", { name: "New shipment" });
     expect(actions.length).toBeGreaterThan(0);
@@ -117,14 +129,14 @@ describe("ShipmentsPage archive", () => {
     }
   });
 
-  it("groups active before incomplete before completed with translated statuses", () => {
-    seed([
+  it("groups active before incomplete before completed with translated statuses", async () => {
+    serve([
       seedEntry("case-done", "Cocoa", "Rotterdam", "assessment_package_ready"),
       seedEntry("case-new", "Sesame", "Accra", "created"),
       seedEntry("case-busy", "Ginger", "Canada", "evidence_pending"),
     ]);
     renderPage();
-    const active = screen.getByRole("heading", { name: "Active" });
+    const active = await screen.findByRole("heading", { name: "Active" });
     const incomplete = screen.getByRole("heading", { name: "Incomplete" });
     const completed = screen.getByRole("heading", { name: "Completed" });
     expect(active.compareDocumentPosition(incomplete) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -140,13 +152,21 @@ describe("ShipmentsPage archive", () => {
     expect(main.textContent).not.toContain("assessment_package_ready");
   });
 
+  it("shows server shipments with an empty device registry", async () => {
+    window.sessionStorage.clear();
+    serve([seedEntry("case-1", "Cocoa", "Rotterdam", "created")]);
+    renderPage();
+    expect(await screen.findByRole("link", { name: "Cocoa" })).toBeInTheDocument();
+  });
+
   it("searches and chips, then clears back to the full archive", async () => {
-    seed([
+    serve([
       seedEntry("case-1", "Cocoa", "Rotterdam", "created"),
       seedEntry("case-2", "Sesame", "Accra", "created"),
     ]);
     const user = userEvent.setup();
     renderPage();
+    await screen.findByRole("link", { name: "Cocoa" });
     await user.type(screen.getByPlaceholderText("Search by product or destination"), "sesame");
     expect(screen.getByRole("status")).toHaveTextContent("1 shipment");
     expect(screen.queryByRole("link", { name: "Cocoa" })).toBeNull();
@@ -160,39 +180,41 @@ describe("ShipmentsPage archive", () => {
   });
 
   it("opens active shipments into the workspace mechanism", async () => {
-    seed([seedEntry("case-1", "Cocoa", "Rotterdam", "created")]);
+    serve([seedEntry("case-1", "Cocoa", "Rotterdam", "created")]);
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Continue" }));
     expect(await screen.findByText("Workspace stub")).toBeInTheDocument();
   });
 
   it("opens completed shipments as historical reports, never workspaces", async () => {
-    seed([seedEntry("case-done", "Cocoa", "Rotterdam", "assessment_package_ready")]);
+    serve([seedEntry("case-done", "Cocoa", "Rotterdam", "assessment_package_ready")]);
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("button", { name: "View report" }));
+    await user.click(await screen.findByRole("button", { name: "View report" }));
     expect(await screen.findByText("Historical report stub")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
     expect(screen.queryByRole("button", { name: /edit|reopen|finalize|upload|verify/i })).toBeNull();
   });
 
   it("forgets a shipment without touching the backend", async () => {
-    const spy = vi.fn(async () => new Response("{}", { status: 200 }));
-    vi.stubGlobal("fetch", spy);
-    seed([seedEntry("case-1", "Cocoa", "Rotterdam", "created")]);
+    serve([seedEntry("case-1", "Cocoa", "Rotterdam", "created")]);
     const user = userEvent.setup();
     renderPage();
-    await user.click(screen.getByRole("button", { name: "Forget Cocoa · Lagos → Rotterdam" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Forget Cocoa · Lagos → Rotterdam" }),
+    );
     expect(
       screen.getByRole("heading", { name: "You don’t have any shipments yet." }),
     ).toBeInTheDocument();
-    expect(spy).not.toHaveBeenCalled();
+    // One fetch served the initial load; forgetting issues no request.
+    expect(mockedFetch).toHaveBeenCalledTimes(1);
   });
 
-  it("introduces no analytics, scores, or technical vocabulary", () => {
-    seed([seedEntry("case-1", "Cocoa", "Rotterdam", "created")]);
+  it("introduces no analytics, scores, or technical vocabulary", async () => {
+    serve([seedEntry("case-1", "Cocoa", "Rotterdam", "created")]);
     renderPage();
+    await screen.findByRole("link", { name: "Cocoa" });
     const main = screen.getByRole("main");
     expect(main.textContent).not.toMatch(/%|score|Run Compliance|AI insights/i);
     for (const name of ["Documents", "Requirements", "Evidence", "Assessment"]) {

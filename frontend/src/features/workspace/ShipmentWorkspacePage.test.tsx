@@ -263,26 +263,171 @@ describe("workspace scope pins", () => {
   });
 });
 
-describe("workspace report rehydration", () => {
-  it("restores persisted findings after reload without in-memory report", async () => {
-    const rehydrated = analysisReport("case-1", ["satisfied", "not_satisfied"]);
-    const spy = vi.fn(
-      async () => new Response(JSON.stringify(rehydrated), { status: 200 }),
+describe("durable resume", () => {
+  function serverEntry(
+    state: string | null,
+    overrides: Record<string, unknown> = {},
+  ) {
+    const record =
+      state === null
+        ? null
+        : {
+            id: "id-1",
+            tenant_id: "tenant-1",
+            case_id: "case-1",
+            shipment_id: "ship-1",
+            state,
+            rounds: [],
+            supplied_evidence_ids: [],
+            open_requirements: [],
+          };
+    return {
+      shipment_id: "ship-1",
+      case_id: "case-1",
+      product: "Cocoa",
+      origin_country: "Lagos",
+      destination_country: "Rotterdam",
+      quantity: "",
+      unit: "tonnes",
+      shipment_date: "",
+      status: "bound",
+      created_at: "",
+      updated_at: "",
+      workflow: record
+        ? {
+            workflow_id: record.id,
+            state: record.state,
+            is_closed: false,
+            supplied_evidence_count: 0,
+            open_requirements_count: 0,
+            round_count: 0,
+            latest_report_id: null,
+          }
+        : null,
+      workflow_count: record ? 1 : 0,
+      workflow_record: record,
+      ...overrides,
+    };
+  }
+
+  function stubDiscovery(entries: unknown[], onStart?: (url: string, init: RequestInit) => Response) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes("/compliance/workflows/start") && onStart) {
+          return onStart(url, init as RequestInit);
+        }
+        if (url.includes("/compliance/shipments")) {
+          return new Response(
+            JSON.stringify({ shipments: entries, limit: 20, offset: 0, total: entries.length }),
+            { status: 200 },
+          );
+        }
+        throw new Error(`unexpected ${url}`);
+      }),
     );
+  }
+
+  it("loads a persisted shipment with an empty device registry", async () => {
+    window.sessionStorage.clear();
+    stubDiscovery([serverEntry("evidence_pending")]);
+    renderWorkspace("/shipments/case-1");
+    expect(
+      await screen.findByRole("heading", { name: "Cocoa · Lagos → Rotterdam", level: 1 }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Xportra needs a document from you.")).toBeInTheDocument();
+  });
+
+  it("adopts the server record over a stale cached snapshot", async () => {
+    seed([seedEntry("created")]);
+    stubDiscovery([serverEntry("evidence_pending")]);
+    renderWorkspace("/shipments/case-1");
+    // The stale cached state resolves first; the server
+    // record then wins without user action.
+    expect(
+      await screen.findByText("Xportra needs a document from you."),
+    ).toBeInTheDocument();
+  });
+
+  it("begins a saved draft through the existing start endpoint", async () => {
+    window.sessionStorage.clear();
+    const bound = serverEntry("created");
+    stubDiscovery([serverEntry(null)], (url, init) => {
+      expect(url).toContain("/compliance/workflows/start");
+      const body = JSON.parse(init.body as string) as Record<string, unknown>;
+      expect(body).toEqual({ case_id: "case-1", shipment_id: "ship-1" });
+      return new Response(JSON.stringify({ workflow: bound.workflow_record, summary: {} }), {
+        status: 201,
+      });
+    });
+    const user = (await import("@testing-library/user-event")).default.setup();
+    renderWorkspace("/shipments/case-1");
+    await user.click(await screen.findByRole("button", { name: "Continue" }));
+    expect(
+      await screen.findByRole("heading", { name: "Cocoa · Lagos → Rotterdam", level: 1 }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("workspace report rehydration", () => {  it("restores persisted findings after reload without in-memory report", async () => {
+    const rehydrated = analysisReport("case-1", ["satisfied", "not_satisfied"]);
+    const rounds = [
+      {
+        round_index: 1,
+        report_id: rehydrated.report_id,
+        analysis_ids: [],
+        trace_ids: [],
+        input_fingerprints: [],
+      },
+    ];
+    const serverItem = {
+      shipment_id: "ship-1",
+      case_id: "case-1",
+      product: "Cocoa",
+      origin_country: "Lagos",
+      destination_country: "Rotterdam",
+      quantity: "",
+      unit: "tonnes",
+      shipment_date: "",
+      status: "bound",
+      created_at: "",
+      updated_at: "",
+      workflow: {
+        workflow_id: "id-1",
+        state: "analysis_available",
+        is_closed: false,
+        supplied_evidence_count: 0,
+        open_requirements_count: 0,
+        round_count: 1,
+        latest_report_id: rehydrated.report_id,
+      },
+      workflow_count: 1,
+      workflow_record: {
+        id: "id-1",
+        tenant_id: "tenant-1",
+        case_id: "case-1",
+        shipment_id: "ship-1",
+        state: "analysis_available",
+        rounds,
+        supplied_evidence_ids: [],
+        open_requirements: [],
+      },
+    };
+    const spy = vi.fn(async (url: string) => {
+      if (url.includes("/compliance/shipments")) {
+        return new Response(
+          JSON.stringify({ shipments: [serverItem], limit: 20, offset: 0, total: 1 }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify(rehydrated), { status: 200 });
+    });
     vi.stubGlobal("fetch", spy);
     // Reload: the registry entry carries recorded rounds
     // but the analysis context starts empty.
     seed([
       seedEntry("analysis_available", {
-        rounds: [
-          {
-            round_index: 1,
-            report_id: rehydrated.report_id,
-            analysis_ids: [],
-            trace_ids: [],
-            input_fingerprints: [],
-          },
-        ],
+        rounds,
       }),
     ]);
     renderWorkspace("/shipments/case-1");
@@ -294,8 +439,7 @@ describe("workspace report rehydration", () => {
       const [url] = call as unknown as [string, RequestInit];
       return url;
     });
-    expect(urls).toEqual([
-      "http://localhost:8000/compliance/reports/rep-1",
-    ]);
+    expect(urls).toContain("http://localhost:8000/compliance/shipments");
+    expect(urls).toContain("http://localhost:8000/compliance/reports/rep-1");
   });
 });

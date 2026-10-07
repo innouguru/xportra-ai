@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { fetchStoredReport } from "../../api/workflows";
+import { fetchShipmentList } from "../../api/shipments";
 import { fetchEvidence, fetchEvidenceDownload } from "../../api/evidence";
 import { useAuth } from "../../app/AuthContext";
 import { EmptyState, ErrorState, LoadingState } from "../../primitives/feedback";
@@ -8,7 +9,7 @@ import { BackButton, PageHeader } from "../../primitives/layout";
 import { RequirementLedgerRow } from "../../primitives/shipment";
 import { StatusIndicator } from "../../primitives/status";
 import { AuthenticatedShell } from "../../shell/AuthenticatedShell";
-import { listShipments, shipmentDisplayName } from "../../lib/shipments";
+import { listShipments, shipmentDisplayName, type ShipmentEntry } from "../../lib/shipments";
 import { isTerminalState } from "../../lib/workflow";
 import type { AnalysisReport, EvidenceRecord } from "../../types/api";
 import { requirementVocabulary } from "../workspace/workspace";
@@ -77,8 +78,30 @@ export function HistoricalReportPage() {
   const [load, setLoad] = useState<ReportLoad>({ status: "loading" });
   const [attempt, setAttempt] = useState(0);
   const [evidence, setEvidence] = useState<Record<string, EvidenceRecord | null>>({});
+  const [serverEntries, setServerEntries] = useState<ShipmentEntry[] | null>(null);
 
-  const entry = listShipments().find((item) => item.caseId === caseId) ?? null;
+  // Durable discovery first: the completed shipment
+  // resolves from the server list even when this
+  // device remembers nothing; the registry stays the
+  // fallback where listing is unavailable.
+  useEffect(() => {
+    let cancelled = false;
+    fetchShipmentList(auth)
+      .then((entries) => {
+        if (!cancelled) {
+          setServerEntries(entries);
+        }
+      })
+      .catch(() => {
+        // Registry fallback below stays usable.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const entry = (serverEntries ?? listShipments()).find((item) => item.caseId === caseId) ?? null;
   const record = entry?.record ?? null;
   const terminal = record ? isTerminalState(record.state) : false;
   const reportId =
@@ -169,7 +192,7 @@ export function HistoricalReportPage() {
         <PageHeader title="Historical report" />
         <EmptyState
           title="Report unavailable"
-          body="No completed shipment on this device matches that reference."
+          body="No completed shipment matches that reference."
           action={
             <Link className="primary-button" to="/shipments">
               Back to Your shipments

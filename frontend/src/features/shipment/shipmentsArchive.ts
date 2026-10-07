@@ -54,7 +54,8 @@ function statusGroup(item: DashboardShipment): "active" | "incomplete" | "comple
   if (item.complete) {
     return "completed";
   }
-  if (item.entry.record.state === "created" || item.entry.record.state === "information_provided") {
+  const state = item.entry.record?.state;
+  if (state === undefined || state === "created" || state === "information_provided") {
     return "incomplete";
   }
   return "active";

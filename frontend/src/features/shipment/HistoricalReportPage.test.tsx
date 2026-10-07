@@ -96,8 +96,11 @@ function stubMatchMedia() {
   })) as unknown as typeof window.matchMedia;
 }
 
+let currentSeed: ShipmentEntry[] = [];
+
 function seed(entries: ShipmentEntry[]) {
   window.sessionStorage.setItem("xportra.shipments.v1", JSON.stringify(entries));
+  currentSeed = entries;
 }
 
 function renderReport(path: string) {
@@ -120,10 +123,55 @@ function renderReport(path: string) {
   );
 }
 
-function stubBackend(report: AnalysisReport | null) {
+function serverItem(entry: ShipmentEntry) {
+  return {
+    shipment_id: entry.shipmentId ?? entry.caseId,
+    case_id: entry.caseId,
+    product: entry.profile.product,
+    origin_country: entry.profile.origin,
+    destination_country: entry.profile.destination,
+    quantity: entry.profile.quantity || null,
+    unit: entry.profile.unit || null,
+    shipment_date: entry.profile.shipmentDate || null,
+    status: "bound",
+    created_at: "",
+    updated_at: "",
+    workflow: entry.record
+      ? {
+          workflow_id: entry.record.id,
+          state: entry.record.state,
+          is_closed: entry.record.state === "assessment_package_ready",
+          supplied_evidence_count: entry.record.supplied_evidence_ids.length,
+          open_requirements_count: entry.record.open_requirements.length,
+          round_count: entry.record.rounds.length,
+          latest_report_id:
+            entry.record.rounds.length > 0
+              ? entry.record.rounds[entry.record.rounds.length - 1].report_id
+              : null,
+        }
+      : null,
+    workflow_count: entry.record ? 1 : 0,
+    workflow_record: entry.record,
+  };
+}
+
+function stubBackend(report: AnalysisReport | null, entries: ShipmentEntry[] = currentSeed) {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string) => {
+      if (url.includes("/compliance/shipments")) {
+        // Durable list serves the seeded entries, as a
+        // persisted backend would after real starts.
+        return new Response(
+          JSON.stringify({
+            shipments: entries.map(serverItem),
+            limit: 20,
+            offset: 0,
+            total: entries.length,
+          }),
+          { status: 200 },
+        );
+      }
       if (url.includes("/compliance/reports/")) {
         if (!report) {
           return new Response(JSON.stringify({ error: "gone" }), { status: 404 });
@@ -158,6 +206,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   window.localStorage.clear();
   window.sessionStorage.clear();
+  currentSeed = [];
   delete document.documentElement.dataset.theme;
 });
 
@@ -260,12 +309,23 @@ describe("historical report", () => {
         rounds: [{ round_index: 0, report_id: "rep-1", analysis_ids: [], trace_ids: [], input_fingerprints: [] }],
       }),
     ]);
-    let calls = 0;
+    let reportCalls = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => {
-        calls += 1;
-        if (calls === 1) {
+      vi.fn(async (url: string) => {
+        if (url.includes("/compliance/shipments")) {
+          return new Response(
+            JSON.stringify({
+              shipments: currentSeed.map(serverItem),
+              limit: 20,
+              offset: 0,
+              total: currentSeed.length,
+            }),
+            { status: 200 },
+          );
+        }
+        reportCalls += 1;
+        if (reportCalls === 1) {
           throw new Error("network down");
         }
         return new Response(JSON.stringify(storedReport()), { status: 200 });
@@ -275,6 +335,96 @@ describe("historical report", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.getByText("Cocoa")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText(/1 of 2 requirements addressed\./)).toBeInTheDocument();
+  });
+
+  it("resolves a completed shipment from the server with an empty registry", async () => {
+    window.sessionStorage.clear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("/compliance/shipments")) {
+          return new Response(
+            JSON.stringify({
+              shipments: [
+                {
+                  shipment_id: "ship-done",
+                  case_id: "case-done",
+                  product: "Cocoa",
+                  origin_country: "Lagos",
+                  destination_country: "Rotterdam",
+                  quantity: "",
+                  unit: "tonnes",
+                  shipment_date: "",
+                  status: "bound",
+                  created_at: "",
+                  updated_at: "",
+                  workflow: {
+                    workflow_id: "id-case-done",
+                    state: "assessment_package_ready",
+                    is_closed: true,
+                    supplied_evidence_count: 1,
+                    open_requirements_count: 0,
+                    round_count: 1,
+                    latest_report_id: "rep-1",
+                  },
+                  workflow_count: 1,
+                  workflow_record: {
+                    id: "id-case-done",
+                    tenant_id: "tenant-1",
+                    case_id: "case-done",
+                    shipment_id: "ship-done",
+                    state: "assessment_package_ready",
+                    rounds: [
+                      {
+                        round_index: 0,
+                        report_id: "rep-1",
+                        analysis_ids: [],
+                        trace_ids: [],
+                        input_fingerprints: [],
+                      },
+                    ],
+                    supplied_evidence_ids: ["ev-1"],
+                    open_requirements: [],
+                  },
+                },
+              ],
+              limit: 20,
+              offset: 0,
+              total: 1,
+            }),
+            { status: 200 },
+          );
+        }
+        if (url.includes("/compliance/reports/")) {
+          return new Response(JSON.stringify(storedReport()), { status: 200 });
+        }
+        if (url.includes("/compliance-evidence/") && !url.includes("/download")) {
+          return new Response(
+            JSON.stringify({
+              id: "ev-1",
+              tenant_id: "tenant-1",
+              source_id: null,
+              document_title: "Phytosanitary certificate scan",
+              document_type: "certificate",
+              file_reference_or_uri: "",
+              content_hash: null,
+              status: "accepted",
+              uploaded_at: "",
+              created_at: "",
+              updated_at: "",
+              mime_type: "application/pdf",
+            }),
+            { status: 200 },
+          );
+        }
+        throw new Error(`unexpected ${url}`);
+      }),
+    );
+    renderReport("/shipments/case-done/report");
+    expect(
+      await screen.findByRole("heading", { name: "Cocoa · Lagos → Rotterdam", level: 1 }),
+    ).toBeInTheDocument();
     expect(await screen.findByText(/1 of 2 requirements addressed\./)).toBeInTheDocument();
   });
 

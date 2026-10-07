@@ -15,25 +15,24 @@ import { DashboardPage } from "./DashboardPage";
  * "Your shipments" is a resumption workspace:
  * one attention block, one recent worklist, one
  * "View all" link — no greeting, no counts, no
- * cards, no analytics. The registry is seeded
- * through the real sessionStorage boundary
- * (`xportra.shipments.v1`); fixtures are
- * test-only display data. The error path mocks
- * the registry read to throw — the production
- * code path is a genuine defensive catch with
- * retry.
+ * cards, no analytics. Entries arrive through the
+ * durable server list (`api/shipments`); fixtures
+ * are test-only display data served by the mocked
+ * fetch. The error path rejects the fetch once —
+ * the production code path is a genuine network
+ * failure with retry.
  */
 
-vi.mock("../../lib/shipments", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../lib/shipments")>();
-  return { ...actual, listShipments: () => mockedList() };
+vi.mock("../../api/shipments", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../api/shipments")>();
+  return { ...actual, fetchShipmentList: (...args: unknown[]) => mockedFetch(...args) };
 });
 
-const { mockedList } = vi.hoisted(() => {
-  return { mockedList: vi.fn() as unknown as Mock<() => ShipmentEntry[]> };
+const { mockedFetch } = vi.hoisted(() => {
+  return {
+    mockedFetch: vi.fn() as unknown as Mock<(...args: unknown[]) => Promise<unknown>>,
+  };
 });
-
-mockedList.mockImplementation(() => readSeeded());
 
 function record(state: string, extra?: Partial<WorkflowRecord>): WorkflowRecord {
   return {
@@ -53,27 +52,14 @@ function seededEntry(product: string, state: string, extra?: Partial<WorkflowRec
   const workflow = record(state, { case_id: `case-${product}`, ...extra });
   return {
     caseId: workflow.case_id,
-    shipmentId: null,
+    shipmentId: `ship-${product}`,
     profile: { product, origin: "Lagos", destination: "Rotterdam", quantity: "", unit: "", shipmentDate: "" },
     record: workflow,
   };
 }
 
-function readSeeded(): ShipmentEntry[] {
-  try {
-    const raw = window.sessionStorage.getItem("xportra.shipments.v1");
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw) as ShipmentEntry[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function seed(entries: ShipmentEntry[]) {
-  window.sessionStorage.setItem("xportra.shipments.v1", JSON.stringify(entries));
+function serve(entries: ShipmentEntry[]) {
+  mockedFetch.mockResolvedValue(entries);
 }
 
 function renderPage() {
@@ -104,15 +90,14 @@ afterEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   delete document.documentElement.dataset.theme;
-  mockedList.mockReset();
-  mockedList.mockImplementation(() => readSeeded());
+  mockedFetch.mockReset();
 });
 
 describe("dashboard header", () => {
-  it("titles the page and offers New shipment without dashboard chrome", () => {
-    seed([seededEntry("Cocoa", "created"), seededEntry("Sesame", "evidence_pending")]);
+  it("titles the page and offers New shipment without dashboard chrome", async () => {
+    serve([seededEntry("Cocoa", "created"), seededEntry("Sesame", "evidence_pending")]);
     renderPage();
-    expect(screen.getByRole("heading", { name: "Your shipments", level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Your shipments", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "New shipment" })).toHaveAttribute("href", "/start");
     const main = screen.getByRole("main");
     expect(main.textContent).not.toMatch(/Good (morning|afternoon|evening)/);
@@ -121,14 +106,14 @@ describe("dashboard header", () => {
 });
 
 describe("attention and recent sections", () => {
-  it("places attention above recent with plain-English statuses", () => {
-    seed([
+  it("places attention above recent with plain-English statuses", async () => {
+    serve([
       seededEntry("Cocoa", "created"),
       seededEntry("Sesame", "applicability_determined"),
       seededEntry("Ginger", "assessment_package_ready"),
     ]);
     renderPage();
-    const attention = screen.getByRole("heading", { name: "Needs your attention" });
+    const attention = await screen.findByRole("heading", { name: "Needs your attention" });
     const recent = screen.getByRole("heading", { name: "Recent shipments" });
     expect(attention.compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText(/Incomplete — continue where you left off/)).toBeInTheDocument();
@@ -142,15 +127,15 @@ describe("attention and recent sections", () => {
     }
   });
 
-  it("hides the attention block when nothing needs attention", () => {
-    seed([seededEntry("Sesame", "applicability_determined")]);
+  it("hides the attention block when nothing needs attention", async () => {
+    serve([seededEntry("Sesame", "applicability_determined")]);
     renderPage();
+    await screen.findByRole("heading", { name: "Recent shipments" });
     expect(screen.queryByRole("heading", { name: "Needs your attention" })).toBeNull();
-    expect(screen.getByRole("heading", { name: "Recent shipments" })).toBeInTheDocument();
   });
 
-  it("limits recent shipments to five worklist rows", () => {
-    seed([
+  it("limits recent shipments to five worklist rows", async () => {
+    serve([
       seededEntry("One", "evidence_pending", { supplied_evidence_ids: ["e1"] }),
       seededEntry("Two", "evidence_pending", { supplied_evidence_ids: ["e2"] }),
       seededEntry("Three", "applicability_determined"),
@@ -159,19 +144,28 @@ describe("attention and recent sections", () => {
       seededEntry("Six", "evidence_pending", { supplied_evidence_ids: ["e6"] }),
     ]);
     renderPage();
-    const recent = screen.getByRole("heading", { name: "Recent shipments" });
+    const recent = await screen.findByRole("heading", { name: "Recent shipments" });
     const section = recent.closest("section");
     expect(section).not.toBeNull();
     expect(within(section as HTMLElement).getAllByRole("link", { name: /^(One|Two|Three|Four|Five|Six)$/ })).toHaveLength(5);
     expect(screen.getByRole("link", { name: "View all" })).toHaveAttribute("href", "/shipments");
   });
+
+  it("shows server shipments with an empty device registry", async () => {
+    window.sessionStorage.clear();
+    serve([seededEntry("Cocoa", "created")]);
+    renderPage();
+    expect(await screen.findByText("Cocoa")).toBeInTheDocument();
+  });
 });
 
 describe("empty, loading, and error states", () => {
-  it("welcomes first-time users with a direction-giving empty state", () => {
-    seed([]);
+  it("welcomes first-time users with a direction-giving empty state", async () => {
+    serve([]);
     renderPage();
-    expect(screen.getByRole("heading", { name: "You don't have any shipments yet." })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("heading", { name: "You don't have any shipments yet." }),
+    ).toBeInTheDocument();
     expect(screen.getByText("Start one to see what it needs.")).toBeInTheDocument();
     const actions = screen.getAllByRole("link", { name: "New shipment" });
     expect(actions).toHaveLength(2);
@@ -180,24 +174,23 @@ describe("empty, loading, and error states", () => {
     }
   });
 
-  it("explains load failures plainly with a working retry", () => {
-    mockedList.mockImplementationOnce(() => {
-      throw new Error("storage unavailable");
-    });
-    seed([seededEntry("Cocoa", "created")]);
+  it("explains load failures plainly with a working retry", async () => {
+    mockedFetch.mockRejectedValueOnce(new Error("network down"));
+    mockedFetch.mockResolvedValue([seededEntry("Cocoa", "created")]);
     renderPage();
-    expect(
-      screen.getByRole("alert"),
-    ).toHaveTextContent("We couldn't load your shipments right now.");
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "We couldn't load your shipments right now.",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(screen.getByRole("heading", { name: "Needs your attention" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Needs your attention" })).toBeInTheDocument();
   });
 });
 
 describe("dashboard scope pins", () => {
-  it("introduces no analytics, charts, cards, or workflow navigation", () => {
-    seed([seededEntry("Cocoa", "created")]);
+  it("introduces no analytics, charts, cards, or workflow navigation", async () => {
+    serve([seededEntry("Cocoa", "created")]);
     renderPage();
+    await screen.findByText("Cocoa");
     const main = screen.getByRole("main");
     expect(main.querySelector("svg, canvas")).toBeNull();
     expect(main.querySelector(".xb-card, .xb-card-grid")).toBeNull();

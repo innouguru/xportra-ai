@@ -3083,3 +3083,36 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   `DATABASE_URL`).
 - Task record:
   `tasks/completed/shipment-persistence-implementation.md`.
+
+## Durable Shipment Listing and History (Implemented, 2026-10-07)
+
+- Server-backed discovery: `ShipmentRepository.list_for_tenant`
+  (newest-first, limit/offset, plus count) and
+  `ComplianceWorkflowRepository.list_for_shipment`
+  (recency order, multiplicity preserved); read-only
+  `ShipmentListingService` composes shipment + latest
+  workflow summary (`is_closed`, counts, round count,
+  `latest_report_id`, full workflow record,
+  `workflow_count`); `GET /compliance/shipments`
+  (paginated, `all|active|completed`) and
+  `GET /compliance/shipments/{shipment_id}` (404 for
+  unknown/cross-tenant). No new migration, no new
+  aggregate, no state machine change.
+- Completion stays workflow/package based (terminal
+  state + package linkage); shipment `locked` is never
+  read as completed (finalization still does not enact
+  it — future lifecycle task).
+- Frontend history/resume reads are server-backed:
+  dashboard, archive, workspace reload, and historical
+  report resolve the durable list (server wins over
+  stale snapshots); drafts bind through the existing
+  start endpoint; `forgetShipment` stays device-local
+  hiding (new hide-set, never server deletion);
+  `useStoredReport` unchanged. sessionStorage remains
+  as UI cache/mutation continuity/suggestions only.
+- Verification: backend 2019 passed + 61 subtests;
+  frontend 64 files / 439 tests, `tsc` clean, build
+  succeeds; PG integration gated (51 skipped, no
+  `DATABASE_URL`).
+- Task record:
+  `tasks/completed/shipment-listing-history-implementation.md`.

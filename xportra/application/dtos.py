@@ -286,6 +286,103 @@ def _rounds(record: dict[str, Any]) -> list[Any]:
 
 
 @dataclass(frozen=True, slots=True)
+class ShipmentWorkflowSummaryDTO:
+    """Workflow progress behind one listed shipment.
+
+    Counts and linkage only — no verdicts, no scores,
+    no compliance content. ``latest_report_id`` is the
+    newest recorded round's report, or ``None`` before
+    any analysis ran.
+    """
+
+    workflow_id: str
+    state: str
+    is_closed: bool
+    supplied_evidence_count: int
+    open_requirements_count: int
+    round_count: int
+    latest_report_id: str | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "workflow_id": self.workflow_id,
+            "state": self.state,
+            "is_closed": self.is_closed,
+            "supplied_evidence_count": self.supplied_evidence_count,
+            "open_requirements_count": self.open_requirements_count,
+            "round_count": self.round_count,
+            "latest_report_id": self.latest_report_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ShipmentItemDTO:
+    """One shipment with its workflow summary for discovery.
+
+    ``workflow`` is ``None`` for a persisted shipment
+    with no workflow yet; ``workflow_count`` surfaces
+    multiplicity (one shipment across cases) instead
+    of silently discarding it. ``workflow_record`` is
+    the existing wire record of the summarized workflow
+    (continuity snapshots for mutations), or ``None``.
+    """
+
+    shipment_id: str
+    case_id: str
+    product: str
+    origin_country: str
+    destination_country: str
+    quantity: str | None
+    unit: str | None
+    shipment_date: str | None
+    status: str
+    created_at: str
+    updated_at: str
+    workflow: ShipmentWorkflowSummaryDTO | None
+    workflow_count: int
+    workflow_record: dict[str, Any] | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "shipment_id": self.shipment_id,
+            "case_id": self.case_id,
+            "product": self.product,
+            "origin_country": self.origin_country,
+            "destination_country": self.destination_country,
+            "quantity": self.quantity,
+            "unit": self.unit,
+            "shipment_date": self.shipment_date,
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+            "workflow": (
+                None if self.workflow is None
+                else self.workflow.to_dict()),
+            "workflow_count": self.workflow_count,
+            "workflow_record": self.workflow_record,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ShipmentListDTO:
+    """One page of tenant shipment discovery."""
+
+    shipments: tuple[ShipmentItemDTO, ...]
+    limit: int
+    offset: int
+    total: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "shipments": [item.to_dict()
+                          for item in self.shipments],
+            "limit": self.limit,
+            "offset": self.offset,
+            "total": self.total,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class RequirementFindingDTO:
     """One requirement's findings with carried provenance."""
 
@@ -931,5 +1028,8 @@ __all__ = [
     "ReadinessGapDTO",
     "RequirementFindingDTO",
     "ShipmentDTO",
+    "ShipmentItemDTO",
+    "ShipmentListDTO",
+    "ShipmentWorkflowSummaryDTO",
     "WorkflowDTO",
 ]

@@ -30,11 +30,12 @@ requiring live in-session objects stays absent.
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from xportra.application.analysis import AnalysisApplicationService
 from xportra.application.assessments import AssessmentApplicationService
 from xportra.application.context import ApplicationContext
+from xportra.application.shipments import ShipmentListingService
 from xportra.application.workflows import WorkflowApplicationService
 
 from .auth import MemberContext
@@ -63,6 +64,8 @@ from .schemas import (
     FinalPackageResponse,
     HistoryResponse,
     RequestEvidenceRequest,
+    ShipmentItemSchema,
+    ShipmentListResponse,
     StartWorkflowRequest,
     SupplyEvidenceRequest,
     WorkflowActionRequest,
@@ -143,6 +146,59 @@ def start_workflow(
                   if payload.shipment is not None else None),
     )
     return _workflow_response(record, dto.to_dict())
+
+
+@router.get(
+    "/compliance/shipments",
+    response_model=ShipmentListResponse,
+)
+def list_shipments(
+    services: ServicesDependency,
+    member: Annotated[
+        MemberContext, Depends(require_permission(READ_TENANT_RESOURCE))
+    ],
+    actor_id: Annotated[UUID | None, Depends(get_request_actor)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    status: Annotated[str, Query(pattern="^(all|active|completed)$")] = "all",
+):
+    """List stored shipments with workflow summaries, newest first.
+
+    Tenant-scoped read over server-owned rows: the
+    response composes shipment facts with the latest
+    workflow progress per shipment. Unknown tenant
+    state reads as an empty page, never another
+    tenant's rows.
+    """
+    service = ShipmentListingService(
+        result_store=getattr(services, "result_store", None))
+    return service.list_shipments(
+        _context(member, actor_id),
+        limit=limit, offset=offset, status=status,
+    ).to_dict()
+
+
+@router.get(
+    "/compliance/shipments/{shipment_id}",
+    response_model=ShipmentItemSchema,
+)
+def get_shipment(
+    shipment_id: UUID,
+    services: ServicesDependency,
+    member: Annotated[
+        MemberContext, Depends(require_permission(READ_TENANT_RESOURCE))
+    ],
+    actor_id: Annotated[UUID | None, Depends(get_request_actor)],
+):
+    """Read one stored shipment with its workflow summary.
+
+    Unknown and cross-tenant identities fail closed as
+    not-found, indistinguishable from each other.
+    """
+    service = ShipmentListingService(
+        result_store=getattr(services, "result_store", None))
+    return service.get_shipment(
+        _context(member, actor_id), shipment_id).to_dict()
 
 
 @router.post(

@@ -1,13 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { useAuth } from "../../app/AuthContext";
 import { useWorkflow } from "../../app/WorkflowContext";
 import { useStoredReport } from "../../app/useStoredReport";
-import { EmptyState } from "../../primitives/feedback";
+import { EmptyState, LoadingState } from "../../primitives/feedback";
+import { ErrorNotice } from "../../components/StatusBits";
 import { BackButton, PageHeader } from "../../primitives/layout";
 import { RequirementLedgerRow } from "../../primitives/shipment";
 import { StatusIndicator } from "../../primitives/status";
 import { AuthenticatedShell } from "../../shell/AuthenticatedShell";
-import { listShipments } from "../../lib/shipments";
+import { fetchShipmentList } from "../../api/shipments";
+import { startWorkflow } from "../../api/workflows";
+import { listShipments, rememberShipment, type ShipmentEntry } from "../../lib/shipments";
 import { describeWorkspace, type WorkspaceRequirement } from "./workspace";
 import { DocumentDrawer, type DrawerRequirement } from "./DocumentDrawer";
 import "./workspace.css";
@@ -89,23 +93,110 @@ function LedgerList({
 export function ShipmentWorkspacePage() {
   const { caseId } = useParams();
   const navigate = useNavigate();
+  const auth = useAuth();
   const { record, setRecord } = useWorkflow();
   // Rehydrated persisted report when memory is empty, so a
   // reload never loses completed analysis from the workspace.
   const { report } = useStoredReport();
   const [drawer, setDrawer] = useState<DrawerRequirement | null>(null);
+  const [serverEntry, setServerEntry] = useState<ShipmentEntry | null>(null);
+  const [binding, setBinding] = useState(false);
+  const [bindError, setBindError] = useState<unknown>(null);
 
-  const entry = listShipments().find((item) => item.caseId === caseId) ?? null;
+  const cached = listShipments().find((item) => item.caseId === caseId) ?? null;
+  // Server state wins: the durable entry shadows the
+  // device cache whenever both resolve.
+  const entry = serverEntry ?? cached;
+
+  const recordRef = useRef(record);
+  recordRef.current = record;
 
   useEffect(() => {
-    if (entry && (!record || record.case_id !== entry.record.case_id)) {
-      setRecord(entry.record);
+    let cancelled = false;
+    // Resolve the durable entry so a reload resumes
+    // from server state, not a stale snapshot. Where
+    // the backend has no listing boundary the fetch
+    // fails and the cached entry keeps working.
+    fetchShipmentList(auth)
+      .then((entries) => {
+        if (cancelled) {
+          return;
+        }
+        const found = entries.find((item) => item.caseId === caseId) ?? null;
+        setServerEntry(found);
+        const serverRecord = found?.record ?? null;
+        if (
+          serverRecord !== null &&
+          JSON.stringify(serverRecord) !== JSON.stringify(recordRef.current)
+        ) {
+          setRecord(serverRecord);
+        }
+      })
+      .catch(() => {
+        // Keep the cached entry; it stays the fallback.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId]);
+
+  useEffect(() => {
+    if (entry && (!record || record.case_id !== entry.record?.case_id)) {
+      if (entry.record) {
+        setRecord(entry.record);
+      }
     }
   }, [entry, record, setRecord]);
 
   const active = entry?.record ?? (record && record.case_id === caseId ? record : null);
 
+  const beginWorkspace = async () => {
+    if (!entry?.shipmentId || !entry) {
+      return;
+    }
+    setBinding(true);
+    setBindError(null);
+    try {
+      // Bind the saved shipment through the existing
+      // start endpoint (identity only — the server
+      // owns the profile). No new contract.
+      const response = await startWorkflow(auth, {
+        case_id: entry.caseId,
+        shipment_id: entry.shipmentId,
+      });
+      setRecord(response.workflow);
+      rememberShipment({ ...entry, record: response.workflow });
+    } catch (error) {
+      setBindError(error);
+    } finally {
+      setBinding(false);
+    }
+  };
+
   if (!active) {
+    if (entry?.shipmentId) {
+      return (
+        <AuthenticatedShell crumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Shipment" }]}>
+          <BackButton label="Back" onBack={() => navigate("/dashboard")} />
+          <PageHeader title="Shipment workspace" />
+          <EmptyState
+            title="Saved shipment — begin its compliance workspace"
+            body="This shipment is saved on the server but has no compliance workspace yet. Continue to begin where the shipment left off."
+            action={
+              binding ? (
+                <LoadingState text="Beginning the workspace…" />
+              ) : (
+                <button type="button" className="primary-button" onClick={beginWorkspace}>
+                  Continue
+                </button>
+              )
+            }
+          />
+          {bindError ? <ErrorNotice error={bindError} /> : null}
+        </AuthenticatedShell>
+      );
+    }
     return (
       <AuthenticatedShell crumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Shipment" }]}>
         <BackButton label="Back" onBack={() => navigate("/dashboard")} />

@@ -1571,6 +1571,24 @@ class ComplianceWorkflowRepository:
             (tenant.tenant_id, workflow_id),
         )
 
+    def list_for_shipment(
+        self, tenant: TenantContext, shipment_id: UUID
+    ) -> list[Row]:
+        """Return every workflow bound to a shipment, latest first.
+
+        One workflow per (shipment, case) is the domain
+        invariant, but nothing in the schema forbids the
+        same shipment across cases — callers receive all
+        rows in recency order and decide explicitly.
+        """
+        return _fetch_all(
+            self._database,
+            """SELECT * FROM xportra.compliance_workflows
+               WHERE tenant_id = %s AND shipment_id = %s
+               ORDER BY updated_at DESC, workflow_id DESC""",
+            (tenant.tenant_id, shipment_id),
+        )
+
     def save_in_transaction(
         self,
         connection,
@@ -1680,6 +1698,39 @@ class ShipmentRepository:
                WHERE tenant_id = %s AND shipment_id = %s""",
             (tenant.tenant_id, shipment_id),
         )
+
+    def list_for_tenant(
+        self,
+        tenant: TenantContext,
+        limit: int | None,
+        offset: int,
+    ) -> list[Row]:
+        if limit is None:
+            return _fetch_all(
+                self._database,
+                """SELECT * FROM xportra.shipments
+                   WHERE tenant_id = %s
+                   ORDER BY created_at DESC, shipment_id DESC
+                   OFFSET %s""",
+                (tenant.tenant_id, offset),
+            )
+        return _fetch_all(
+            self._database,
+            """SELECT * FROM xportra.shipments
+               WHERE tenant_id = %s
+               ORDER BY created_at DESC, shipment_id DESC
+               LIMIT %s OFFSET %s""",
+            (tenant.tenant_id, limit, offset),
+        )
+
+    def count_for_tenant(self, tenant: TenantContext) -> int:
+        row = _fetch_one(
+            self._database,
+            """SELECT COUNT(*) AS count FROM xportra.shipments
+               WHERE tenant_id = %s""",
+            (tenant.tenant_id,),
+        )
+        return int(row["count"]) if row is not None else 0
 
     def save_in_transaction(
         self,

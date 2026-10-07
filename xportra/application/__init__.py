@@ -42,8 +42,12 @@ from .dtos import (
     ReadinessGapDTO,
     RequirementFindingDTO,
     ShipmentDTO,
+    ShipmentItemDTO,
+    ShipmentListDTO,
+    ShipmentWorkflowSummaryDTO,
     WorkflowDTO,
 )
+from .shipments import ShipmentListingService
 from .errors import (
     ApplicationAuthenticationError,
     ApplicationAuthorizationError,
@@ -107,6 +111,10 @@ __all__ = [
     "ReadinessGapDTO",
     "RequirementFindingDTO",
     "ShipmentDTO",
+    "ShipmentItemDTO",
+    "ShipmentListDTO",
+    "ShipmentListingService",
+    "ShipmentWorkflowSummaryDTO",
     "StaleAnalysisError",
     "TenantMismatchError",
     "TerminalWorkflowError",

@@ -605,6 +605,26 @@ class ComplianceResultStore:
             return None
         return self._build_stored_shipment(ctx, row)
 
+    def get_shipment_entry(
+        self,
+        ctx: ApplicationContext,
+        shipment_id: UUID,
+    ) -> tuple[Shipment, dict[str, str]] | None:
+        """Return a shipment with its persistence timestamps."""
+        ctx = checked_context(ctx)
+        if not isinstance(shipment_id, UUID):
+            raise ApplicationValidationError(
+                "a shipment identity UUID is required")
+        shipments = self._require_shipments()
+        row = shipments.get(ctx.tenant, shipment_id)
+        if row is None:
+            return None
+        return (
+            self._build_stored_shipment(ctx, row),
+            {"created_at": str(row.get("created_at")),
+             "updated_at": str(row.get("updated_at"))},
+        )
+
     def save_shipment_record(
         self,
         ctx: ApplicationContext,
@@ -649,6 +669,83 @@ class ComplianceResultStore:
             raise ApplicationValidationError(
                 "no shipment repository is configured")
         return shipments
+
+    # ------------------------------------------------------------------
+    # shipment listing reads (durable discovery, no mutations)
+    # ------------------------------------------------------------------
+
+    def list_shipments(
+        self,
+        ctx: ApplicationContext,
+        limit: int | None,
+        offset: int,
+    ) -> list[tuple[Shipment, dict[str, str]]]:
+        """Return stored shipments, newest first (tenant-scoped).
+
+        Each entry pairs the domain shipment with its
+        persistence timestamps (created/updated), which
+        the domain object deliberately does not carry.
+        ``limit`` of ``None`` reads the whole tenant set
+        for application-side filtering.
+        """
+        ctx = checked_context(ctx)
+        shipments = self._require_shipments()
+        try:
+            rows = shipments.list_for_tenant(
+                ctx.tenant, limit, offset)
+        except DomainPersistenceError as cause:
+            raise InfrastructureError(
+                sanitized_detail(cause), cause=cause) from cause
+        return [(self._build_stored_shipment(ctx, row),
+                 {"created_at": str(row.get("created_at")),
+                  "updated_at": str(row.get("updated_at"))})
+                for row in rows]
+
+    def count_shipments(self, ctx: ApplicationContext) -> int:
+        """Return the stored shipment count for the tenant."""
+        ctx = checked_context(ctx)
+        shipments = self._require_shipments()
+        try:
+            return int(shipments.count_for_tenant(ctx.tenant))
+        except DomainPersistenceError as cause:
+            raise InfrastructureError(
+                sanitized_detail(cause), cause=cause) from cause
+
+    def list_workflows_for_shipment(
+        self,
+        ctx: ApplicationContext,
+        shipment_id: UUID,
+    ) -> list[ComplianceWorkflow]:
+        """Return stored workflows bound to a shipment.
+
+        Tenant-scoped by construction; ordered latest
+        activity first. Recorded rounds attach to each
+        workflow so summaries carry linkage, exactly as
+        the single-workflow resolution does.
+        """
+        ctx = checked_context(ctx)
+        if not isinstance(shipment_id, UUID):
+            raise ApplicationValidationError(
+                "a shipment identity UUID is required")
+        if self._workflows is None:
+            raise ApplicationValidationError(
+                "no workflow record repository is configured")
+        try:
+            rows = self._workflows.list_for_shipment(
+                ctx.tenant, shipment_id)
+        except DomainPersistenceError as cause:
+            raise InfrastructureError(
+                sanitized_detail(cause), cause=cause) from cause
+        resolved = []
+        for row in rows:
+            server_rounds = self.rounds_for_workflow(
+                ctx, row["workflow_id"]
+                if isinstance(row["workflow_id"], UUID)
+                else UUID(str(row["workflow_id"])))
+            resolved.append(
+                self._build_stored_workflow(
+                    ctx, row, server_rounds))
+        return resolved
 
     def _adopt_shipment_row(
         self,
@@ -1128,6 +1225,34 @@ def store_supports_shipment_records(store: Any) -> bool:
 _SUPPORTS_BY_CONTRACT = object()
 
 
+def store_supports_shipment_listing(store: Any) -> bool:
+    """Report whether a store carries shipment listing reads.
+
+    Listing needs the shipment rows, the workflow rows
+    behind each shipment, and the round linkage behind
+    each workflow — all three repositories, or a double
+    implementing the read surface.
+    """
+    if store is None:
+        return False
+    if not all(callable(getattr(store, method, None))
+               for method in ("list_shipments",
+                              "count_shipments",
+                              "get_shipment_entry",
+                              "list_workflows_for_shipment",
+                              "rounds_for_workflow",
+                              "load_package")):
+        return False
+    for backing in ("_shipments", "_workflows", "_rounds",
+                    "_packages"):
+        repository = getattr(store, backing, _SUPPORTS_BY_CONTRACT)
+        if repository is _SUPPORTS_BY_CONTRACT:
+            continue
+        if repository is None:
+            return False
+    return True
+
+
 def _assert_snapshot_current(
     row: dict[str, Any],
     server_rounds: list[dict[str, Any]],
@@ -1183,6 +1308,7 @@ __all__ = [
     "rebuild_report",
     "rebuild_result",
     "rebuild_trace",
+    "store_supports_shipment_listing",
     "store_supports_shipment_records",
     "store_supports_workflow_records",
 ]

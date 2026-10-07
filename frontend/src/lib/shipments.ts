@@ -29,10 +29,18 @@ export interface ShipmentEntry {
   caseId: string;
   shipmentId: string | null;
   profile: ShipmentProfile;
-  record: WorkflowRecord;
+  /**
+   * Client-held workflow snapshot. Null for a
+   * server-owned shipment with no workflow yet
+   * (draft): the server is then the only source,
+   * and resume binds through the existing start
+   * endpoint rather than a snapshot.
+   */
+  record: WorkflowRecord | null;
 }
 
 const STORAGE_KEY = "xportra.shipments.v1";
+const FORGOTTEN_KEY = "xportra.shipments.forgotten.v1";
 
 export function emptyProfile(): ShipmentProfile {
   return {
@@ -101,6 +109,54 @@ export function rememberShipment(entry: ShipmentEntry): void {
 }
 
 /** Forget one shipment; the active workflow record is untouched. */
-export function forgetShipment(caseId: string): void {
+export function forgetShipment(caseId: string, shipmentId?: string | null): void {
   writeEntries(readEntries().filter((item) => item.caseId !== caseId));
+  rememberForgotten(caseId);
+  if (shipmentId) {
+    rememberForgotten(shipmentId);
+  }
+}
+
+function readForgotten(): string[] {
+  try {
+    const raw = sessionStorage.getItem(FORGOTTEN_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === "string");
+  } catch {
+    return [];
+  }
+}
+
+function rememberForgotten(caseId: string): void {
+  try {
+    const known = readForgotten();
+    if (!known.includes(caseId)) {
+      sessionStorage.setItem(FORGOTTEN_KEY, JSON.stringify([...known, caseId]));
+    }
+  } catch {
+    // Hiding is a convenience; a failed write only re-shows the row.
+  }
+}
+
+/**
+ * Device-hidden shipment identities.
+ *
+ * Forgetting is device-local hiding only — it never
+ * deletes server data. The server list stays
+ * authoritative; hidden rows are filtered client-side
+ * after every server fetch.
+ */
+export function forgottenShipmentIds(): string[] {
+  return readForgotten();
+}
+
+/** Whether an entry is hidden on this device (by case or shipment identity). */
+export function isHiddenShipment(entry: Pick<ShipmentEntry, "caseId" | "shipmentId">): boolean {
+  const hidden = readForgotten();
+  if (hidden.includes(entry.caseId)) {
+    return true;
+  }
+  return entry.shipmentId !== null && hidden.includes(entry.shipmentId);
 }

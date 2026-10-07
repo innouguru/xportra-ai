@@ -43,6 +43,13 @@ function entry(state: string, extra?: Partial<WorkflowRecord>): ShipmentEntry {
   return { caseId: "case-1", shipmentId: null, profile: { ...PROFILE }, record: workflow };
 }
 
+function activeRecord(target: ShipmentEntry): WorkflowRecord {
+  if (target.record === null) {
+    throw new Error("fixture entry must carry a workflow record");
+  }
+  return target.record;
+}
+
 function finding(assessment: string, requirementId = "r1"): AnalysisFinding {
   return {
     analysis_id: `a-${requirementId}`,
@@ -80,7 +87,7 @@ function report(caseId: string, assessments: string[]): AnalysisReport {
 
 function userTextOf(state: string, extra?: Partial<WorkflowRecord>, rep: AnalysisReport | null = null): string {
   const target = entry(state, extra);
-  const model = describeWorkspace(target.record, target, rep);
+  const model = describeWorkspace(activeRecord(target), target, rep);
   const reqTexts =
     model.requirements.kind === "findings"
       ? model.requirements.items.map((item) => `${item.title} ${item.statusLabel} ${item.explanation ?? ""}`).join(" ")
