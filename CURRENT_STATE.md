@@ -3266,3 +3266,20 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   staging per the staging document, then re-run.
 - Task record:
   `tasks/completed/v1-staging-deployment.md`.
+
+## v1 Production Deployment (Blocked, 2026-10-07)
+
+- Direct-production task stopped at the §1 credential
+  gate: no production configuration exists (no
+  Supabase URL/JWT secret/service key, no production
+  database designation, no hosts/CORS/API-URL, no
+  Qdrant/OpenRouter). Local `.env` is dev-subset only
+  and was left unprobed. Nothing migrated, deployed,
+  or smoke-tested; no data touched; all UAT NOT RUN.
+- Baselines stand (docs-only outcome, no rerun):
+  backend 2039 passed + 61 subtests; frontend 64 files
+  / 439 tests; integration gated.
+- Result: **PRODUCTION DEPLOYMENT BLOCKED** pending
+  the prerequisites listed in the record.
+- Task record:
+  `tasks/completed/v1-production-deployment.md`.
