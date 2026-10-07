@@ -52,13 +52,17 @@ from ._guards import (
 from .context import ApplicationContext
 from .dtos import AnalysisReportDTO
 from .errors import (
+    ApplicationNotFoundError,
     ApplicationValidationError,
     InfrastructureError,
     InvalidTransitionError,
     TerminalWorkflowError,
     sanitized_detail,
 )
-from .result_store import store_supports_workflow_records
+from .result_store import (
+    store_supports_shipment_records,
+    store_supports_workflow_records,
+)
 
 
 class AnalysisApplicationService:
@@ -122,6 +126,7 @@ class AnalysisApplicationService:
         else:
             workflow = workflow_from_record(workflow_record)
             ensure_tenant_match(ctx, workflow.tenant_id, "workflow")
+        self._verify_bound_shipment(ctx, workflow)
         self._ensure_open(ctx, workflow)
         checked_cases = [coerce_case_identities(case)
                          for case in _checked_cases(cases)]
@@ -169,6 +174,35 @@ class AnalysisApplicationService:
             raise ApplicationValidationError(
                 "a compliance reasoning result is required")
         return AnalysisReportDTO.from_result(result)
+
+    def _verify_bound_shipment(
+        self, ctx: ApplicationContext, workflow: Any,
+    ) -> None:
+        """Fail closed when a bound shipment cannot be resolved.
+
+        Analysis cases are complete caller-supplied
+        views, so there is no profile-shaped omission
+        for the shipment to default — the boundary only
+        verifies that the workflow's shipment reference
+        still resolves under the caller tenant with a
+        matching case. Client cases are never rewritten
+        here; inventing a case-shape mapping from the
+        shipment profile would redesign the analysis
+        contract.
+        """
+        if workflow.shipment_id is None:
+            return
+        if not store_supports_shipment_records(
+                self._result_store):
+            return
+        stored = self._result_store.get_shipment(
+            ctx, workflow.shipment_id)
+        if stored is None:
+            raise ApplicationNotFoundError(
+                "no stored shipment for this shipment identity")
+        if stored.case_id != workflow.case_id:
+            raise ApplicationValidationError(
+                "stored shipment belongs to a different case")
 
     def _ensure_open(self, ctx: ApplicationContext,
                      workflow: Any) -> None:

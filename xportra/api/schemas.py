@@ -299,9 +299,28 @@ class WorkflowRecordSchema(APIRequest):
     open_requirements: list[UUID] = Field(default_factory=list)
 
 
+class ShipmentProfileSchema(APIRequest):
+    """Commercial shipment facts collected at intake (ADR-0013 v1).
+
+    Transport for the already-collected New Shipment
+    profile: required facts must be non-blank, optional
+    facts accept null or blank (stored as absent). No
+    workflow state, evidence, or compliance content
+    travels here.
+    """
+
+    product: str
+    origin_country: str
+    destination_country: str
+    quantity: str | None = None
+    unit: str | None = None
+    shipment_date: str | None = None
+
+
 class StartWorkflowRequest(APIRequest):
     case_id: UUID
     shipment_id: UUID | None = None
+    shipment: ShipmentProfileSchema | None = None
 
 
 class WorkflowActionRequest(APIRequest):
@@ -312,7 +331,6 @@ class SupplyEvidenceRequest(APIRequest):
     workflow: WorkflowRecordSchema
     evidence_id: UUID
     requirement_id: UUID | None = None
-
 
 class RequestEvidenceRequest(APIRequest):
     workflow: WorkflowRecordSchema
@@ -342,6 +360,7 @@ class ApplicabilityRequest(APIRequest):
     destination: dict | None = None
     actor_role: str | None = None
     business_characteristics: dict | None = None
+    shipment_id: UUID | None = None
 
 
 class CaseReadinessRequest(APIRequest):

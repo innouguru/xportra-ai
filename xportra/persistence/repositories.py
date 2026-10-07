@@ -1611,6 +1611,125 @@ class ComplianceWorkflowRepository:
                 "compliance workflow save", cause) from cause
 
 
+class ShipmentRepository:
+    """Tenant-scoped server-owned commercial shipment rows.
+
+    Persists the ADR-0013 shipment aggregate: commercial
+    profile facts plus the shipment-only lifecycle status.
+    Identity is the composite ``(tenant_id, shipment_id)``
+    — lookups never resolve by ``shipment_id`` alone, so a
+    caller can never reach another tenant's row. This is
+    storage for the domain ``Shipment`` record, not a
+    second shipment model: validation and lifecycle rules
+    stay domain-owned, workflow progression stays in
+    ``compliance_workflows``, and result content stays in
+    the result tables. ``save_in_transaction`` overwrites
+    only the stored row and reports ``None`` when no row
+    exists (the caller fails closed instead of
+    resurrecting state).
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        shipment_id: UUID,
+        case_id: UUID,
+        product: str,
+        origin_country: str,
+        destination_country: str,
+        quantity: str | None,
+        unit: str | None,
+        shipment_date: str | None,
+        status: str,
+    ) -> Row:
+        return _insert_in_transaction(
+            connection,
+            "shipment creation",
+            """
+            INSERT INTO xportra.shipments
+                (tenant_id, shipment_id, case_id, product,
+                 origin_country, destination_country,
+                 quantity, unit, shipment_date, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                tenant.tenant_id,
+                shipment_id,
+                case_id,
+                product,
+                origin_country,
+                destination_country,
+                quantity,
+                unit,
+                shipment_date,
+                status,
+            ),
+        )
+
+    def get(
+        self, tenant: TenantContext, shipment_id: UUID
+    ) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.shipments
+               WHERE tenant_id = %s AND shipment_id = %s""",
+            (tenant.tenant_id, shipment_id),
+        )
+
+    def save_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        shipment_id: UUID,
+        case_id: UUID,
+        product: str,
+        origin_country: str,
+        destination_country: str,
+        quantity: str | None,
+        unit: str | None,
+        shipment_date: str | None,
+        status: str,
+    ) -> Row | None:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE xportra.shipments
+                    SET case_id = %s,
+                        product = %s,
+                        origin_country = %s,
+                        destination_country = %s,
+                        quantity = %s,
+                        unit = %s,
+                        shipment_date = %s,
+                        status = %s
+                    WHERE tenant_id = %s AND shipment_id = %s
+                    RETURNING *
+                    """,
+                    (
+                        case_id,
+                        product,
+                        origin_country,
+                        destination_country,
+                        quantity,
+                        unit,
+                        shipment_date,
+                        status,
+                        tenant.tenant_id,
+                        shipment_id,
+                    ),
+                )
+                return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError(
+                "shipment save", cause) from cause
+
+
 class FinalAssessmentPackageRepository:
     """Tenant-scoped linkage for produced final packages.
 

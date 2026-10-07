@@ -203,6 +203,16 @@ from .shipment_intake import (
     ShipmentReference,
     SuppliedEvidenceReference,
 )
+from .shipment import (
+    SHIPMENT_STATUSES,
+    SHIPMENT_STATUS_BOUND,
+    SHIPMENT_STATUS_DRAFT,
+    SHIPMENT_STATUS_LOCKED,
+    Shipment,
+    ShipmentError,
+    ShipmentService,
+    shipment_from_record,
+)
 from .assessment_readiness import (
     READINESS_ANALYSIS_INTEGRITY_FAILURE,
     READINESS_ANALYSIS_STALE,
@@ -529,6 +539,14 @@ __all__ = [
     "ShipmentIntakeService",
     "ShipmentReference",
     "SuppliedEvidenceReference",
+    "SHIPMENT_STATUSES",
+    "SHIPMENT_STATUS_BOUND",
+    "SHIPMENT_STATUS_DRAFT",
+    "SHIPMENT_STATUS_LOCKED",
+    "Shipment",
+    "ShipmentError",
+    "ShipmentService",
+    "shipment_from_record",
     "READINESS_ANALYSIS_INTEGRITY_FAILURE",
     "READINESS_ANALYSIS_STALE",
     "READINESS_CASE_MISMATCH",

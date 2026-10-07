@@ -38,7 +38,7 @@ cause preserved.
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from xportra.domain.assessment_readiness import (
     READINESS_ANALYSIS_STALE,
@@ -55,9 +55,16 @@ from xportra.domain.compliance_workflow import (
 from xportra.domain.reasoning_application import (
     ComplianceReasoningResult,
 )
+from xportra.domain.shipment import (
+    SHIPMENT_STATUS_DRAFT,
+    SHIPMENT_STATUS_LOCKED,
+    ShipmentError,
+    ShipmentService,
+)
 from xportra.domain.shipment_intake import (
     ShipmentIntakeError,
     ShipmentIntakeService,
+    ShipmentReference,
     SuppliedEvidenceReference,
 )
 from xportra.domain.workflow_history import (
@@ -88,7 +95,10 @@ from .errors import (
     TerminalWorkflowError,
     WorkflowNotReadyError,
 )
-from .result_store import store_supports_workflow_records
+from .result_store import (
+    store_supports_shipment_records,
+    store_supports_workflow_records,
+)
 
 
 class WorkflowApplicationService:
@@ -103,16 +113,19 @@ class WorkflowApplicationService:
         history_service: WorkflowHistoryService | None = None,
         result_store: Any | None = None,
         evidence_service: Any | None = None,
+        shipment_service: ShipmentService | None = None,
     ) -> None:
         self._workflows = (
             workflow_service or ComplianceWorkflowService())
         self._intake = intake_service or ShipmentIntakeService()
+        self._shipments = shipment_service or ShipmentService()
         self._readiness = (
             readiness_service or AssessmentReadinessService())
         self._history = history_service or WorkflowHistoryService()
         for name, service, method in (
             ("workflow", self._workflows, "begin"),
             ("intake", self._intake, "supply_to_workflow"),
+            ("shipment", self._shipments, "create"),
             ("readiness", self._readiness, "check"),
             ("history", self._history, "project"),
         ):
@@ -142,26 +155,180 @@ class WorkflowApplicationService:
         ctx: ApplicationContext,
         case_id: UUID,
         shipment_id: UUID | None = None,
+        shipment: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], WorkflowDTO]:
-        """Begin a workflow, binding the shipment when given.
+        """Begin a workflow, persisting the shipment when given.
 
-        Where the workflow-record boundary is configured
-        the begun row is persisted before returning, so the
-        record is a representation of server state.
+        With a shipment profile the server persists the
+        shipment row first and the workflow row in the
+        same transaction, then binds the workflow to the
+        stored row — never to a bare client UUID. With a
+        shipment identity alone the stored row is
+        resolved (unknown identities fail closed) before
+        binding. Retried starts converge onto the stored
+        rows after verification instead of duplicating
+        or silently replacing them.
         """
         ctx = checked_context(ctx)
         checked_uuid(case_id, "case")
         if shipment_id is not None:
             checked_uuid(shipment_id, "shipment")
+        profile = _checked_shipment_profile(shipment)
+        if profile is None and shipment_id is None:
+            return self._start_unbound(ctx, case_id)
+        if profile is not None:
+            return self._start_with_profile(
+                ctx, case_id, shipment_id, profile)
+        return self._start_with_reference(
+            ctx, case_id, shipment_id)
+
+    def _start_unbound(
+        self,
+        ctx: ApplicationContext,
+        case_id: UUID,
+    ) -> tuple[dict[str, Any], WorkflowDTO]:
+        """Begin a workflow with no shipment (legacy behavior)."""
         try:
             workflow = self._workflows.begin(
                 tenant_id=ctx.tenant, case_id=case_id)
-            if shipment_id is not None:
-                reference = self._intake.register_shipment(
-                    tenant_id=ctx.tenant,
-                    shipment_id=shipment_id, case_id=case_id)
-                workflow = self._intake.bind_shipment(
-                    workflow, reference, tenant_id=ctx.tenant)
+        except (ComplianceWorkflowError,
+                ShipmentIntakeError) as cause:
+            raise InvalidTransitionError(
+                str(cause), cause=cause) from cause
+        records = self._workflow_records()
+        if records is not None:
+            workflow = records.create_workflow_record(ctx, workflow)
+        return workflow.to_record(), self._describe(ctx, workflow)
+
+    def _start_with_profile(
+        self,
+        ctx: ApplicationContext,
+        case_id: UUID,
+        shipment_id: UUID | None,
+        profile: dict[str, Any],
+    ) -> tuple[dict[str, Any], WorkflowDTO]:
+        """Begin a workflow while persisting its shipment."""
+        shipments = self._shipment_records()
+        if shipments is None:
+            raise ApplicationValidationError(
+                "a shipment profile cannot be persisted: "
+                "no shipment store is configured")
+        effective_id = shipment_id or uuid4()
+        try:
+            draft = self._shipments.create(
+                tenant_id=ctx.tenant,
+                shipment_id=effective_id,
+                case_id=case_id,
+                product=profile.get("product"),
+                origin_country=profile.get("origin_country"),
+                destination_country=profile.get(
+                    "destination_country"),
+                quantity=profile.get("quantity"),
+                unit=profile.get("unit"),
+                shipment_date=profile.get("shipment_date"),
+            )
+            workflow = self._workflows.begin(
+                tenant_id=ctx.tenant, case_id=case_id,
+                shipment_id=effective_id)
+            bound_shipment = self._shipments.mark_bound(
+                draft, tenant_id=ctx.tenant)
+        except (ComplianceWorkflowError,
+                ShipmentIntakeError,
+                ShipmentError) as cause:
+            raise InvalidTransitionError(
+                str(cause), cause=cause) from cause
+        stored_shipment, stored_workflow = (
+            shipments.create_shipment_with_workflow_record(
+                ctx, bound_shipment, workflow))
+        try:
+            bound_workflow = self._intake.bind_shipment(
+                stored_workflow,
+                ShipmentReference(
+                    tenant_id=ctx.tenant_id,
+                    shipment_id=stored_shipment.shipment_id,
+                    case_id=stored_shipment.case_id),
+                tenant_id=ctx.tenant)
+        except (ComplianceWorkflowError,
+                ShipmentIntakeError) as cause:
+            raise InvalidTransitionError(
+                str(cause), cause=cause) from cause
+        return (bound_workflow.to_record(),
+                self._describe(ctx, bound_workflow))
+
+    def _start_with_reference(
+        self,
+        ctx: ApplicationContext,
+        case_id: UUID,
+        shipment_id: UUID,
+    ) -> tuple[dict[str, Any], WorkflowDTO]:
+        """Begin a workflow against an existing stored shipment.
+
+        The identity alone proves nothing: the row is
+        resolved under the caller tenant first, and an
+        unknown (or another tenant's) identity fails
+        closed before any workflow row is written.
+        """
+        shipments = self._shipment_records()
+        if shipments is None:
+            return self._start_with_unresolved_reference(
+                ctx, case_id, shipment_id)
+        stored = shipments.get_shipment(ctx, shipment_id)
+        if stored is None:
+            raise ApplicationNotFoundError(
+                "no stored shipment for this shipment identity")
+        if stored.status == SHIPMENT_STATUS_LOCKED:
+            raise TerminalWorkflowError(
+                "shipment is locked; start a new shipment "
+                "for further work")
+        if stored.status == SHIPMENT_STATUS_DRAFT:
+            try:
+                advanced = self._shipments.mark_bound(
+                    stored, tenant_id=ctx.tenant)
+            except ShipmentError as cause:
+                raise InvalidTransitionError(
+                    str(cause), cause=cause) from cause
+            shipments.save_shipment_record(ctx, advanced)
+        try:
+            workflow = self._workflows.begin(
+                tenant_id=ctx.tenant, case_id=case_id,
+                shipment_id=shipment_id)
+            workflow = self._intake.bind_shipment(
+                workflow,
+                ShipmentReference(
+                    tenant_id=ctx.tenant_id,
+                    shipment_id=stored.shipment_id,
+                    case_id=stored.case_id),
+                tenant_id=ctx.tenant)
+        except (ComplianceWorkflowError,
+                ShipmentIntakeError) as cause:
+            raise InvalidTransitionError(
+                str(cause), cause=cause) from cause
+        records = self._workflow_records()
+        if records is not None:
+            workflow = records.create_workflow_record(
+                ctx, workflow)
+        return workflow.to_record(), self._describe(ctx, workflow)
+
+    def _start_with_unresolved_reference(
+        self,
+        ctx: ApplicationContext,
+        case_id: UUID,
+        shipment_id: UUID,
+    ) -> tuple[dict[str, Any], WorkflowDTO]:
+        """Bind a bare shipment identity (legacy client-held path).
+
+        Only where no shipment boundary is configured;
+        the identity is bound without a registry check,
+        exactly as before server-owned shipments existed.
+        """
+        try:
+            workflow = self._workflows.begin(
+                tenant_id=ctx.tenant, case_id=case_id)
+            reference = self._intake.register_shipment(
+                tenant_id=ctx.tenant,
+                shipment_id=shipment_id, case_id=case_id)
+            workflow = self._intake.bind_shipment(
+                workflow, reference, tenant_id=ctx.tenant)
         except (ComplianceWorkflowError,
                 ShipmentIntakeError) as cause:
             raise InvalidTransitionError(
@@ -605,6 +772,17 @@ class WorkflowApplicationService:
             return self._result_store
         return None
 
+    def _shipment_records(self) -> Any | None:
+        """Return the shipment boundary when configured.
+
+        Stores predating server-owned shipments (and
+        every existing unit double) keep the previous
+        client-held behavior unchanged.
+        """
+        if store_supports_shipment_records(self._result_store):
+            return self._result_store
+        return None
+
     def _authoritative_open(
         self,
         ctx: ApplicationContext,
@@ -731,3 +909,32 @@ class WorkflowApplicationService:
 __all__ = [
     "WorkflowApplicationService",
 ]
+
+
+#: Shipment profile fields accepted at workflow start
+#: (ADR-0013 v1 boundary — nothing more).
+_SHIPMENT_PROFILE_FIELDS = frozenset({
+    "product",
+    "origin_country",
+    "destination_country",
+    "quantity",
+    "unit",
+    "shipment_date",
+})
+
+
+def _checked_shipment_profile(
+    shipment: Any,
+) -> dict[str, Any] | None:
+    """Validate the wire shipment profile mapping, if any."""
+    if shipment is None:
+        return None
+    if not isinstance(shipment, dict):
+        raise ApplicationValidationError(
+            "shipment profile must be a mapping")
+    unknown = set(shipment) - _SHIPMENT_PROFILE_FIELDS
+    if unknown:
+        raise ApplicationValidationError(
+            "shipment profile carries unknown fields: "
+            + ", ".join(sorted(str(name) for name in unknown)))
+    return dict(shipment)

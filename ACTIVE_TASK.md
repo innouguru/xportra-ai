@@ -1,20 +1,19 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: Persisted Report Rehydration
+## Task: Implement Shipment Persistence Boundary
 
-**Status:** Complete (2026-10-03).
+**Status:** Complete (2026-10-07).
 
-Frontend-only: shared `useStoredReport` hook
-rehydrates the backend-persisted analysis report
-through the existing stored-report endpoint, so
-FindingsPage and the shipment workspace render it
-after reload instead of showing "Run an analysis
-first". Distinct loading/empty/error states; no UI
-redesign, no backend change, no browser persistence.
+ADR-0013 v1 Shipment aggregate implemented: migration 013
+tenant-scoped `shipments` table, domain Shipment +
+lifecycle, repository + store boundary, workflow-start
+persistence/binding with adopt-on-retry, applicability
+shipment defaults, analysis bound-shipment verification,
+frontend start-profile transport (no new UI).
 
-Verification: new hook suite 4/4; FindingsPage +4,
-workspace +1; full frontend suite 63 files / 426
-tests, 0 failures; `npx tsc --noEmit` clean;
-`npm run build` succeeds. Task record:
-`tasks/completed/persisted-report-rehydration.md`.
+Verification: backend unit 2001 passed + 61 subtests;
+frontend 63 files / 427 tests, `tsc` clean, build
+succeeds; integration gated (48 skipped, no
+`DATABASE_URL`). Task record:
+`tasks/completed/shipment-persistence-implementation.md`.
 Committed; push not requested.

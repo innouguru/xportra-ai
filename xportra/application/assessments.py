@@ -40,6 +40,7 @@ from ._guards import (
 from .context import ApplicationContext
 from .dtos import ApplicabilityDTO, CaseReadinessDTO
 from .errors import (
+    ApplicationNotFoundError,
     ApplicationValidationError,
     InvalidTransitionError,
 )
@@ -56,6 +57,7 @@ class AssessmentApplicationService:
         context_builder: ApplicabilityContextBuilder | None = None,
         readiness_service: (
             ComplianceCaseReadinessService | None) = None,
+        shipment_reader: Any | None = None,
     ) -> None:
         self._applicability = (
             applicability_service or ComplianceApplicabilityService())
@@ -70,6 +72,12 @@ class AssessmentApplicationService:
             if not callable(getattr(service, method, None)):
                 raise ApplicationValidationError(
                     f"an assessment {name} service is required")
+        if (shipment_reader is not None
+                and not callable(getattr(
+                    shipment_reader, "get_shipment", None))):
+            raise ApplicationValidationError(
+                "a shipment reader is required")
+        self._shipment_reader = shipment_reader
 
     def determine_applicability(
         self,
@@ -81,8 +89,16 @@ class AssessmentApplicationService:
         destination: dict[str, Any] | None = None,
         actor_role: str | None = None,
         business_characteristics: dict[str, Any] | None = None,
+        shipment_id: UUID | None = None,
     ) -> ApplicabilityDTO:
-        """Determine which requirements apply (deterministic)."""
+        """Determine which requirements apply (deterministic).
+
+        Shipment fact precedence: explicit validated
+        input first, the authoritative server-owned
+        shipment profile second, error when neither is
+        available. Explicit facts always win over
+        shipment defaults — they never override them.
+        """
         ctx = checked_context(ctx)
         checked_requirements = _checked_requirements(requirements)
         for name, value in (
@@ -98,6 +114,14 @@ class AssessmentApplicationService:
                 actor_role, str):
             raise ApplicationValidationError(
                 "malformed actor role")
+        if shipment_id is not None:
+            if not isinstance(shipment_id, UUID):
+                raise ApplicationValidationError(
+                    "a shipment identity UUID is required")
+            exporter, product, destination = (
+                self._with_shipment_defaults(
+                    ctx, shipment_id,
+                    exporter, product, destination))
         try:
             context = self._builder.build(
                 tenant_id=ctx.tenant_id,
@@ -113,6 +137,47 @@ class AssessmentApplicationService:
             raise ApplicationValidationError(
                 str(cause), cause=cause) from cause
         return ApplicabilityDTO.from_report(report)
+
+    def _with_shipment_defaults(
+        self,
+        ctx: ApplicationContext,
+        shipment_id: UUID,
+        exporter: dict[str, Any] | None,
+        product: dict[str, Any] | None,
+        destination: dict[str, Any] | None,
+    ) -> tuple[
+        dict[str, Any] | None,
+        dict[str, Any] | None,
+        dict[str, Any] | None,
+    ]:
+        """Fill omitted facts from the server-owned shipment.
+
+        Explicit caller facts always win: only omitted
+        (``None``) fact groups default from the stored
+        profile, mapped onto the fact keys the
+        applicability context builder reads
+        (``country_of_registration``, ``description``,
+        ``country_code``). An unknown shipment identity
+        fails closed; without a configured shipment
+        reader any shipment reference fails closed.
+        """
+        if self._shipment_reader is None:
+            raise ApplicationValidationError(
+                "shipment resolution is not configured")
+        stored = self._shipment_reader.get_shipment(
+            ctx, shipment_id)
+        if stored is None:
+            raise ApplicationNotFoundError(
+                "no stored shipment for this shipment identity")
+        if exporter is None:
+            exporter = {"country_of_registration":
+                        stored.origin_country}
+        if product is None:
+            product = {"description": stored.product}
+        if destination is None:
+            destination = {"country_code":
+                           stored.destination_country}
+        return exporter, product, destination
 
     def assess_case_readiness(
         self,

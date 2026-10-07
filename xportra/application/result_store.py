@@ -62,6 +62,14 @@ from xportra.domain.compliance_workflow import (
     ComplianceWorkflow,
     WorkflowAnalysisRound,
 )
+from xportra.domain.shipment import (
+    SHIPMENT_STATUS_BOUND,
+    SHIPMENT_STATUS_DRAFT,
+    SHIPMENT_STATUS_LOCKED,
+    Shipment,
+    ShipmentError,
+    shipment_from_record,
+)
 from xportra.domain.decision_trace import DecisionTrace, TraceStep
 from xportra.domain.errors import DomainPersistenceError
 from xportra.domain.evidence_sufficiency import (
@@ -88,6 +96,7 @@ from .errors import (
     ApplicationValidationError,
     InfrastructureError,
     StaleAnalysisError,
+    TerminalWorkflowError,
     sanitized_detail,
 )
 
@@ -116,6 +125,7 @@ class ComplianceResultStore:
         rounds: Any,
         packages: Any,
         workflows: Any = None,
+        shipments: Any = None,
     ) -> None:
         if database is None or not callable(
                 getattr(database, "transaction", None)):
@@ -137,6 +147,12 @@ class ComplianceResultStore:
                 if not callable(getattr(workflows, method, None)):
                     raise ApplicationValidationError(
                         "a workflow record repository is required")
+        if shipments is not None:
+            for method in ("create_in_transaction", "get",
+                           "save_in_transaction"):
+                if not callable(getattr(shipments, method, None)):
+                    raise ApplicationValidationError(
+                        "a shipment repository is required")
         self._database = database
         self._reports = reports
         self._analyses = analyses
@@ -144,6 +160,7 @@ class ComplianceResultStore:
         self._rounds = rounds
         self._packages = packages
         self._workflows = workflows
+        self._shipments = shipments
 
     # ------------------------------------------------------------------
     # writes (single transaction per result)
@@ -444,6 +461,279 @@ class ComplianceResultStore:
             raise InfrastructureError(
                 sanitized_detail(cause), cause=cause) from cause
         return self._build_stored_workflow(ctx, row, [])
+
+    # ------------------------------------------------------------------
+    # shipment continuity (server-owned commercial facts)
+    # ------------------------------------------------------------------
+
+    def create_shipment_record(
+        self,
+        ctx: ApplicationContext,
+        shipment: Shipment,
+    ) -> Shipment:
+        """Persist a newly created shipment row.
+
+        Retried creation converges: the tenant-scoped
+        shipment identity means a conflicting insert can
+        only be the same shipment, so the stored row is
+        adopted after scope and profile verification
+        instead of duplicating state. A conflicting row
+        carrying a different case or different profile
+        facts fails closed (stale) instead of being
+        silently replaced.
+        """
+        ctx = checked_context(ctx)
+        if not isinstance(shipment, Shipment):
+            raise ApplicationValidationError(
+                "a shipment is required")
+        ensure_tenant_match(ctx, shipment.tenant_id, "shipment")
+        shipments = self._require_shipments()
+        try:
+            with self._database.transaction() as connection:
+                row = shipments.create_in_transaction(
+                    connection,
+                    ctx.tenant,
+                    shipment.shipment_id,
+                    shipment.case_id,
+                    shipment.product,
+                    shipment.origin_country,
+                    shipment.destination_country,
+                    shipment.quantity,
+                    shipment.unit,
+                    shipment.shipment_date,
+                    shipment.status,
+                )
+        except PersistenceIntegrityError:
+            return self._adopt_shipment_row(ctx, shipment)
+        except DomainPersistenceError as cause:
+            raise InfrastructureError(
+                sanitized_detail(cause), cause=cause) from cause
+        return self._build_stored_shipment(ctx, row)
+
+    def create_shipment_with_workflow_record(
+        self,
+        ctx: ApplicationContext,
+        shipment: Shipment,
+        workflow: ComplianceWorkflow,
+    ) -> tuple[Shipment, ComplianceWorkflow]:
+        """Persist a shipment and its workflow in one transaction.
+
+        The workflow row is never written without its
+        shipment row: a failed shipment insert rolls back
+        the whole transaction, so no workflow can exist
+        referencing a shipment that was not persisted.
+        Retried creation converges through the same
+        adopt-after-verification path as the single-row
+        writes.
+        """
+        ctx = checked_context(ctx)
+        if not isinstance(shipment, Shipment):
+            raise ApplicationValidationError(
+                "a shipment is required")
+        if not isinstance(workflow, ComplianceWorkflow):
+            raise ApplicationValidationError(
+                "a compliance workflow is required")
+        ensure_tenant_match(ctx, shipment.tenant_id, "shipment")
+        ensure_tenant_match(ctx, workflow.tenant_id, "workflow")
+        if shipment.case_id != workflow.case_id:
+            raise ApplicationValidationError(
+                "shipment belongs to a different case")
+        if (workflow.shipment_id is not None
+                and workflow.shipment_id != shipment.shipment_id):
+            raise ApplicationValidationError(
+                "workflow shipment identity does not match "
+                "the shipment")
+        shipments = self._require_shipments()
+        workflows = self._workflows
+        if workflows is None:
+            raise ApplicationValidationError(
+                "no workflow record repository is configured")
+        try:
+            with self._database.transaction() as connection:
+                shipment_row = shipments.create_in_transaction(
+                    connection,
+                    ctx.tenant,
+                    shipment.shipment_id,
+                    shipment.case_id,
+                    shipment.product,
+                    shipment.origin_country,
+                    shipment.destination_country,
+                    shipment.quantity,
+                    shipment.unit,
+                    shipment.shipment_date,
+                    shipment.status,
+                )
+                workflow_row = workflows.create_in_transaction(
+                    connection,
+                    ctx.tenant,
+                    workflow.id,
+                    workflow.case_id,
+                    workflow.shipment_id,
+                    workflow.state,
+                )
+        except PersistenceIntegrityError:
+            stored_shipment = self._adopt_shipment_row(
+                ctx, shipment)
+            return stored_shipment, self._adopt_workflow_row(
+                ctx, workflow)
+        except DomainPersistenceError as cause:
+            raise InfrastructureError(
+                sanitized_detail(cause), cause=cause) from cause
+        return (
+            self._build_stored_shipment(ctx, shipment_row),
+            self._build_stored_workflow(ctx, workflow_row, []),
+        )
+
+    def get_shipment(
+        self,
+        ctx: ApplicationContext,
+        shipment_id: UUID,
+    ) -> Shipment | None:
+        """Return the server-owned shipment, if any.
+
+        Tenant-scoped by construction: a shipment owned
+        by another tenant (or no shipment at all) reads
+        as absent, never as another tenant's facts.
+        """
+        ctx = checked_context(ctx)
+        if not isinstance(shipment_id, UUID):
+            raise ApplicationValidationError(
+                "a shipment identity UUID is required")
+        shipments = self._require_shipments()
+        row = shipments.get(ctx.tenant, shipment_id)
+        if row is None:
+            return None
+        return self._build_stored_shipment(ctx, row)
+
+    def save_shipment_record(
+        self,
+        ctx: ApplicationContext,
+        shipment: Shipment,
+    ) -> None:
+        """Persist an advanced shipment row (update-only).
+
+        A missing row fails closed instead of resurrecting
+        state the server never owned.
+        """
+        ctx = checked_context(ctx)
+        if not isinstance(shipment, Shipment):
+            raise ApplicationValidationError(
+                "a shipment is required")
+        ensure_tenant_match(ctx, shipment.tenant_id, "shipment")
+        shipments = self._require_shipments()
+        try:
+            with self._database.transaction() as connection:
+                row = shipments.save_in_transaction(
+                    connection,
+                    ctx.tenant,
+                    shipment.shipment_id,
+                    shipment.case_id,
+                    shipment.product,
+                    shipment.origin_country,
+                    shipment.destination_country,
+                    shipment.quantity,
+                    shipment.unit,
+                    shipment.shipment_date,
+                    shipment.status,
+                )
+        except DomainPersistenceError as cause:
+            raise InfrastructureError(
+                sanitized_detail(cause), cause=cause) from cause
+        if row is None:
+            raise ApplicationNotFoundError(
+                "no stored shipment for this shipment identity")
+
+    def _require_shipments(self) -> Any:
+        shipments = self._shipments
+        if shipments is None:
+            raise ApplicationValidationError(
+                "no shipment repository is configured")
+        return shipments
+
+    def _adopt_shipment_row(
+        self,
+        ctx: ApplicationContext,
+        shipment: Shipment,
+    ) -> Shipment:
+        """Converge a retried shipment creation onto the stored row."""
+        shipments = self._require_shipments()
+        row = shipments.get(ctx.tenant, shipment.shipment_id)
+        if row is None:
+            raise InfrastructureError(
+                "shipment creation conflicted without "
+                "a stored row")
+        stored = self._build_stored_shipment(ctx, row)
+        if stored.case_id != shipment.case_id:
+            raise StaleAnalysisError(
+                "stored shipment belongs to a different case",
+                reasons=(("stale_shipment_binding",
+                          "stored shipment case does not "
+                          "match"),))
+        if (stored.product != shipment.product
+                or stored.origin_country
+                != shipment.origin_country
+                or stored.destination_country
+                != shipment.destination_country
+                or stored.quantity != shipment.quantity
+                or stored.unit != shipment.unit
+                or stored.shipment_date
+                != shipment.shipment_date):
+            raise StaleAnalysisError(
+                "stored shipment profile does not match "
+                "the submitted shipment",
+                reasons=(("stale_shipment_profile",
+                          "stored shipment facts do not "
+                          "match"),))
+        return stored
+
+    def _adopt_workflow_row(
+        self,
+        ctx: ApplicationContext,
+        workflow: ComplianceWorkflow,
+    ) -> ComplianceWorkflow:
+        """Converge a retried workflow creation onto the stored row."""
+        if self._workflows is None:
+            raise ApplicationValidationError(
+                "no workflow record repository is configured")
+        row = self._workflows.get(ctx.tenant, workflow.id)
+        if row is None:
+            raise InfrastructureError(
+                "workflow creation conflicted without "
+                "a stored row")
+        if (row["case_id"] != workflow.case_id
+                or row["shipment_id"] != workflow.shipment_id):
+            raise InfrastructureError(
+                "stored workflow scope does not match "
+                "the begun workflow")
+        return self._build_stored_workflow(ctx, row, [])
+
+    def _build_stored_shipment(
+        self,
+        ctx: ApplicationContext,
+        row: dict[str, Any],
+    ) -> Shipment:
+        """Rebuild the domain shipment from its stored row."""
+        try:
+            shipment = shipment_from_record({
+                "tenant_id": row["tenant_id"],
+                "shipment_id": row["shipment_id"],
+                "case_id": row["case_id"],
+                "product": row["product"],
+                "origin_country": row["origin_country"],
+                "destination_country":
+                    row["destination_country"],
+                "quantity": row.get("quantity"),
+                "unit": row.get("unit"),
+                "shipment_date": row.get("shipment_date"),
+                "status": row["status"],
+            })
+        except ShipmentError as cause:
+            raise ApplicationValidationError(
+                "stored shipment is malformed",
+                cause=cause) from cause
+        ensure_tenant_match(
+            ctx, shipment.tenant_id, "shipment")
+        return shipment
 
     def resolve_authoritative_workflow(
         self,
@@ -807,6 +1097,37 @@ def store_supports_workflow_records(store: Any) -> bool:
                               "save_workflow_record"))
 
 
+def store_supports_shipment_records(store: Any) -> bool:
+    """Report whether a store carries the shipment boundary.
+
+    Lets use cases adopt server-owned shipments only
+    where the store implements it; older doubles and
+    unwired deployments keep the previous client-held
+    behavior unchanged. A real store built without the
+    shipment repository reports unsupported even though
+    it defines the methods — there is no graceful
+    degraded read without the backing table.
+    """
+    if store is None:
+        return False
+    if not all(callable(getattr(store, method, None))
+               for method in ("create_shipment_record",
+                              "create_shipment_with_workflow_record",
+                              "get_shipment",
+                              "save_shipment_record")):
+        return False
+    repository = getattr(store, "_shipments", _SUPPORTS_BY_CONTRACT)
+    if repository is _SUPPORTS_BY_CONTRACT:
+        return True
+    return repository is not None
+
+
+#: Sentinel marking duck-typed doubles: anything
+#: implementing the shipment methods without exposing
+#: the backing repository is taken at its word.
+_SUPPORTS_BY_CONTRACT = object()
+
+
 def _assert_snapshot_current(
     row: dict[str, Any],
     server_rounds: list[dict[str, Any]],
@@ -862,6 +1183,7 @@ __all__ = [
     "rebuild_report",
     "rebuild_result",
     "rebuild_trace",
+    "store_supports_shipment_records",
     "store_supports_workflow_records",
 ]
 

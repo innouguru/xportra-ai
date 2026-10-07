@@ -102,6 +102,24 @@ def _workflow_service(services, *, with_evidence: bool = False):
     return WorkflowApplicationService(**kwargs)
 
 
+def _shipment_reader(services):
+    """Return the shipment boundary for applicability defaults.
+
+    The result store carries the shipment records where
+    the deployment wired migration 013; anywhere else
+    the reader is absent and shipment references fail
+    closed in the application boundary.
+    """
+    from xportra.application.result_store import (
+        store_supports_shipment_records,
+    )
+
+    store = getattr(services, "result_store", None)
+    if store_supports_shipment_records(store):
+        return store
+    return None
+
+
 @router.post(
     "/compliance/workflows/start",
     response_model=WorkflowActionResponse,
@@ -121,6 +139,8 @@ def start_workflow(
         _context(member, actor_id),
         payload.case_id,
         shipment_id=payload.shipment_id,
+        shipment=(payload.shipment.model_dump()
+                  if payload.shipment is not None else None),
     )
     return _workflow_response(record, dto.to_dict())
 
@@ -345,13 +365,15 @@ def analyze_workflow(
 )
 def determine_applicability(
     payload: ApplicabilityRequest,
+    services: ServicesDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(READ_TENANT_RESOURCE))
     ],
     actor_id: Annotated[UUID | None, Depends(get_request_actor)],
 ):
     """Determine which requirements apply (deterministic)."""
-    service = AssessmentApplicationService()
+    service = AssessmentApplicationService(
+        shipment_reader=_shipment_reader(services))
     dto = service.determine_applicability(
         _context(member, actor_id),
         payload.requirements,
@@ -360,6 +382,7 @@ def determine_applicability(
         destination=payload.destination,
         actor_role=payload.actor_role,
         business_characteristics=payload.business_characteristics,
+        shipment_id=payload.shipment_id,
     )
     return dto.to_dict()
 

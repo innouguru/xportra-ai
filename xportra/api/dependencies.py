@@ -37,6 +37,7 @@ from xportra.persistence.repositories import (
     FinalAssessmentPackageRepository,
     ProductRepository,
     RequirementRepository,
+    ShipmentRepository,
     UserRepository,
     UserTenantMembershipRepository,
 )
@@ -119,6 +120,7 @@ class ApplicationServices:
                 rounds=ComplianceWorkflowRoundRepository(database),
                 packages=FinalAssessmentPackageRepository(database),
                 workflows=ComplianceWorkflowRepository(database),
+                shipments=ShipmentRepository(database),
             ),
         )
 

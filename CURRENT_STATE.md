@@ -3029,3 +3029,57 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   `npm run build` succeeds.
 - Task record:
   `tasks/completed/persisted-report-rehydration.md`.
+
+## Shipment Aggregate Architecture Decision (Docs only, 2026-10-07)
+
+- Shipment Persistence Boundary Audit completed (starting evidence):
+  commercial shipment/profile facts live only in frontend
+  state/sessionStorage; case_id and shipment_id intentionally
+  distinct; compliance_workflows persists process state with no
+  commercial profile fields; exporters/products/destination_markets
+  are reusable master data, not shipment instances.
+- Dedicated tenant-scoped first-class Shipment aggregate selected
+  over workflow-column, master-reuse, and client-only alternatives;
+  recorded in `docs/decisions/ADR-0013-shipment-aggregate-boundary.md`.
+- Implementation intentionally not started: no migration 013, no
+  repository/service/schema/frontend/transition/test change.
+  Task record:
+  `tasks/completed/shipment-aggregate-architecture-decision.md`.
+
+## Shipment Persistence Boundary (Implemented, 2026-10-07)
+
+- ADR-0013 implemented as the minimum v1 aggregate:
+  migration 013 (`migrations/013_shipments.sql` +
+  `.down.sql`) creates tenant-scoped `xportra.shipments`
+  (`PRIMARY KEY (tenant_id, shipment_id)`, profile
+  facts, `draft | bound | locked` status, standard
+  timestamps); no FK from `compliance_workflows` (would
+  reject existing client-generated identities on real
+  data — enforced in the application/store boundary
+  instead); no profile columns in `compliance_workflows`.
+- Domain `Shipment` + `ShipmentService`
+  (`xportra/domain/shipment.py`): validation, record
+  round-trip, `draft → bound → locked`, draft-only
+  edits (bound/locked reject — no reanalysis path
+  invented). `bind_shipment` now resolves against the
+  server-owned row; arbitrary UUIDs fail closed (404).
+- `POST /compliance/workflows/start` accepts the
+  already-collected profile (`shipment: {product,
+  origin_country, destination_country, quantity, unit,
+  shipment_date}`); shipment + workflow persist in one
+  transaction with adopt-on-retry (profile/case
+  mismatch → 409, never silent replace). Frontend New
+  Shipment flow sends the profile (no new UI);
+  sessionStorage remains display metadata only.
+- Compliance input precedence explicit → server
+  shipment → error at applicability (`shipment_id`
+  default); analysis verifies the bound shipment
+  resolves without rewriting caller cases (no analysis
+  redesign). ADR-0013 open questions OQ-S1–OQ-S6
+  remain open.
+- Verification: backend 2001 passed + 61 subtests;
+  frontend 63 files / 427 tests, `tsc` clean, build
+  succeeds; PG integration gated (48 skipped, no
+  `DATABASE_URL`).
+- Task record:
+  `tasks/completed/shipment-persistence-implementation.md`.

@@ -51,6 +51,35 @@ describe("workflow API functions", () => {
     });
   });
 
+  it("sends the already-collected shipment profile on start", async () => {
+    const spy = stubJson({ workflow: RECORD, summary: {} }, 201);
+    await startWorkflow(CREDENTIALS, {
+      case_id: RECORD.case_id,
+      shipment_id: "44444444-4444-4444-4444-444444444444",
+      shipment: {
+        product: "Cocoa beans",
+        origin_country: "Nigeria",
+        destination_country: "Netherlands",
+        quantity: "20",
+        unit: "tonnes",
+        shipment_date: "2026-11-01",
+      },
+    });
+    const [, init] = spy.mock.calls[0] as unknown as FetchCall;
+    expect(JSON.parse(init.body as string)).toEqual({
+      case_id: RECORD.case_id,
+      shipment_id: "44444444-4444-4444-4444-444444444444",
+      shipment: {
+        product: "Cocoa beans",
+        origin_country: "Nigeria",
+        destination_country: "Netherlands",
+        quantity: "20",
+        unit: "tonnes",
+        shipment_date: "2026-11-01",
+      },
+    });
+  });
+
   it("posts the client-held record for progression steps", async () => {
     const spy = stubJson({ workflow: RECORD, summary: {} });
     await provideInformation(CREDENTIALS, RECORD);

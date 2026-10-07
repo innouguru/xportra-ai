@@ -37,9 +37,20 @@ import type {
   WorkflowSummary,
 } from "../types/api";
 
+export interface StartShipmentProfile {
+  product: string;
+  origin_country: string;
+  destination_country: string;
+  quantity?: string | null;
+  unit?: string | null;
+  shipment_date?: string | null;
+}
+
 export interface StartWorkflowInput {
   case_id: string;
   shipment_id?: string | null;
+  /** Already-collected New Shipment profile; the server persists it. */
+  shipment?: StartShipmentProfile | null;
 }
 
 export function startWorkflow(

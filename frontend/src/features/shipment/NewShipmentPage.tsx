@@ -129,6 +129,14 @@ export function NewShipmentPage() {
       const response = await startWorkflow(auth, {
         case_id: caseId,
         shipment_id: shipmentId,
+        shipment: {
+          product: profile.product.trim(),
+          origin_country: profile.origin.trim(),
+          destination_country: profile.destination.trim(),
+          quantity: profile.quantity.trim(),
+          unit: profile.unit.trim(),
+          shipment_date: profile.shipmentDate.trim(),
+        },
       });
       setRecord(response.workflow);
       rememberShipment({
