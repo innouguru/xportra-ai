@@ -62,6 +62,16 @@ export interface FetchShipmentListInput {
 }
 
 /**
+ * Discovery window for history surfaces.
+ *
+ * Dashboard, archive, workspace, and report reads
+ * resolve entries by identity from the fetched page,
+ * so they read a bounded full window (not the
+ * default first page) until paged archive UI exists.
+ */
+export const DISCOVERY_PAGE_SIZE = 100;
+
+/**
  * Adapt one server item into the existing UI model.
  *
  * Profiles map onto the intake field names the UI

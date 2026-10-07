@@ -93,20 +93,30 @@ class ShipmentListingService:
             entries = store.list_shipments(
                 ctx, resolved_limit, resolved_offset)
             total = store.count_shipments(ctx)
+            composed = [self._compose(store, ctx, shipment,
+                                      stamps, None)
+                        for shipment, stamps in entries]
         else:
             entries = store.list_shipments(ctx, None, 0)
-            entries = [
-                entry for entry in entries
-                if self._matches_status(store, ctx, entry[0],
-                                        status)]
-            total = len(entries)
-            entries = entries[
+            resolved = [
+                (shipment, stamps,
+                 store.list_workflows_for_shipment(
+                     ctx, shipment.shipment_id))
+                for shipment, stamps in entries]
+            resolved = [
+                entry for entry in resolved
+                if self._is_closed_view(
+                    store, ctx, entry[2], status)]
+            total = len(resolved)
+            resolved = resolved[
                 resolved_offset:
                 resolved_offset + resolved_limit]
-        items = [self._compose(store, ctx, shipment, stamps)
-                 for shipment, stamps in entries]
+            composed = [self._compose(store, ctx, shipment,
+                                      stamps, workflows)
+                        for shipment, stamps, workflows
+                        in resolved]
         return ShipmentListDTO(
-            shipments=tuple(items),
+            shipments=tuple(composed),
             limit=resolved_limit,
             offset=resolved_offset,
             total=total,
@@ -139,15 +149,14 @@ class ShipmentListingService:
                 "shipment listing is not configured")
         return self._result_store
 
-    def _matches_status(
+    def _is_closed_view(
         self,
         store: Any,
         ctx: ApplicationContext,
-        shipment: Shipment,
+        workflows: list,
         status: str,
     ) -> bool:
-        workflows = store.list_workflows_for_shipment(
-            ctx, shipment.shipment_id)
+        """Filter one shipment's workflows to a status view."""
         closed = (
             bool(workflows)
             and self._is_completed(store, ctx, workflows[0]))
@@ -159,9 +168,11 @@ class ShipmentListingService:
         ctx: ApplicationContext,
         shipment: Shipment,
         stamps: dict[str, str],
+        workflows: list | None = None,
     ) -> ShipmentItemDTO:
-        workflows = store.list_workflows_for_shipment(
-            ctx, shipment.shipment_id)
+        if workflows is None:
+            workflows = store.list_workflows_for_shipment(
+                ctx, shipment.shipment_id)
         if not workflows:
             summary = None
             record = None

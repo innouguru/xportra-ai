@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { fetchStoredReport } from "../../api/workflows";
-import { fetchShipmentList } from "../../api/shipments";
+import { fetchShipmentList, DISCOVERY_PAGE_SIZE } from "../../api/shipments";
 import { fetchEvidence, fetchEvidenceDownload } from "../../api/evidence";
 import { useAuth } from "../../app/AuthContext";
 import { EmptyState, ErrorState, LoadingState } from "../../primitives/feedback";
@@ -86,7 +86,7 @@ export function HistoricalReportPage() {
   // fallback where listing is unavailable.
   useEffect(() => {
     let cancelled = false;
-    fetchShipmentList(auth)
+    fetchShipmentList(auth, { limit: DISCOVERY_PAGE_SIZE })
       .then((entries) => {
         if (!cancelled) {
           setServerEntries(entries);

@@ -153,7 +153,7 @@ def start_workflow(
     response_model=ShipmentListResponse,
 )
 def list_shipments(
-    services: ServicesDependency,
+    store: ResultStoreDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(READ_TENANT_RESOURCE))
     ],
@@ -168,10 +168,11 @@ def list_shipments(
     response composes shipment facts with the latest
     workflow progress per shipment. Unknown tenant
     state reads as an empty page, never another
-    tenant's rows.
+    tenant's rows. Fails closed with 503 where the
+    deployment has no result store, like every other
+    stored path.
     """
-    service = ShipmentListingService(
-        result_store=getattr(services, "result_store", None))
+    service = ShipmentListingService(result_store=store)
     return service.list_shipments(
         _context(member, actor_id),
         limit=limit, offset=offset, status=status,
@@ -184,7 +185,7 @@ def list_shipments(
 )
 def get_shipment(
     shipment_id: UUID,
-    services: ServicesDependency,
+    store: ResultStoreDependency,
     member: Annotated[
         MemberContext, Depends(require_permission(READ_TENANT_RESOURCE))
     ],
@@ -195,8 +196,7 @@ def get_shipment(
     Unknown and cross-tenant identities fail closed as
     not-found, indistinguishable from each other.
     """
-    service = ShipmentListingService(
-        result_store=getattr(services, "result_store", None))
+    service = ShipmentListingService(result_store=store)
     return service.get_shipment(
         _context(member, actor_id), shipment_id).to_dict()
 

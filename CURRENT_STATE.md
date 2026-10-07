@@ -3140,3 +3140,32 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   no `DATABASE_URL`).
 - Task record:
   `tasks/completed/shipment-lock-finalization.md`.
+
+## Shipment Lifecycle Audit and Hardening (Complete, 2026-10-07)
+
+- Focused end-to-end audit of the persisted lifecycle
+  (`draft → bound → workflow → package → locked`) and
+  its API/frontend contract: no broad redesign, fixes
+  only where correctness required.
+- Findings fixed: listing/detail endpoints now fail
+  closed with 503 (stored-path convention) where no
+  result store is wired; discovery fetches use a bounded
+  full window (`DISCOVERY_PAGE_SIZE = 100`) so large
+  histories are not truncated at the default page;
+  list composes each shipment's workflows in a single
+  read pass. No migration, no new fields, no
+  versioning/snapshots/delete semantics, no FK change.
+- Verified holding: server-authoritative identity on
+  every boundary; fresh-session discovery/resume/report
+  from PostgreSQL; stale snapshots rejected (409) and
+  never overwrite server state; deterministic
+  latest-activity selection with surfaced multiplicity;
+  atomic lock + package + terminal persistence with no
+  API bypass; completion still `assessment_package_ready`
+  + package linkage.
+- Verification: backend 2034 passed + 61 subtests;
+  frontend 64 files / 439 tests, `tsc` clean, build
+  succeeds; PG integration gated (51 skipped, no
+  `DATABASE_URL`).
+- Task record:
+  `tasks/completed/shipment-lifecycle-audit-hardening.md`.

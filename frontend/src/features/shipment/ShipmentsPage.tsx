@@ -5,7 +5,7 @@ import { useWorkflow } from "../../app/WorkflowContext";
 import { EmptyState, ErrorState, LoadingState } from "../../primitives/feedback";
 import { PageHeader } from "../../primitives/layout";
 import { ShipmentWorklistRow } from "../../primitives/shipment";
-import { fetchShipmentList } from "../../api/shipments";
+import { fetchShipmentList, DISCOVERY_PAGE_SIZE } from "../../api/shipments";
 import {
   forgetShipment,
   type ShipmentEntry,
@@ -70,7 +70,7 @@ export function ShipmentsPage() {
     let cancelled = false;
     // Durable archive first: persisted shipments
     // appear even when this device remembers nothing.
-    fetchShipmentList(auth)
+    fetchShipmentList(auth, { limit: DISCOVERY_PAGE_SIZE })
       .then((entries) => {
         if (!cancelled) {
           setLoad({ status: "ready", entries });
@@ -89,7 +89,7 @@ export function ShipmentsPage() {
 
   const reload = () => {
     setLoad({ status: "loading" });
-    fetchShipmentList(auth)
+    fetchShipmentList(auth, { limit: DISCOVERY_PAGE_SIZE })
       .then((entries) => setLoad({ status: "ready", entries }))
       .catch(() => setLoad({ status: "error" }));
   };

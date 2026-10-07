@@ -402,6 +402,20 @@ class ShipmentListingEndpointTests(unittest.TestCase):
             self.assertEqual(response.status_code, 404,
                              response.text)
 
+    def test_unwired_store_fails_closed_as_unavailable(self):
+        unwired = TestClient(create_app(
+            services=SimpleNamespace(rag=None, result_store=None)))
+        with unwired as client:
+            listing = client.get(
+                "/compliance/shipments", headers=HEADER_A)
+            self.assertEqual(listing.status_code, 503,
+                             listing.text)
+            detail = client.get(
+                f"/compliance/shipments/{SHIP_A}",
+                headers=HEADER_A)
+            self.assertEqual(detail.status_code, 503,
+                             detail.text)
+
 
 if __name__ == "__main__":
     unittest.main()

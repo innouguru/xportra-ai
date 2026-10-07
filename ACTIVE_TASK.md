@@ -1,18 +1,19 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: Lock Shipment on Finalization
+## Task: Shipment Lifecycle Audit and Hardening
 
 **Status:** Complete (2026-10-07).
 
-Terminal finalization atomically transitions the bound
-shipment to locked in the same transaction as package
-linkage + terminal workflow row; failures roll back
-together; retry/idempotency preserved; completion
-semantics unchanged (`assessment_package_ready` +
-package linkage).
+End-to-end audit of the persisted shipment lifecycle
+and API/frontend contract with three minimal fixes:
+stored-path 503 for unwired listing reads, bounded
+full-window discovery fetches, single-pass list
+composition. All ten audit questions verified holding;
+no migration, no redesign, no new features.
 
-Verification: focused 14 passed; full backend 2033
-passed + 61 subtests; frontend untouched; integration
-gated (51 skipped, no `DATABASE_URL`). Task record:
-`tasks/completed/shipment-lock-finalization.md`.
+Verification: backend 2034 passed + 61 subtests;
+frontend 64 files / 439 tests, `tsc` clean, build
+succeeds; integration gated (51 skipped, no
+`DATABASE_URL`). Task record:
+`tasks/completed/shipment-lifecycle-audit-hardening.md`.
 Committed; push not requested.

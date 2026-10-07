@@ -9,7 +9,7 @@ import { BackButton, PageHeader } from "../../primitives/layout";
 import { RequirementLedgerRow } from "../../primitives/shipment";
 import { StatusIndicator } from "../../primitives/status";
 import { AuthenticatedShell } from "../../shell/AuthenticatedShell";
-import { fetchShipmentList } from "../../api/shipments";
+import { fetchShipmentList, DISCOVERY_PAGE_SIZE } from "../../api/shipments";
 import { startWorkflow } from "../../api/workflows";
 import { listShipments, rememberShipment, type ShipmentEntry } from "../../lib/shipments";
 import { describeWorkspace, type WorkspaceRequirement } from "./workspace";
@@ -117,7 +117,7 @@ export function ShipmentWorkspacePage() {
     // from server state, not a stale snapshot. Where
     // the backend has no listing boundary the fetch
     // fails and the cached entry keeps working.
-    fetchShipmentList(auth)
+    fetchShipmentList(auth, { limit: DISCOVERY_PAGE_SIZE })
       .then((entries) => {
         if (cancelled) {
           return;

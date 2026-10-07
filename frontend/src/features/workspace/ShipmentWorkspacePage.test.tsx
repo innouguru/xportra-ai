@@ -439,7 +439,9 @@ describe("workspace report rehydration", () => {  it("restores persisted finding
       const [url] = call as unknown as [string, RequestInit];
       return url;
     });
-    expect(urls).toContain("http://localhost:8000/compliance/shipments");
     expect(urls).toContain("http://localhost:8000/compliance/reports/rep-1");
+    expect(urls.some((url) => url.startsWith("http://localhost:8000/compliance/shipments"))).toBe(
+      true,
+    );
   });
 });

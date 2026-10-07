@@ -6,7 +6,7 @@ import { ErrorState, EmptyState, LoadingState } from "../../primitives/feedback"
 import { PageHeader } from "../../primitives/layout";
 import { ShipmentWorklistRow } from "../../primitives/shipment";
 import { AuthenticatedShell } from "../../shell/AuthenticatedShell";
-import { fetchShipmentList } from "../../api/shipments";
+import { fetchShipmentList, DISCOVERY_PAGE_SIZE } from "../../api/shipments";
 import {
   describeEntries,
   openShipment,
@@ -54,7 +54,7 @@ export function DashboardPage() {
     // Durable history first: the server list is
     // authoritative even in a fresh browser with an
     // empty device registry.
-    fetchShipmentList(auth)
+    fetchShipmentList(auth, { limit: DISCOVERY_PAGE_SIZE })
       .then((entries) => {
         if (!cancelled) {
           setLoad(describeEntries(entries));
@@ -73,7 +73,7 @@ export function DashboardPage() {
 
   const reload = () => {
     setLoad({ status: "loading" });
-    fetchShipmentList(auth)
+    fetchShipmentList(auth, { limit: DISCOVERY_PAGE_SIZE })
       .then((entries) => setLoad(describeEntries(entries)))
       .catch(() => setLoad({ status: "error" }));
   };
