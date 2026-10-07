@@ -3197,3 +3197,25 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   no `DATABASE_URL`).
 - Task record:
   `tasks/completed/compliance-workflow-persistence-audit.md`.
+
+## Production-Readiness Audit (Complete, 2026-10-07)
+
+- Sixteen-concern audit (config, auth, tenancy, DB/
+  migrations, API errors, transactions, evidence,
+  logging, runtime, CORS/HTTP, frontend contract,
+  dev-leakage, hygiene, CI/CD, deployment, recovery):
+  **no code defects found, no code changed.**
+- Verdict: no code-level blocker; deployable after
+  operational prerequisites (production env + secrets,
+  ordered psql migrations 001–013, `VITE_API_BASE_URL`
+  production build, Supabase Auth/Postgres/private
+  bucket, explicit CORS origins; Qdrant/OpenRouter only
+  for analysis/RAG paths).
+- Accepted v1 limits: no CI, no Dockerfile/pooling,
+  stdlib logging only, in-memory frontend session,
+  untracked local artifacts left for operator cleanup.
+- Verification: focused prod/security/auth 77 passed +
+  24 subtests; full backend 2039 passed + 61 subtests;
+  frontend untouched; integration gated (51 skipped).
+- Task record:
+  `tasks/completed/production-readiness-audit.md`.
