@@ -191,6 +191,7 @@ class EvidenceUploadApplicationService:
         storage: Any,
         clock=None,
         evidence_ids=None,
+        result_store: Any = None,
     ) -> None:
         for name, service, methods in (
             ("evidence", evidence_service, (
@@ -213,6 +214,7 @@ class EvidenceUploadApplicationService:
         self._storage = storage
         self._clock = clock or (lambda: datetime.now(timezone.utc))
         self._evidence_ids = evidence_ids or uuid4
+        self._result_store = result_store
 
     def upload_evidence(
         self,
@@ -375,6 +377,20 @@ class EvidenceUploadApplicationService:
             return
         workflow = workflow_from_record(workflow_record)
         ensure_tenant_match(ctx, workflow.tenant_id, "workflow")
+        reader = getattr(
+            self._result_store, "get_workflow_state", None)
+        if callable(reader):
+            # The server row decides: a stale snapshot
+            # showing an open workflow must not authorize
+            # storage or database writes against a
+            # finalized one, and a stale terminal snapshot
+            # defers to an open server row. Unknown,
+            # cross-tenant, and malformed rows fail closed
+            # through the existing read errors.
+            if reader(ctx, workflow.id) in WORKFLOW_TERMINAL_STATES:
+                raise TerminalWorkflowError(
+                    "workflow is permanently closed to new evidence")
+            return
         if workflow.state in WORKFLOW_TERMINAL_STATES:
             raise TerminalWorkflowError(
                 "workflow is permanently closed to new evidence")

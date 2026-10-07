@@ -303,6 +303,7 @@ def get_evidence_upload_service(request: Request):
         corpus_ingestion=corpus,
         index_sync=index_sync,
         storage=storage,
+        result_store=getattr(services, "result_store", None),
     )
 
 

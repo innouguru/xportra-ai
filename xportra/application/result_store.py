@@ -904,8 +904,37 @@ class ComplianceResultStore:
             ctx, shipment.tenant_id, "shipment")
         return shipment
 
-    def resolve_authoritative_workflow(
+    def get_workflow_state(
         self,
+        ctx: ApplicationContext,
+        workflow_id: UUID,
+    ) -> str:
+        """Return the stored workflow state without snapshot checks.
+
+        Lets non-mutating guards (evidence upload) honor
+        the authoritative terminal bit without requiring
+        full snapshot equality, which round drift would
+        otherwise turn into false rejections. Unknown and
+        cross-tenant identities fail closed as not-found.
+        """
+        ctx = checked_context(ctx)
+        if not isinstance(workflow_id, UUID):
+            raise ApplicationValidationError(
+                "a workflow identity UUID is required")
+        if self._workflows is None:
+            raise ApplicationValidationError(
+                "no workflow record repository is configured")
+        row = self._workflows.get(ctx.tenant, workflow_id)
+        if row is None:
+            raise ApplicationNotFoundError(
+                "no stored workflow for this workflow identity")
+        state = row.get("state")
+        if not isinstance(state, str):
+            raise ApplicationValidationError(
+                "stored workflow state is malformed")
+        return state
+
+    def resolve_authoritative_workflow(        self,
         ctx: ApplicationContext,
         workflow_record: dict[str, Any],
     ) -> ComplianceWorkflow:

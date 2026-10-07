@@ -3169,3 +3169,31 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   `DATABASE_URL`).
 - Task record:
   `tasks/completed/shipment-lifecycle-audit-hardening.md`.
+
+## Compliance Workflow Persistence Audit (Complete, 2026-10-07)
+
+- Focused end-to-end audit of the workflow persistence
+  contract with shipment durable: one real gap found
+  and fixed — evidence-upload terminal checks read the
+  client snapshot only, so a stale open snapshot could
+  authorize storage/DB writes against a finalized
+  workflow. The upload service now resolves the
+  authoritative server workflow state (new narrow
+  `ComplianceResultStore.get_workflow_state` read, no
+  snapshot-equality overreach) before any mutation;
+  unwired deployments keep snapshot behavior.
+- Verified holding: server-owned identity everywhere;
+  every legal transition persisted before success;
+  evidence/supplied/open-requirement durability with
+  cross-tenant and cross-case rejection; round
+  first-writer-wins with deterministic latest; report
+  rehydration from stored rows; single package-write
+  path with atomic lock; full-snapshot 409 comparison
+  on all mutating workflow calls; fresh-session
+  recovery from server state; per-operation
+  transactions with no partial persistence.
+- Verification: backend 2039 passed + 61 subtests;
+  frontend untouched; PG integration gated (51 skipped,
+  no `DATABASE_URL`).
+- Task record:
+  `tasks/completed/compliance-workflow-persistence-audit.md`.
