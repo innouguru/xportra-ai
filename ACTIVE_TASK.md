@@ -1,18 +1,15 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: v1 Deployment Preparation
+## Task: v1 Staging Deployment
 
-**Status:** Complete (2026-10-07).
+**Status:** Blocked (2026-10-07).
 
-Deployment preparation only: v1 deployment guide
-created (`docs/deployment/XPORTA-V1-DEPLOYMENT.md`)
-with provisioning, migration, smoke-test, and gate
-checklists; env/migration/hygiene verified; no code
-changed, no deployment performed, no live results
-claimed.
+No staging infrastructure or credentials exist, so no
+migration, deployment, or UAT was attempted. Staging
+spec and blocker record created; production remains
+blocked pending provisioning.
 
-Baselines stand: backend 2039 passed + 61 subtests;
-frontend 64 files / 439 tests; integration gated.
-Task record:
-`tasks/completed/v1-deployment-preparation.md`.
-Committed; push not requested.
+Verification: backend rerun 2039 passed + 61 subtests;
+frontend untouched. Task record:
+`tasks/completed/v1-staging-deployment.md`.
+No commit requested beyond docs; push not requested.

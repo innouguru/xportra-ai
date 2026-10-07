@@ -3247,3 +3247,22 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   succeeds; integration gated (51 skipped).
 - Task record:
   `tasks/completed/v1-deployment-preparation.md`.
+
+## v1 Staging Deployment (Blocked, 2026-10-07)
+
+- Staging cannot proceed: zero deployment credentials
+  exist in the environment (`DATABASE_URL`,
+  Supabase URL/JWT secret/service key, Qdrant,
+  OpenRouter all absent). No migration, deployment, or
+  UAT attempted; no production resources touched.
+- Staging isolation spec + missing-prerequisite list +
+  BLOCKED UAT table recorded in
+  `docs/deployment/XPORTA-V1-STAGING.md`.
+- Backend suite rerun for currency: 2039 passed +
+  61 subtests. Frontend untouched (standing 64 files /
+  439 tests).
+- Result: **STAGING NOT VERIFIED — PRODUCTION
+  BLOCKED.** Next action is operational: provision
+  staging per the staging document, then re-run.
+- Task record:
+  `tasks/completed/v1-staging-deployment.md`.
