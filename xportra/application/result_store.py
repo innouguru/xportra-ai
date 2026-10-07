@@ -68,6 +68,7 @@ from xportra.domain.shipment import (
     SHIPMENT_STATUS_LOCKED,
     Shipment,
     ShipmentError,
+    ShipmentService,
     shipment_from_record,
 )
 from xportra.domain.decision_trace import DecisionTrace, TraceStep
@@ -357,6 +358,11 @@ class ComplianceResultStore:
         structurally impossible — a conflicting insert
         surfaces as the persistence integrity failure the
         caller maps to terminal closure.
+
+        The bound shipment locks in the same transaction:
+        a committed finalization always leaves the
+        shipment locked, and any terminal-write failure
+        rolls the lock back with everything else.
         """
         from xportra.domain.compliance_workflow import (
             ComplianceWorkflow as _Workflow,
@@ -384,6 +390,8 @@ class ComplianceResultStore:
                     "open requirement identity is malformed")
         try:
             with self._database.transaction() as connection:
+                self._lock_shipment_in_transaction(
+                    connection, ctx, workflow)
                 row = self._packages.create_in_transaction(
                     connection,
                     ctx.tenant,
@@ -465,6 +473,70 @@ class ComplianceResultStore:
     # ------------------------------------------------------------------
     # shipment continuity (server-owned commercial facts)
     # ------------------------------------------------------------------
+
+    def _lock_shipment_in_transaction(
+        self,
+        connection,
+        ctx: ApplicationContext,
+        workflow: ComplianceWorkflow,
+    ) -> None:
+        """Move the finalizing workflow's shipment to locked.
+
+        Runs inside the caller's terminal transaction, so
+        the lock commits exactly when the package linkage
+        and terminal workflow row commit — and rolls back
+        with them on any failure. Relationship checks use
+        the persisted shipment row under the caller
+        tenant, never the submitted snapshot: unknown and
+        cross-tenant identities fail closed as not-found,
+        case mismatches fail as invalid input, and only
+        the ``bound → locked`` transition is permitted
+        (an already-``locked`` row from the same completed
+        finalization reads as consistent terminal state).
+        """
+        if workflow.shipment_id is None:
+            return
+        shipments = self._shipments
+        if shipments is None:
+            return
+        if not callable(getattr(
+                shipments, "get_in_transaction", None)):
+            raise ApplicationValidationError(
+                "a shipment repository is required")
+        row = shipments.get_in_transaction(
+            connection, ctx.tenant, workflow.shipment_id)
+        if row is None:
+            raise ApplicationNotFoundError(
+                "no stored shipment for this shipment identity")
+        stored = self._build_stored_shipment(ctx, row)
+        if stored.case_id != workflow.case_id:
+            raise ApplicationValidationError(
+                "stored shipment belongs to a different case")
+        if stored.status == SHIPMENT_STATUS_LOCKED:
+            return
+        if stored.status != SHIPMENT_STATUS_BOUND:
+            raise ApplicationValidationError(
+                "shipment cannot be locked from status "
+                f"{stored.status!r}")
+        try:
+            locked = ShipmentService().mark_locked(
+                stored, tenant_id=ctx.tenant)
+        except ShipmentError as cause:
+            raise ApplicationValidationError(
+                str(cause), cause=cause) from cause
+        shipments.save_in_transaction(
+            connection,
+            ctx.tenant,
+            locked.shipment_id,
+            locked.case_id,
+            locked.product,
+            locked.origin_country,
+            locked.destination_country,
+            locked.quantity,
+            locked.unit,
+            locked.shipment_date,
+            locked.status,
+        )
 
     def create_shipment_record(
         self,

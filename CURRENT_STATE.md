@@ -3116,3 +3116,27 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   `DATABASE_URL`).
 - Task record:
   `tasks/completed/shipment-listing-history-implementation.md`.
+
+## Shipment Lock on Finalization (Implemented, 2026-10-07)
+
+- Terminal finalization atomically locks the shipment:
+  `ComplianceResultStore.store_package_linkage` now
+  resolves the workflow's shipment `(tenant, shipment)`,
+  verifies case match and `bound` status through existing
+  domain rules, and writes `bound → locked` in the same
+  transaction as the package linkage + terminal workflow
+  row (new `ShipmentRepository.get_in_transaction`).
+  Any terminal-write failure rolls all three back
+  together; package-conflict retry keeps terminal state
+  without reopening; unknown/cross-tenant/case-mismatch/
+  draft fail closed with existing errors.
+- Workflow completion remains independently represented
+  by `assessment_package_ready` + package linkage;
+  listing/detail semantics unchanged; `locked` is now
+  the truthful commercial closed state, not a
+  completion signal.
+- Verification: backend 2033 passed + 61 subtests;
+  frontend untouched; PG integration gated (51 skipped,
+  no `DATABASE_URL`).
+- Task record:
+  `tasks/completed/shipment-lock-finalization.md`.

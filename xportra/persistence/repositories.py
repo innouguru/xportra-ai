@@ -1699,6 +1699,24 @@ class ShipmentRepository:
             (tenant.tenant_id, shipment_id),
         )
 
+    def get_in_transaction(
+        self, connection, tenant: TenantContext, shipment_id: UUID
+    ) -> Row | None:
+        """Read one shipment row inside the caller's transaction.
+
+        Lets terminal writes (finalization) verify and
+        lock the shipment atomically instead of
+        observing pre-commit state across separate
+        transactions.
+        """
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """SELECT * FROM xportra.shipments
+                   WHERE tenant_id = %s AND shipment_id = %s""",
+                (tenant.tenant_id, shipment_id),
+            )
+            return cursor.fetchone()
+
     def list_for_tenant(
         self,
         tenant: TenantContext,

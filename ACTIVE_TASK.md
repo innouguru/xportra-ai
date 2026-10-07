@@ -1,21 +1,18 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: Implement Durable Shipment Listing and History
+## Task: Lock Shipment on Finalization
 
 **Status:** Complete (2026-10-07).
 
-Read/discovery integration: tenant-scoped shipment
-listing/detail reads compose stored Shipment rows with
-latest-workflow summaries (`GET /compliance/shipments`,
-`GET /compliance/shipments/{shipment_id}`); dashboard,
-archive, workspace reload, and historical report are
-server-backed with server-wins semantics; completion
-remains workflow/package based; lock-on-finalize stays
-future work.
+Terminal finalization atomically transitions the bound
+shipment to locked in the same transaction as package
+linkage + terminal workflow row; failures roll back
+together; retry/idempotency preserved; completion
+semantics unchanged (`assessment_package_ready` +
+package linkage).
 
-Verification: backend unit 2019 passed + 61 subtests;
-frontend 64 files / 439 tests, `tsc` clean, build
-succeeds; integration gated (51 skipped, no
-`DATABASE_URL`). Task record:
-`tasks/completed/shipment-listing-history-implementation.md`.
+Verification: focused 14 passed; full backend 2033
+passed + 61 subtests; frontend untouched; integration
+gated (51 skipped, no `DATABASE_URL`). Task record:
+`tasks/completed/shipment-lock-finalization.md`.
 Committed; push not requested.
