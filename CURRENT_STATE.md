@@ -3219,3 +3219,31 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   frontend untouched; integration gated (51 skipped).
 - Task record:
   `tasks/completed/production-readiness-audit.md`.
+
+## v1 Deployment Preparation (Complete, 2026-10-07)
+
+- Deployment preparation only (no deploy performed,
+  no live results claimed): concrete checklist for
+  provisioning, configuration, migration 001→013 via
+  existing `psql` tooling, Supabase setup, backend/
+  frontend deployment, CORS, 15-step authenticated
+  smoke procedure, verification gate, and
+  failure/recovery notes in
+  `docs/deployment/XPORTA-V1-DEPLOYMENT.md`.
+- Env contract verified: `.env.example` covers every
+  variable the code reads; no undocumented variables;
+  no secrets in tracked files (secret-pattern scan
+  clean; `.env` ignored/untracked). Migrations 001–013
+  (+ down-migrations) present and ordered; no runner
+  introduced; no migration modified.
+- Untracked local artifacts documented for operator
+  cleanup, left untouched per scope
+  (`xportra-ui-review.*`, `frontend/t5.txt`,
+  `test-output.txt`, `.freebuff/`, `uv.lock`,
+  CORS scratch test/task).
+- Baselines stand (no code changed, no suite rerun
+  for docs): backend 2039 passed + 61 subtests;
+  frontend 64 files / 439 tests, `tsc` clean, build
+  succeeds; integration gated (51 skipped).
+- Task record:
+  `tasks/completed/v1-deployment-preparation.md`.
