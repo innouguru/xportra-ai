@@ -43,6 +43,7 @@ from .evidence_storage import (
 from .rag_composition import (
     RAGConfigurationError,
     SentenceTransformerEmbeddingProvider,
+    qdrant_api_key_from_environment,
 )
 from .vector_index import QdrantEvidenceVectorIndex
 
@@ -102,7 +103,17 @@ def compose_evidence_index_sync_from_environment(
     vector_config = VectorIndexConfig.from_embedding_config(
         collection, embedding)
     vector_index = QdrantEvidenceVectorIndex(
-        QdrantClient(url=qdrant_url), vector_config)
+        # Same transport contract as the RAG stack: no startup
+        # connectivity probe; ``api_key=None`` is keyless behavior
+        # while a configured ``QDRANT_API_KEY`` authenticates
+        # Qdrant Cloud deployments (single parsing path, shared
+        # with ``RAGInfrastructureConfig``).
+        QdrantClient(
+            url=qdrant_url,
+            api_key=qdrant_api_key_from_environment(values),
+            check_compatibility=False,
+        ),
+        vector_config)
     logger.info(
         "Evidence index sync configured (collection=%s model=%s)",
         collection,

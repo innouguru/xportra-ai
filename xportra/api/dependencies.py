@@ -212,6 +212,77 @@ class ApplicationServices:
             evidence_index_sync=index_sync,
         )
 
+    @classmethod
+    def from_environment_with_capabilities(cls) -> "ApplicationServices":
+        """Build the production container with optional capabilities wired.
+
+        Render-production lifespan entry point: the database-backed
+        base container is built first (``DATABASE_URL`` stays a boot
+        gate — missing/invalid database configuration raises here,
+        never per request), then each optional capability is composed
+        independently through the EXISTING composition roots:
+
+        - RAG chain via ``compose_rag_stack_from_environment``
+          (Phase 5.14; Qdrant + OpenRouter + embeddings),
+        - evidence object storage via
+          ``compose_evidence_object_store_from_environment``
+          (Phase 10.4; Supabase private Storage),
+        - evidence index sync via
+          ``compose_evidence_index_sync_from_environment``
+          (Phase 10.4; chunking → indexing → Qdrant).
+
+        No configuration parsing is duplicated and no composer is
+        reimplemented here — this method only orchestrates the
+        existing entry points. Each piece fails closed to ``None``
+        independently (mirroring ``from_environment_with_evidence_upload``),
+        so a partially configured deployment keeps the established
+        per-route 503 behavior (``rag_not_configured`` /
+        ``evidence_upload_not_configured``) instead of failing boot or
+        affecting unrelated core routes. Composition performs no
+        external calls: client constructors are lazy (Qdrant), the
+        embedding model loads on first ``embed()``, and collection
+        verification (``ensure_collection``) is never invoked here —
+        missing or unreachable optional services therefore cannot
+        prevent startup. The explicit ``from_environment_with_rag``
+        / ``from_environment_with_evidence_upload`` seams are
+        unchanged.
+        """
+        import importlib
+
+        base = cls.from_environment()
+        rag_composition = importlib.import_module(
+            "xportra.infrastructure.rag_composition"
+        )
+        try:
+            stack = rag_composition.compose_rag_stack_from_environment()
+        except Exception:
+            stack = None
+        upload_composition = importlib.import_module(
+            "xportra.infrastructure.evidence_upload"
+        )
+        try:
+            storage = (upload_composition
+                       .compose_evidence_object_store_from_environment())
+        except Exception:
+            storage = None
+        try:
+            index_sync = (upload_composition
+                          .compose_evidence_index_sync_from_environment())
+        except Exception:
+            index_sync = None
+        return cls(
+            database=base.database,
+            exporters=base.exporters,
+            products=base.products,
+            destinations=base.destinations,
+            evidence=base.evidence,
+            certifications=base.certifications,
+            rag=stack.service if stack is not None else None,
+            result_store=base.result_store,
+            evidence_storage=storage,
+            evidence_index_sync=index_sync,
+        )
+
 
 def get_services(request: Request) -> ApplicationServices:
     services = getattr(request.app.state, "services", None)

@@ -7,9 +7,14 @@
 >
 > Authority: `REQUIREMENTS.md`, `INVARIANTS.md`,
 > `docs/architecture/environment-schema.md` (canonical variable
-> contract), `.env.example` (authoritative template), and
+> contract), `.env.example` (authoritative template),
 > `tasks/completed/production-readiness-audit.md` (code verdict:
-> no code-level production blocker).
+> no code-level production blocker),
+> `tasks/completed/production-deployment-readiness-audit-render.md`
+> (Render-target audit: blockers B1–B4), and
+> `tasks/completed/render-production-wiring.md` (B1–B4 wiring:
+> lifespan composition, `GET /health`, SUPABASE_URL gate,
+> Render start command).
 
 ## 1. Prerequisites
 
@@ -19,12 +24,12 @@
   server-side rendering).
 - A Python host for the backend (Python 3.13, no Docker
   required and none provided).
-- Optional, only for analysis/conversational/RAG paths:
-  a reachable Qdrant instance plus OpenRouter access
-  with an embeddings-capable setup. Core shipment,
-  workflow, evidence-register, listing, and report
-  reads run without them (each dependent path fails
-  closed; see §10).
+- Required iff RAG analysis is in v1 scope: a hosted Qdrant
+  instance (see §14 for the exact specification, the free-first
+  recommendation, and the verification procedure). Core shipment,
+  workflow, evidence-register, listing, and report reads run
+  without it (each dependent path fails closed; see §10
+  and the lifespan paragraph in §7).
 - Operator access to run `psql` against the production
   database for migrations (no migration runner ships
   with the project).
@@ -64,16 +69,17 @@ environment, never in code):
 | `APP_DEBUG` | yes, as `false` | Unset counts as off. Any other value refuses production startup. |
 | `DATABASE_URL` | yes | Supabase Postgres connection string (treated as a secret). Missing value refuses production startup. |
 | `SUPABASE_JWT_SECRET` | yes | Supabase project JWT secret. Missing value refuses production startup and authentication setup. |
-| `SUPABASE_URL` | recommended | Enables token issuer verification (`<url>/auth/v1`). |
+| `SUPABASE_URL` | yes | Supabase project URL. Required: pins token issuer verification (`<url>/auth/v1`); missing value refuses production startup. |
 | `SUPABASE_JWT_AUDIENCE` | no | Defaults to `authenticated`. |
 | `CORS_ALLOWED_ORIGINS` | yes in practice | Comma-separated explicit `https://` origins (e.g. the frontend domain). Empty means browsers get no access (fail closed). Wildcards are rejected at startup. |
 | `SUPABASE_SERVICE_ROLE_KEY` | for uploads | Server-side Storage puts and signed URLs only; never exposed to clients. Without it, upload/download routes fail closed with 503. |
 | `EVIDENCE_STORAGE_BUCKET` | no | Defaults to `tenant-evidence`; must name the provisioned private bucket. |
-| `VECTOR_STORE_URL`, `VECTOR_STORE_COLLECTION` | for RAG | Qdrant endpoint + collection. |
+| `VECTOR_STORE_URL`, `VECTOR_STORE_COLLECTION` | for RAG | Qdrant REST endpoint + collection name. Constraints (§14): collection is operator-chosen (no repo default; the single variable feeds both retrieval and upload index-sync so they always agree); dimensions and distance are fixed by code (384 / cosine for the `all-MiniLM-L6-v2` baseline). |
+| `QDRANT_API_KEY` | for Qdrant Cloud | Secret. Required by Qdrant Cloud; optional otherwise (absent = existing keyless behavior; never fails startup). Passed to `QdrantClient(api_key=...)` by both the RAG stack and the upload index-sync composers. |
 | `LLM_API_KEY`, `LLM_MODEL` | for RAG | OpenRouter key + model id. |
 | `LLM_BASE_URL` | no | Defaults to OpenRouter. |
 | `LLM_TIMEOUT_SECONDS` | no | Defaults to 60. |
-| `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` | for RAG | Must match each other and the collection. |
+| `EMBEDDING_MODEL`, `EMBEDDING_DIMENSIONS` | for RAG | Baseline: `all-MiniLM-L6-v2` / `384`. Must match each other and the collection (mismatches fail closed at `ensure_collection`; never inferred). |
 | `APP_NAME` | no | Instance label for diagnostics. |
 | `LOG_LEVEL` | no | Documented verbosity; application code logs via stdlib only. |
 
@@ -164,8 +170,9 @@ none writes data):
 ## 6. Supabase configuration
 
 - Auth: create the project, note the JWT secret and
-  project URL; set `SUPABASE_JWT_SECRET` (+ optional
-  `SUPABASE_URL`) on the backend host only.
+  project URL; set `SUPABASE_JWT_SECRET` and `SUPABASE_URL`
+  on the backend host only (both are production boot gates;
+  without the URL the issuer check cannot be pinned).
 - Database: use the project connection string as
   `DATABASE_URL`; apply §4 migrations; create at least
   one tenant + owner membership for the first operator
@@ -179,18 +186,56 @@ none writes data):
   backend-side only. Downloads are short-lived signed
   URLs issued per authorized request, never stored.
 
-## 7. Backend deployment
+## 7. Backend deployment (Render-style Python web service)
 
 - Runtime: Python 3.13 (`pyproject.toml`
   `requires-python = ">=3.13,<3.14"`), dependencies
   from `pyproject.toml` (`fastapi`, `uvicorn`,
   `psycopg[binary]`, `pyjwt`, plus `qdrant-client` and
   `sentence-transformers` where RAG paths are needed).
-- Start: `uvicorn xportra.api.app:app` (module import
-  validates production configuration and fails fast on
-  missing secrets, debug-on, unknown `APP_ENV`, or bad
-  CORS origins; interactive docs are disabled in
-  production; `debug=False` always).
+- Canonical Render start command (the application itself
+  does NOT read `PORT`; Render supplies `$PORT` to the
+  shell command, and the process must bind `0.0.0.0`):
+
+  ```text
+  uvicorn xportra.api.app:app --host 0.0.0.0 --port $PORT
+  ```
+
+  The start command invokes the `uvicorn` console script, so
+  `uvicorn` must stay a declared runtime dependency in
+  `pyproject.toml` (currently `uvicorn[standard]>=0.30,<1.0`;
+  pinned by `tests/unit/test_production_runtime_dependencies.py`) —
+  a build tree without it installs FastAPI but fails at startup
+  with `uvicorn: command not found`. Deploy from a commit that
+  contains the declaration, and clear the platform build cache if
+  a cached environment predates it.
+  Module import validates production configuration and
+  fails fast on missing secrets (including `SUPABASE_URL`),
+  missing `DATABASE_URL`, debug-on, unknown `APP_ENV`, or
+  bad CORS origins; interactive docs are disabled in
+  production; `debug=False` always.
+- Lifespan composition: the database-backed base container
+  is always built (`DATABASE_URL` stays a boot gate);
+  the RAG chain, Supabase object storage, and evidence
+  index sync are each composed independently through the
+  existing Phase 5.14 / Phase 10.4 composition roots.
+  Missing or unreachable optional services degrade to the
+  existing per-route 503s (`rag_not_configured`,
+  `evidence_upload_not_configured`) without failing boot
+  and without affecting core routes. No external call is
+  made at startup: Qdrant clients are constructed with
+  compatibility probing disabled, the embedding model
+  loads lazily on first use, and collection verification
+  never runs at boot. Core-only boot (no Qdrant/OpenRouter
+  variables) serves shipments, workflows, evidence
+  reads, listings, stored reports/packages, and
+  finalization; analysis, RAG queries, knowledge-mode
+  chat, and uploads need their capability variables.
+- Liveness probe: unauthenticated `GET /health` →
+  `200 {"status": "ok"}` with no database, Supabase,
+  Qdrant, or OpenRouter access. Point the platform health
+  check at `/health` (never at `/docs`, which is disabled
+  in production, and never at an authenticated route).
 - No workers, schedulers, or filesystem state are
   required; each instance is stateless (scale by
   adding instances behind the platform's router,
@@ -225,6 +270,8 @@ actual results at deployment time — this document
 defines the procedure only; no production run has
 occurred.
 
+0. Health: `GET /health` → 200 (process alive;
+   liveness only — proves nothing about downstream services).
 1. Authenticate (Supabase sign-in → bearer token).
 2. Call an authenticated read (e.g.
    `GET /compliance/shipments` → 200, possibly empty).
@@ -258,10 +305,13 @@ occurred.
 
 - [ ] §5 migration checks all pass on the production database.
 - [ ] Backend boots with production env (fails fast otherwise verified by startup validation).
+- [ ] `GET /health` returns 200 from the deployed service (platform health check points at `/health`).
+- [ ] Render start command is `uvicorn xportra.api.app:app --host 0.0.0.0 --port $PORT`.
 - [ ] Frontend production build served over HTTPS against the production API origin.
 - [ ] Smoke steps 1–12 pass with recorded evidence; negative step 12 confirmed.
 - [ ] CORS allows only the production frontend origin.
 - [ ] Storage bucket is private; uploads/downloads verified end-to-end (step 6).
+- [ ] Hosted Qdrant verified per §14 (reachable, correct dims/metric, empty) — iff RAG analysis is in v1 scope.
 - [ ] No `.env` or secret committed (`.env` ignored; secret-pattern scan clean as of 2026-10-07).
 - [ ] Gated live integration tests executed against a non-production mirror where possible (still gated without `DATABASE_URL` in CI-less local runs).
 
@@ -302,3 +352,137 @@ results. The code verdict stands (no code-level
 blocker); remaining work is provisioning, migration,
 deployment, and live verification — all operational,
 none architectural.
+
+## 14. Production Qdrant — hosted vector store specification
+
+> Status: specified, NOT provisioned. This section derives
+> every requirement from the repository (cited below) and
+> defines a non-destructive verification procedure. No
+> collection has been created, no document ingested, no
+> embedding generated.
+>
+> Hard boundary: **provisioning ≠ ingestion.** At the end
+> of this task Qdrant is expected to be EMPTY — no
+> regulatory documents, no embeddings, no production
+> corpus. The authoritative knowledge acquisition +
+> ingestion pipeline is a subsequent phase.
+>
+> Authority: `xportra/infrastructure/rag_composition.py`
+> (`RAGInfrastructureConfig`, `compose_rag_stack`),
+> `xportra/infrastructure/evidence_upload.py`
+> (`compose_evidence_index_sync_from_environment`),
+> `xportra/infrastructure/vector_index.py`
+> (`ensure_collection`, `_ensure_content_text_index`,
+> `validate_qdrant_collection_config`),
+> `xportra/domain/vector_index.py` (`VectorIndexConfig`),
+> `REQUIREMENTS.md` TB-4/TB-6, and
+> `tests/integration/test_rag_qdrant_smoke.py` (existing
+> opt-in live-smoke pattern).
+
+### 14.1 Existing RAG configuration discovered
+
+| Item | Value / rule | Source |
+|---|---|---|
+| `VECTOR_STORE_URL` | required, no default; blank fails closed to per-route 503 (never localhost fallback) | `rag_composition.py` `_require_non_empty` |
+| `VECTOR_STORE_COLLECTION` | required, no repo default; the single variable feeds BOTH retrieval and upload index-sync, so the two paths always agree | `rag_composition.py`, `evidence_upload.py` |
+| `EMBEDDING_MODEL` | required, no default; approved baseline `all-MiniLM-L6-v2` | TB-6; `rag_composition.py` |
+| `EMBEDDING_DIMENSIONS` | required positive int; must equal the model's output AND the collection size (checked, never inferred) | `rag_composition.py`, `vector_index.py` |
+| Distance metric | **cosine** — the only configured value (`VectorIndexConfig.from_embedding_config` default; no env override exists) | `domain/vector_index.py` |
+| Collection creation | automatic and idempotent: first `upsert` calls `ensure_collection()`, which creates a missing collection with the configured size/distance and validates (never destroys) an existing one; `find`/`get`/`count` never create | `vector_index.py` `ensure_collection`, `upsert` |
+| Payload indexes | NOT required upfront: the `content` full-text index (WORD tokenizer, lowercase, no stop-words/stemmer) is provisioned automatically by the code on the first lexical query (`_ensure_content_text_index`); a manually created incompatible index fails closed — do NOT create payload indexes by hand | `vector_index.py` |
+| Client authentication | wired (optional): `QDRANT_API_KEY` (blank/missing → keyless) is passed as `QdrantClient(url=..., api_key=..., check_compatibility=False)` by both the RAG stack and the upload index-sync composers through one shared parsing path (`qdrant_api_key_from_environment`); the key is excluded from reprs and logs and never appears in error messages | `rag_composition.py`, `evidence_upload.py` |
+| TLS | supported transparently: the URL string passes straight to `QdrantClient`, which accepts `https://` endpoints (required by Qdrant Cloud; the client also skips its background version probe at composition since render-production-wiring) | `rag_composition.py`, installed client signature |
+| App-level health check | none exists for Qdrant (process `/health` is downstream-free by design); `collection_exists` guards live inside each operation | grep over `xportra/` |
+
+### 14.2 Production Qdrant configuration (Render env)
+
+```text
+VECTOR_STORE_URL=<provider REST endpoint, e.g. https://<cluster-host>[:6333]>
+VECTOR_STORE_COLLECTION=<operator-chosen name; no repo default>
+EMBEDDING_MODEL=all-MiniLM-L6-v2
+EMBEDDING_DIMENSIONS=384
+QDRANT_API_KEY=<Qdrant Cloud API key — secret, backend host only>
+```
+
+(`384` is the `all-MiniLM-L6-v2` output size from the TB-6 baseline;
+`ensure_collection` re-validates it against the live collection, so a
+wrong value fails closed instead of corrupting anything. The collection
+name is fixed at Render-configuration time and recorded there — never
+in the repo. No production values exist yet; local `.env` vector
+entries are empty.)
+
+### 14.3 Collection specification
+
+- Name: the `VECTOR_STORE_COLLECTION` value (operator-chosen).
+- Vectors: single unnamed vector per point, `size: 384`,
+  `distance: Cosine`.
+- Payload: plain JSON per point (tenant/chunk/document ids, content,
+  provenance); NO manual payload indexes — the code provisions the
+  `content` text index itself on first lexical use.
+- May be ABSENT at the end of this task: the application creates it
+  on first ingestion (`ensure_collection`). Manually pre-creating it
+  with the parameters above is allowed but not required; never
+  delete or recreate a collection that already holds points.
+
+### 14.4 Recommended free-first hosted option
+
+**Qdrant Cloud Free Tier** (verified 2026-10-08: single node,
+0.5 vCPU / 1 GB RAM / 4 GB disk, no credit card; roughly one million
+768-dimension vectors — orders of magnitude above the v1 workload of
+thousands of 384-dimension chunks).
+
+Caveats, stated plainly:
+
+1. Qdrant Cloud mandates API-key authentication, which the
+   application supports via `QDRANT_API_KEY` (secret, backend host
+   only; absent means keyless — required for Qdrant Cloud, optional
+   for keyless deployments and development). Until the key is set,
+   RAG paths keep their designed 503 degradation while core routes
+   serve normally.
+2. Free-tier clusters suspend after ~1 week of inactivity and are
+   deleted after ~4 weeks if not reactivated — reactivation is an
+   operator calendar item until traffic is steady.
+3. This task provisions nothing: the user creates the cluster in the
+   provider UI (cluster name + provider + region → note the REST
+   endpoint; no corpus, no documents, no embeddings).
+
+### 14.5 Safe verification procedure (non-destructive)
+
+Run from an operator machine with `curl` (and, for step 6, the repo
+venv). Stop on the first failure; create, ingest, and delete NOTHING
+in the production collection. `<Q>` is the `VECTOR_STORE_URL` value,
+`<C>` the collection name.
+
+1. Reachability + TLS: `curl -sS "<Q>/"` → 200 with a version JSON
+   body. Proves the endpoint is reachable over the required scheme.
+2. Auth posture: `curl -sS -o /dev/null -w "%{http_code}" "<Q>/collections"`
+   → 200 on a keyless host. On a key-mandated host (Qdrant Cloud)
+   expect 401 here, then repeat with the key:
+   `curl -sS -o /dev/null -w "%{http_code}" "<Q>/collections" -H
+   "api-key: <QDRANT_API_KEY>"` → 200 (proves the key authenticates;
+   use the key only in this header, never in URLs or logs). A 401
+   WITH the key means the key is wrong or revoked — fix it before
+   continuing. Do NOT work around auth.
+3. Collection state: `curl -sS "<Q>/collections/<C>"` → **404 is the
+   EXPECTED pass** (absent = nothing ingested yet). A 200 is also a
+   pass ONLY if `result.config.params.vectors.size` is `384` and
+   `result.config.params.vectors.distance` is `"Cosine"`; anything
+   else is a hard failure (do not write to it).
+4. Dimensions/metric match: covered by step 3 (or deferred to first
+   ingestion, where `ensure_collection` enforces both and fails
+   closed on mismatch).
+5. Empty-corpus proof: if the collection exists,
+   `curl -sS -X POST "<Q>/collections/<C>/points/count" -H
+   "Content-Type: application/json" -d '{"exact":true}'` → count `0`.
+   (Absent collection ⇒ vacuously empty — preferred end state.)
+6. Repo live-smoke pattern (opt-in, throwaway collection only — never
+   `<C>`): with `QDRANT_URL=<Q>` exported,
+   `python -m pytest tests/integration/test_rag_qdrant_smoke.py -q`
+   creates a `xportra-smoke-*` collection, asserts `count == 0`, and
+   deletes it. Proves end-to-end client↔server operation without
+   touching production state.
+
+Record all six results (commands + status codes/bodies, secrets
+redacted) before closing this task. Expected end state: steps 1–2
+pass, step 3 returns 404, steps 4–5 pass vacuously, step 6 passes —
+Qdrant reachable, correct, and EMPTY.

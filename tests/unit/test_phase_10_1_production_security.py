@@ -183,11 +183,13 @@ class RuntimeEnvironmentTests(unittest.TestCase):
             "APP_ENV": "production",
             "SUPABASE_JWT_SECRET": "secret-value",
             "DATABASE_URL": "postgresql://localhost/x",
+            "SUPABASE_URL": "https://proj.supabase.co",
         })
         validate_production_environment({
             "APP_ENV": "production",
             "SUPABASE_JWT_SECRET": "secret-value",
             "DATABASE_URL": "postgresql://localhost/x",
+            "SUPABASE_URL": "https://proj.supabase.co",
             "APP_DEBUG": "false",
         })
 

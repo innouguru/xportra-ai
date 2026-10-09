@@ -34,6 +34,18 @@ future approved task demonstrates a concrete need.
 - Type/format: boolean; use `true` or `false`.
 - Example: `true`
 
+#### CORS_ALLOWED_ORIGINS
+- Purpose: explicit browser origins allowed to call the API through
+  the CORS boundary. Development/test always permit the local Vite
+  origins (`http://localhost:5173`, `http://127.0.0.1:5173`); entries
+  here are added to them. Production uses only this variable and fails
+  closed when it is empty. Wildcards are forbidden in every environment
+  and rejected at startup.
+- Required: no, but required in practice for any production browser client.
+- Secret: no.
+- Type/format: comma-separated list of `http(s)://host[:port]` origins.
+- Example: `https://app.example.com`
+
 ### Database
 
 #### DATABASE_URL
@@ -50,9 +62,13 @@ baseline). These variables configure server-side verification of Supabase Auth
 access tokens and are only required on deployments that authenticate requests.
 
 #### SUPABASE_URL
-- Purpose: Supabase project URL. When provided, it enables issuer verification
+- Purpose: Supabase project URL. Pins issuer verification
   of Supabase Auth access tokens (`<url>/auth/v1`).
-- Required: no. Recommended to enable issuer verification.
+- Required: yes in production (startup gate alongside
+  `SUPABASE_JWT_SECRET` and `DATABASE_URL`, enforced by
+  `validate_production_environment` since
+  render-production-wiring); optional elsewhere, where its
+  absence skips the issuer check.
 - Secret: no.
 - Type/format: URL.
 - Example placeholder: `https://project-ref.supabase.co`
@@ -112,6 +128,17 @@ credentials; they are never exposed to clients.
 - Secret: no.
 - Type/format: string.
 - Example: `xportra-documents`
+
+#### QDRANT_API_KEY
+- Purpose: API key authenticating the Qdrant client. Required by
+  Qdrant Cloud; absent on keyless deployments (local/dev hosts),
+  where the client keeps its existing keyless behavior.
+- Required: no (optional RAG capability configuration; absence never
+  fails startup — unwired RAG keeps its per-route 503 behavior).
+- Secret: yes. Must be supplied through environment/secret
+  configuration and never written into source code or documentation.
+- Type/format: secret string.
+- Example placeholder: `replace-with-qdrant-api-key`
 
 ### LLM
 

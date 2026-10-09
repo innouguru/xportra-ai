@@ -150,6 +150,32 @@ def _optional_positive_float(
     return parsed
 
 
+#: Canonical variable carrying the optional Qdrant API key
+#: (required by Qdrant Cloud; absent on keyless deployments).
+QDRANT_API_KEY_ENV = "QDRANT_API_KEY"
+
+
+def qdrant_api_key_from_environment(
+    environment: Mapping[str, str] | None = None,
+) -> str | None:
+    """Read the optional Qdrant API key (blank/missing → ``None``).
+
+    Single parsing path shared by the RAG stack and the evidence
+    index-sync composers. Never raises, never logs, and never
+    embeds the value in any message — absence means keyless
+    (development-compatible) behavior downstream.
+    """
+    values = os.environ if environment is None else environment
+    try:
+        raw = values.get(QDRANT_API_KEY_ENV, "")
+    except AttributeError:
+        return None
+    if not isinstance(raw, str):
+        return None
+    stripped = raw.strip()
+    return stripped or None
+
+
 class SentenceTransformerEmbeddingProvider:
     """Approved-baseline embedding implementation (lazy, validated).
 
@@ -220,11 +246,13 @@ class RAGInfrastructureConfig:
     ``VECTOR_STORE_URL``, ``VECTOR_STORE_COLLECTION``,
     ``EMBEDDING_MODEL``, ``EMBEDDING_DIMENSIONS``, ``LLM_API_KEY``,
     ``LLM_MODEL``, optional ``LLM_BASE_URL`` (OpenRouter default),
-    optional ``LLM_TIMEOUT_SECONDS`` (finite-request default).
-    Generation tuning and prompt text use domain defaults/
-    composition defaults (documented deferrals, not silent
-    provider parameters). ``llm_settings`` (the secret holder) is
-    excluded from the repr.
+    optional ``LLM_TIMEOUT_SECONDS`` (finite-request default),
+    optional ``QDRANT_API_KEY`` (Qdrant Cloud authentication;
+    absent means keyless behavior). Generation tuning and prompt
+    text use domain defaults/composition defaults (documented
+    deferrals, not silent provider parameters). ``llm_settings``
+    (the secret holder) and ``qdrant_api_key`` are excluded from
+    the repr.
     """
 
     vector: VectorIndexConfig
@@ -235,6 +263,7 @@ class RAGInfrastructureConfig:
     prompt: EvidencePromptConfig = field()
     llm_base_url: str = OPENROUTER_BASE_URL
     llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
+    qdrant_api_key: str | None = field(repr=False, default=None)
 
     def __post_init__(self) -> None:
         if (
@@ -296,6 +325,7 @@ class RAGInfrastructureConfig:
                 "LLM_TIMEOUT_SECONDS",
                 DEFAULT_LLM_TIMEOUT_SECONDS,
             ),
+            qdrant_api_key=qdrant_api_key_from_environment(values),
         )
 
 
@@ -372,7 +402,17 @@ def compose_rag_stack(
         config.generation.model_identifier,
     )
     vector_index = QdrantEvidenceVectorIndex(
-        QdrantClient(url=config.qdrant_url),
+        # No startup connectivity check: the client's default
+        # background version probe must not fire during composition
+        # (render-production-wiring) — reachability is proven
+        # per request, and failures stay fail-closed there.
+        # ``api_key=None`` is exactly keyless behavior; a configured
+        # ``QDRANT_API_KEY`` authenticates Qdrant Cloud deployments.
+        QdrantClient(
+            url=config.qdrant_url,
+            api_key=config.qdrant_api_key,
+            check_compatibility=False,
+        ),
         config.vector,
     )
     semantic_retriever = VectorIndexEvidenceRetriever(
@@ -420,10 +460,12 @@ def compose_rag_stack_from_environment(
 
 __all__ = [
     "DEFAULT_RAG_SYSTEM_INSTRUCTIONS",
+    "QDRANT_API_KEY_ENV",
     "RAGComposition",
     "RAGConfigurationError",
     "RAGInfrastructureConfig",
     "SentenceTransformerEmbeddingProvider",
     "compose_rag_stack",
     "compose_rag_stack_from_environment",
+    "qdrant_api_key_from_environment",
 ]
