@@ -87,7 +87,15 @@ Verified 2026-10-07: `.env.example` lists every variable
 the code reads; no code path reads an undocumented
 variable. Frontend: `VITE_API_BASE_URL` (build-time,
 e.g. `https://api.example.com`; the `http://localhost:8000`
-fallback is development-only).
+fallback is development-only). Phase 10.10 adds two
+public, build-time frontend variables (names only —
+never secrets): `VITE_SUPABASE_URL` (Supabase project
+URL) and `VITE_SUPABASE_ANON_KEY` (public
+publishable/anon key for client-side Auth endpoints
+only). Without both, the production build renders a
+configuration error on the sign-in surface instead of
+sending magic links; no backend secret may ever appear
+in frontend code or `VITE_*` variables.
 
 ## 4. Database migration procedure
 
@@ -245,15 +253,62 @@ none writes data):
 
 - Build: `npm run build` (`tsc --noEmit` then
   `vite build`) with `VITE_API_BASE_URL` set to the
-  production API origin. Output: `dist/` (static).
+  production API origin plus `VITE_SUPABASE_URL` and
+  `VITE_SUPABASE_ANON_KEY` set to the Supabase
+  project's public identifiers (all three are
+  build-time: changing any of them requires a
+  rebuild). Output: `dist/` (static).
 - Host `dist/` on any static host over HTTPS; no SSR,
-  no server code, no secrets in the bundle (the token
-  lives in memory only; the dev-tenant header is sent
-  only when no bearer token is configured, and the
-  backend rejects it in production regardless).
+  no server code, no secrets in the bundle (the
+  access token travels only as an `Authorization:
+  Bearer` header from the Supabase-managed session;
+  the dev-tenant header is sent only when no bearer
+  token is configured, and the backend rejects it in
+  production regardless).
 - API expectations: JSON over GET/POST, bearer auth,
   structured `error.code` responses; the UI already
   maps 401/403/404/409/503 to plain-English states.
+- SPA fallback (required): the static host must serve
+  the application entry point for every client-side
+  route, including the authentication callback. Use
+  the generic rewrite rule `/* → /index.html`
+  (HTTP 200, not a redirect) so a fresh navigation
+  to `/auth/callback?code=…` loads the app instead
+  of returning the host's 404 page. Without this
+  rule, magic-link sign-in cannot complete: Supabase
+  returns the browser to the full callback URL, and
+  a host 404 there means the one-time code is never
+  exchanged. This rule is NOT verified as configured;
+  confirm it on the host (on Render, a static-site
+  rewrite rule) before the production smoke test.
+
+## 8A. Supabase sign-in configuration (Phase 10.10, operator action)
+
+Phase 10.10 signs in through Supabase email magic
+links (PKCE). Two pieces of configuration live
+outside the repository and are the operator's to
+verify — this document records the requirement, not
+its completion:
+
+- Supabase dashboard → Authentication → URL
+  Configuration: Site URL must be the deployed
+  frontend origin
+  (`https://xportra-ai-frontend.onrender.com`),
+  and the Redirect URLs allowlist must include the
+  exact PKCE callback destination
+  (`https://xportra-ai-frontend.onrender.com/auth/callback`).
+  Until both are set, magic-link emails cannot
+  return to the app. Dashboard state has NOT been
+  verified from this repository; do not treat it
+  as done until an operator confirms it in the
+  dashboard.
+- Email delivery for one-time codes must be enabled
+  on the Supabase project (magic links arrive by
+  email; the app never invents another channel).
+- No Supabase signing-setting, user, membership,
+  or schema change is implied: the existing owner
+  account and tenant membership resolve unchanged
+  through the Phase 10.9 verifier.
 
 ## 9. CORS configuration
 

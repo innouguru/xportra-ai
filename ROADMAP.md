@@ -95,6 +95,17 @@ than inventing records.
   2026-09-28 (audit + 3 corrections; no
   redesign). Phase 10.8 redesign complete —
   ready for final human visual review.)
+- [ ] **Phase 10.10 — Frontend Supabase
+  Authentication** (requirements approved:
+  `REQUIREMENTS.md` R-10.10 with binding
+  `ADR-0014`. Implementation complete 2026-10-12
+  (magic link + callback + guards, tested locally;
+  NOT deployed). Ordered second: blocked on Phase
+  10.9 deployment and production-token
+  verification — both confirmed (HTTP 200) before
+  implementation. Remaining: dashboard redirect
+  URLs, frontend rebuild/redeploy, end-to-end
+  smoke.)
 
 No implementation subtask beyond the above is
 started. Detailed scope for any future work will

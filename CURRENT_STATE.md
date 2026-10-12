@@ -3283,3 +3283,32 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   the prerequisites listed in the record.
 - Task record:
   `tasks/completed/v1-production-deployment.md`.
+
+## frontend-supabase-sign-in / Phase 10.10 (Implementation complete, not deployed, 2026-10-12)
+
+- Replaced the manual bearer-token paste with Supabase
+  email magic-link sign-in (R-10.10, ADR-0014) after the
+  Phase 10.9 backend verifier passed production-token
+  verification (HTTP 200): `@supabase/supabase-js`
+  singleton (explicit PKCE, manual code exchange, no
+  double-consume), session bootstrap/subscribe/refresh/
+  sign-out in `AuthContext` (existing manual-state API
+  preserved), reworked `/session`, new `/auth/callback`,
+  `RequireAuth` on dashboard/shipments/workspace routes
+  (settings/start/landing stay public), Supabase
+  sign-out in shell + settings. `apiFetch` and backend
+  untouched; dev-tenant header still backend-rejected
+  in production.
+- Verification: frontend suite 69 files / 471 tests
+  passing (64 new, mocked Supabase client, zero
+  network; no suite weakened); `tsc --noEmit` clean;
+  `npm run build` succeeds. No secrets in code or
+  bundle; no tenant/user/membership changes.
+- Task record:
+  `tasks/completed/frontend-supabase-sign-in.md`
+  (uncommitted). Next (operator): Supabase dashboard
+  redirect URLs (§8A, NOT verified), frontend rebuild
+  with the three build variables, static redeploy
+  (SPA fallback must cover `/auth/callback`), then
+  end-to-end smoke. Production authentication is NOT
+  claimed working until that smoke passes.

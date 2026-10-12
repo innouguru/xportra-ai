@@ -29,7 +29,7 @@ export function SettingsPage() {
   const navigate = useNavigate();
 
   const method = auth.token
-    ? "Bearer token (kept in memory for this session only)"
+    ? `Signed in with Supabase${auth.userEmail ? ` as ${auth.userEmail}` : ""}`
     : auth.devTenantId
       ? "Development tenant (local development only)"
       : "Not connected";
@@ -64,7 +64,11 @@ export function SettingsPage() {
                 </p>
               </div>
               {auth.isConfigured ? (
-                <button type="button" className="secondary-button" onClick={auth.clear}>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={() => void auth.signOut()}
+                >
                   Sign out
                 </button>
               ) : (

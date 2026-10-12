@@ -199,7 +199,7 @@ function AccountMenu({ onNavigate }: { onNavigate?: () => void }) {
   };
 
   const signOut = () => {
-    auth.clear();
+    void auth.signOut();
     setOpen(false);
     onNavigate?.();
   };

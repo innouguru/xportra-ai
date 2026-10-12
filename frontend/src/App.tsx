@@ -1,10 +1,13 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "./app/AuthContext";
+import type { AuthCredentials } from "./api/client";
+import { RequireAuth } from "./app/RequireAuth";
 import { WorkflowProvider } from "./app/WorkflowContext";
 import { AnalysisProvider } from "./app/AnalysisContext";
 import { AssessmentProvider } from "./app/AssessmentContext";
 import { LandingPage } from "./features/landing/LandingPage";
 import { SessionPage } from "./features/shipment/SessionPage";
+import { AuthCallbackPage } from "./features/auth/AuthCallbackPage";
 import { NewShipmentPage } from "./features/shipment/NewShipmentPage";
 import { WorkspacePage } from "./features/shipment/WorkspacePage";
 import { WorkspaceOverview } from "./features/shipment/WorkspaceOverview";
@@ -33,21 +36,21 @@ import { SettingsPage } from "./features/settings/SettingsPage";
  * reference `docs/design/xportra-ui-redesign.*`).
  *
  * - `/` — public landing page (dedicated chrome).
- * - `/session` — session setup (bearer token or dev tenant); also served
- *   as `/signin`, the public Sign In destination.
+ * - `/session` — email magic-link sign-in (plus local-development
+ *   tenant field); also served as `/signin`, the public Sign In
+ *   destination. Accepts an allow-listed `?next=` return path.
+ * - `/auth/callback` — Supabase PKCE callback destination.
  * - `/start` — new shipment (human profile; identifiers generated); also
  *   served as `/signup`, the public Get Started destination.
  * - `/settings` — utility surface (session, theme, honest unavailable states).
- * - `/dashboard` — authenticated resumption workspace.
- * - `/shipments` — searchable archive inside the shell.
- * - `/shipments/:caseId` — shipment workspace.
- * - `/shipments/:caseId/report` — read-only historical report.
- * - `/workspace` — established deep-link tree (legacy shell surfaces
- *   migrate to the shipment workspace progressively).
+ * - `/dashboard`, `/shipments`, `/shipments/:caseId`,
+ *   `/shipments/:caseId/report`, `/workspace` — authenticated
+ *   workspace, gated by `RequireAuth` (unauthenticated visitors
+ *   return to `/session`, never to external destinations).
  */
-export function App() {
+export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> }) {
   return (
-    <AuthProvider>
+    <AuthProvider initial={authInitial}>
       <WorkflowProvider>
         <AnalysisProvider>
           <AssessmentProvider>
@@ -55,21 +58,52 @@ export function App() {
               <Route path="/" element={<LandingPage />} />
               <Route path="/session" element={<SessionPage />} />
               <Route path="/signin" element={<Navigate to="/session" replace />} />
+              <Route path="/auth/callback" element={<AuthCallbackPage />} />
               <Route path="/start" element={<NewShipmentPage />} />
               <Route path="/signup" element={<Navigate to="/start" replace />} />
               <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route
+                path="/dashboard"
+                element={
+                  <RequireAuth>
+                    <DashboardPage />
+                  </RequireAuth>
+                }
+              />
               <Route
                 path="/shipments"
                 element={
-                  <AuthenticatedShell crumbs={[{ label: "View Shipments" }]}>
-                    <ShipmentsPage />
-                  </AuthenticatedShell>
+                  <RequireAuth>
+                    <AuthenticatedShell crumbs={[{ label: "View Shipments" }]}>
+                      <ShipmentsPage />
+                    </AuthenticatedShell>
+                  </RequireAuth>
                 }
               />
-              <Route path="/shipments/:caseId" element={<ShipmentWorkspacePage />} />
-              <Route path="/shipments/:caseId/report" element={<HistoricalReportPage />} />
-              <Route path="/workspace" element={<WorkspacePage />}>
+              <Route
+                path="/shipments/:caseId"
+                element={
+                  <RequireAuth>
+                    <ShipmentWorkspacePage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/shipments/:caseId/report"
+                element={
+                  <RequireAuth>
+                    <HistoricalReportPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/workspace"
+                element={
+                  <RequireAuth>
+                    <WorkspacePage />
+                  </RequireAuth>
+                }
+              >
                 <Route index element={<WorkspaceOverview />} />
                 <Route path="shipments" element={<ShipmentsPage />} />
                 <Route path="documents" element={<DocumentsPage />} />
