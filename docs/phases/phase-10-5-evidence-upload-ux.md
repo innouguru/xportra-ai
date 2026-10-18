@@ -125,6 +125,13 @@ no pixel-perfect claim is made.
 - Backend (untouched): **1902 passed + 44 skipped**,
   0 failures — baseline holds exactly. Live services
   not executed (no environment), as before.
+- Resume re-verification (2026-09-27, no code changes):
+  focused upload suites 41/41, `tsc --noEmit` exit 0,
+  `vite build` exit 0, forbidden-language and `any`
+  scans clean, contract re-checked against
+  `EvidenceUploadRequest/Response` (no backend defect
+  found; backend regression not re-run — no backend
+  file modified).
 
 ## 8. Limitations
 

@@ -700,6 +700,139 @@ this redesign.
   reasoning, retrieval, provider, deployment, or
   reopening/versioning changes.
 
+## R-10.9: Production JWT Verification Compatibility (Phase 10.9) — Approved
+
+Phase 10.9 makes the existing Supabase authentication
+boundary (`REQUIREMENTS.md` TB-3, R-10.1.2;
+`docs/decisions/ADR-0006-supabase-authenticated-tenant-boundary.md`)
+compatible with the access-token format the production
+Supabase project issues. The production project signs
+access tokens asymmetrically (ES256); the current
+verifier accepts only HS256 (`xportra/api/auth.py`)
+and rejects valid production tokens with
+`401 invalid_token`. This phase changes verification
+only: the bearer-token contract, tenant-membership
+resolution, and role authorization are unchanged.
+
+- R-10.9.1 (ES256 acceptance): valid Supabase ES256
+  access tokens shall verify against the trusted
+  public keys published through the Supabase
+  project's JWKS endpoint (derived from the
+  existing `SUPABASE_URL` configuration; no new
+  secret is introduced).
+- R-10.9.2 (HS256 retention): HS256 verification
+  with `SUPABASE_JWT_SECRET` shall be retained
+  only for the existing supported legacy-token
+  configuration. It shall not be extended,
+  recommended, or relied upon for production
+  tokens.
+- R-10.9.3 (Algorithm/key separation): each
+  algorithm shall be pinned to its appropriate
+  key type and verification method (HS256 to
+  the shared secret; ES256 to JWKS-resolved
+  public keys). Keys shall never be used
+  across algorithms, and no algorithm shall
+  be accepted from an untrusted JWT header
+  without the server-side allowlist and the
+  correct key type.
+- R-10.9.4 (Claim validation): issuer,
+  audience, expiration, subject, and UUID
+  subject format shall be validated for every
+  accepted token exactly as the existing
+  boundary requires (`<SUPABASE_URL>/auth/v1`
+  issuer, `SUPABASE_JWT_AUDIENCE` audience,
+  required `exp`/`sub`).
+- R-10.9.5 (Rejection): unsupported
+  algorithms, unknown key identifiers,
+  invalid signatures, and malformed claims
+  shall be rejected with the existing 401
+  semantics (`invalid_token` /
+  `expired_token`); verification shall fail
+  closed whenever it cannot be completed
+  (including JWKS unavailability).
+- R-10.9.6 (Rotation and caching): JWKS
+  responses shall be cached safely with a
+  bounded lifetime and shall tolerate
+  Supabase key rotation (new keys accepted
+  via refreshed sets; removed keys stop
+  verifying after cache expiry).
+- R-10.9.7 (Hygiene): tokens, secrets, and
+  key material shall never be logged or
+  included in error responses, preserving
+  R-10.1.4/R-10.1.5.
+- R-10.9.8 (Authorization unchanged):
+  tenant-membership resolution
+  (`tenant_membership_required`,
+  `tenant_selection_required`,
+  `tenant_not_member`), role checks, and
+  the production rejection of
+  `X-Development-Tenant-ID` shall behave
+  exactly as before (R-10.1.2, R-10.1.3).
+- R-10.9.9 (Out of scope): user
+  recreation, membership changes, database
+  schema migration, Supabase signing-setting
+  changes, new authentication providers,
+  session/cookie redesign, and any
+  weakening of signature verification are
+  excluded.
+
+## R-10.10: Frontend Supabase Authentication (Phase 10.10) — Approved
+
+Phase 10.10 replaces the manual bearer-token
+paste on the frontend session surface with a
+supported Supabase sign-in, so the existing
+owner can authenticate without copying JWTs.
+It builds on the R-10.9 verifier: frontend
+work shall be verified against a backend
+that already accepts production ES256
+tokens (backend deployment and
+production-token verification precede
+frontend deployment; see ADR-0014). No
+backend behavior change is authorized by
+this phase.
+
+- R-10.10.1 (Client): authentication shall
+  use the official Supabase JavaScript
+  client (`@supabase/supabase-js`) with
+  PKCE magic-link authentication. No
+  second authentication system and no
+  hand-rolled token protocol shall be
+  introduced.
+- R-10.10.2 (Flow): the session surface
+  shall support email magic-link
+  initiation, PKCE callback processing on
+  a dedicated route, session restoration
+  across page reloads, token refresh, and
+  sign-out. Expired or revoked sessions
+  shall converge to the existing
+  sign-in-again state.
+- R-10.10.3 (API contract): all backend
+  calls shall continue to use the existing
+  bearer-token contract (`Authorization:
+  Bearer <access token>`); tenant
+  identity shall remain server-resolved
+  from membership (client never invents
+  tenant IDs).
+- R-10.10.4 (Development pathway): the
+  local-development tenant mechanism
+  (`X-Development-Tenant-ID`) shall be
+  preserved where already supported and
+  shall remain impossible as a production
+  mechanism (R-10.1.1).
+- R-10.10.5 (Secret hygiene): no backend
+  secret (`SUPABASE_JWT_SECRET`,
+  service-role key, database credentials)
+  shall appear in frontend code, bundle,
+  or documentation. Only public
+  client-side identifiers (project URL,
+  publishable key) shall be configured
+  for the frontend build.
+- R-10.10.6 (Out of scope): password or
+  third-party providers, user recreation,
+  membership changes, schema migration,
+  backend authentication changes, and
+  cookie-based sessions are excluded.
+
 ## R-1..R-10: Future Phases — Partially Scoped
 
 Phases 1–10 (see `ROADMAP.md`) have no approved detailed functional
@@ -707,7 +840,8 @@ requirements at this time, except for Phase 10.1 (`R-10.1` above),
 Phase 10.2 (`R-10.2` above), Phase 10.4 (`R-10.4` above),
 Phase 10.5 (`R-10.5` above), Phase 10.6 (`R-10.6` above),
 Phase 10.7A (`R-10.7A` above), Phase 10.7B (`R-10.7B` above),
-and Phase 10.8 (`R-10.8` above).
+Phase 10.8 (`R-10.8` above), Phase 10.9 (`R-10.9` above),
+and Phase 10.10 (`R-10.10` above).
 Requirements for each remaining phase will be added here
 when defined and approved. In particular, no regulatory requirements and
 no detailed product functionality beyond the sections above have been

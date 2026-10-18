@@ -19,6 +19,9 @@ interface MockAuth {
   getSession: ReturnType<typeof vi.fn>;
   onAuthStateChange: ReturnType<typeof vi.fn>;
   signInWithOtp: ReturnType<typeof vi.fn>;
+  signInWithPassword: ReturnType<typeof vi.fn>;
+  resetPasswordForEmail: ReturnType<typeof vi.fn>;
+  updateUser: ReturnType<typeof vi.fn>;
   signOut: ReturnType<typeof vi.fn>;
   unsubscribe: ReturnType<typeof vi.fn>;
   listener: ((event: string, session: unknown) => void) | null;
@@ -29,6 +32,12 @@ function mockClient(session: unknown = null): { client: unknown; auth: MockAuth 
     getSession: vi.fn().mockResolvedValue({ data: { session } }),
     onAuthStateChange: vi.fn(),
     signInWithOtp: vi.fn().mockResolvedValue({ error: null }),
+    signInWithPassword: vi.fn().mockResolvedValue({
+      data: { session: null },
+      error: null,
+    }),
+    resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
+    updateUser: vi.fn().mockResolvedValue({ error: null }),
     signOut: vi.fn().mockResolvedValue({ error: null }),
     unsubscribe: vi.fn(),
     listener: null,
@@ -200,6 +209,144 @@ describe("AuthProvider with a Supabase client", () => {
       await state().signOut();
     });
     expect(state().isConfigured).toBe(false);
+  });
+
+  it("signs in with email and password and adopts the returned session", async () => {
+    const { client, auth } = mockClient(null);
+    auth.signInWithPassword.mockResolvedValueOnce({
+      data: {
+        session: {
+          access_token: "password-token",
+          user: { email: "owner@example.com" },
+        },
+      },
+      error: null,
+    });
+    mockGetClient.mockReturnValue(client as never);
+    const state = probe();
+    await waitFor(() => {
+      expect(state().initializing).toBe(false);
+    });
+    let result: { ok: boolean; errorMessage: string | null } = {
+      ok: false,
+      errorMessage: "unset",
+    };
+    await act(async () => {
+      result = await state().signInWithPassword(
+        "owner@example.com",
+        "secret-password",
+      );
+    });
+    expect(result.ok).toBe(true);
+    expect(state().isConfigured).toBe(true);
+    expect(state().userEmail).toBe("owner@example.com");
+    expect(auth.signInWithPassword).toHaveBeenCalledWith({
+      email: "owner@example.com",
+      password: "secret-password",
+    });
+    // Password sign-in never creates accounts.
+    expect((auth as unknown as Record<string, unknown>)["signUp"]).toBeUndefined();
+  });
+
+  it("keeps password failures generic and leaves the session unset", async () => {
+    const { client, auth } = mockClient(null);
+    auth.signInWithPassword.mockResolvedValueOnce({
+      data: { session: null },
+      error: { message: "Invalid login credentials" },
+    });
+    mockGetClient.mockReturnValue(client as never);
+    const state = probe();
+    await waitFor(() => {
+      expect(state().initializing).toBe(false);
+    });
+    let result: { ok: boolean; errorMessage: string | null } = {
+      ok: true,
+      errorMessage: null,
+    };
+    await act(async () => {
+      result = await state().signInWithPassword("owner@example.com", "wrong");
+    });
+    expect(result.ok).toBe(false);
+    // Generic message: no account-existence oracle, no provider text.
+    expect(result.errorMessage).not.toMatch(/invalid login credentials/i);
+    expect(result.errorMessage).toBeTruthy();
+    expect(state().isConfigured).toBe(false);
+  });
+
+  it("requests a password reset through the recovery destination", async () => {
+    const { client, auth } = mockClient(null);
+    mockGetClient.mockReturnValue(client as never);
+    const state = probe();
+    await waitFor(() => {
+      expect(state().initializing).toBe(false);
+    });
+    let result: { sent: boolean; errorMessage: string | null } = {
+      sent: false,
+      errorMessage: "unset",
+    };
+    await act(async () => {
+      result = await state().requestPasswordReset("owner@example.com");
+    });
+    expect(result.sent).toBe(true);
+    const call = auth.resetPasswordForEmail.mock.calls[0];
+    expect(call[0]).toBe("owner@example.com");
+    expect(String((call[1] as { redirectTo: string }).redirectTo)).toMatch(
+      /\/reset-password$/,
+    );
+
+    auth.resetPasswordForEmail.mockResolvedValueOnce({
+      error: { message: "rate limited" },
+    });
+    await act(async () => {
+      result = await state().requestPasswordReset("owner@example.com");
+    });
+    expect(result.sent).toBe(false);
+    expect(result.errorMessage).not.toMatch(/rate limited/i);
+  });
+
+  it("sets a new password for the current recovery session", async () => {
+    const { client, auth } = mockClient(null);
+    mockGetClient.mockReturnValue(client as never);
+    const state = probe();
+    await waitFor(() => {
+      expect(state().initializing).toBe(false);
+    });
+    let result: { ok: boolean; errorMessage: string | null } = {
+      ok: false,
+      errorMessage: "unset",
+    };
+    await act(async () => {
+      result = await state().updatePassword("brand-new-password");
+    });
+    expect(result.ok).toBe(true);
+    expect(auth.updateUser).toHaveBeenCalledWith({
+      password: "brand-new-password",
+    });
+  });
+
+  it("does not restore a session after sign-out", async () => {
+    const { client, auth } = mockClient({
+      access_token: "live-token",
+      user: { email: "owner@example.com" },
+    });
+    mockGetClient.mockReturnValue(client as never);
+    const state = probe();
+    await waitFor(() => {
+      expect(state().isConfigured).toBe(true);
+    });
+    await act(async () => {
+      await state().signOut();
+    });
+    expect(auth.signOut).toHaveBeenCalledTimes(1);
+    expect(state().isConfigured).toBe(false);
+    // The shared client now reports no session; a fresh provider
+    // (as on the next load) stays signed out.
+    auth.getSession.mockResolvedValue({ data: { session: null } });
+    const freshState = probe();
+    await waitFor(() => {
+      expect(freshState().initializing).toBe(false);
+    });
+    expect(freshState().isConfigured).toBe(false);
   });
 
   it("never exposes tokens in rendered output", async () => {

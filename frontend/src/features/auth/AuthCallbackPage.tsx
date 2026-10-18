@@ -1,11 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { ApiError } from "../../api/client";
+import { registerOrganization } from "../../api/organizations";
+import {
+  clearPendingRegistration,
+  readPendingRegistration,
+  toRegistrationInput,
+} from "../../app/pendingRegistration";
 import { getSupabaseClient, safeReturnPath } from "../../app/supabaseClient";
 import { AppShell } from "../../components/AppShell";
 
 type CallbackState =
   | { kind: "working" }
-  | { kind: "failed"; reason: "missing" | "invalid" | "unconfigured" };
+  | {
+      kind: "failed";
+      reason: "missing" | "invalid" | "unconfigured" | "registration";
+    };
 
 /**
  * PKCE callback destination for Supabase magic-link sign-in.
@@ -14,6 +24,13 @@ type CallbackState =
  * Supabase client. The URL (and any code it carries) is never
  * logged, displayed, or forwarded anywhere. Failures render a
  * recovery message instead of retrying.
+ *
+ * If a pending organization registration was cached before this
+ * link was requested (Phase 10.11), the fresh bearer token is used
+ * to finish creating the organization before continuing to the
+ * workspace. Identity still comes from the verified session — the
+ * cached profile supplies organization fields only — and an
+ * "already registered" result is treated as success.
  */
 export function AuthCallbackPage() {
   const navigate = useNavigate();
@@ -45,15 +62,54 @@ export function AuthCallbackPage() {
     let cancelled = false;
     client.auth
       .exchangeCodeForSession(code)
-      .then(({ error }) => {
+      .then(({ data, error }) => {
         if (cancelled) {
           return;
         }
-        if (error) {
+        if (error || data.session === null) {
           setState({ kind: "failed", reason: "invalid" });
           return;
         }
-        navigate(next, { replace: true });
+        const pending = readPendingRegistration();
+        const sessionEmail = data.session.user?.email ?? null;
+        if (pending === null) {
+          navigate(next, { replace: true });
+          return;
+        }
+        if (
+          sessionEmail !== null &&
+          sessionEmail.toLowerCase() !== pending.email.toLowerCase()
+        ) {
+          // Stale cache from a different account: never finalize it.
+          clearPendingRegistration();
+          navigate(next, { replace: true });
+          return;
+        }
+        registerOrganization(
+          { token: data.session.access_token, devTenantId: null },
+          toRegistrationInput(pending),
+        )
+          .then(() => {
+            if (cancelled) {
+              return;
+            }
+            clearPendingRegistration();
+            navigate("/dashboard", { replace: true });
+          })
+          .catch((caught: unknown) => {
+            if (cancelled) {
+              return;
+            }
+            if (
+              caught instanceof ApiError &&
+              caught.code === "organization_already_registered"
+            ) {
+              clearPendingRegistration();
+              navigate("/dashboard", { replace: true });
+              return;
+            }
+            setState({ kind: "failed", reason: "registration" });
+          });
       })
       .catch(() => {
         if (!cancelled) {
@@ -70,6 +126,24 @@ export function AuthCallbackPage() {
     return (
       <AppShell title="Completing sign-in">
         <p role="status">Completing sign-in…</p>
+      </AppShell>
+    );
+  }
+  if (state.reason === "registration") {
+    return (
+      <AppShell title="Could not finish registration">
+        <p role="alert">
+          Your email is confirmed, but we could not finish creating your
+          organization. Return to registration to try again.
+        </p>
+        <p>
+          <Link className="primary-button" to="/register">
+            Back to registration
+          </Link>{" "}
+          <Link className="secondary-button" to="/session">
+            Sign in
+          </Link>
+        </p>
       </AppShell>
     );
   }

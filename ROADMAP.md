@@ -93,8 +93,15 @@ than inventing records.
   minimal integration; no redesigns). 10.8J
   Accessibility / Visual QA complete
   2026-09-28 (audit + 3 corrections; no
-  redesign). Phase 10.8 redesign complete —
-  ready for final human visual review.)
+   redesign). Phase 10.8 redesign complete —
+   ready for final human visual review.)
+- [ ] **Phase 10.9 — Production JWT Verification
+  Compatibility** (requirements approved:
+  `REQUIREMENTS.md` R-10.9 with binding
+  `ADR-0014`. Docs-only — no implementation
+  started. Ordered first: backend ES256/JWKS
+  verifier must be deployed and verified with
+  a production token before Phase 10.10.)
 - [ ] **Phase 10.10 — Frontend Supabase
   Authentication** (requirements approved:
   `REQUIREMENTS.md` R-10.10 with binding

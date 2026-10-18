@@ -21,6 +21,10 @@ from xportra.application.errors import (
     TerminalWorkflowError,
     WorkflowNotReadyError,
 )
+from xportra.application.organization_registration import (
+    OrganizationAlreadyRegisteredError,
+    OrganizationRegistrationError,
+)
 from xportra.domain.answer_validation import AnswerValidationError
 from xportra.domain.errors import (
     DomainNotFoundError,
@@ -144,6 +148,12 @@ _APPLICATION_ERROR_STATUS = (
     #: ``ApplicationValidationError`` mapping so the stable
     #: sub-category survives handler lookup.
     (EvidenceUploadTooLargeError, 413, "payload_too_large"),
+    #: Phase 10.11: an identity that already holds an active
+    #: membership is a stable 409, distinct from generic input
+    #: errors. The subclass precedes its base so the specific
+    #: category survives handler lookup.
+    (OrganizationAlreadyRegisteredError, 409, "organization_already_registered"),
+    (OrganizationRegistrationError, 500, "organization_registration_failed"),
     (ApplicationValidationError, 400, "invalid_input"),
     (StaleAnalysisError, 409, "stale_analysis"),
     (WorkflowNotReadyError, 409, "not_ready"),

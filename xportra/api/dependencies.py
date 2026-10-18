@@ -10,6 +10,9 @@ from xportra.application.result_store import ComplianceResultStore
 from xportra.application.evidence_upload import (
     EvidenceUploadApplicationService,
 )
+from xportra.application.organization_registration import (
+    OrganizationRegistrationService,
+)
 from xportra.domain.evidence_ingestion import (
     EvidenceDocumentIngestionService,
 )
@@ -21,6 +24,9 @@ from xportra.domain.services import (
     ProductService,
 )
 from xportra.persistence.database import Database, DatabaseSettings
+from xportra.persistence.organization_registration import (
+    OrganizationRegistrationStore,
+)
 from xportra.persistence.repositories import (
     AuthorityRepository,
     CertificationPermitLicenseRepository,
@@ -46,6 +52,7 @@ from xportra.persistence.tenant import TenantContext
 from .auth import (
     DEVELOPMENT_TENANT_HEADER,
     TENANT_SELECTION_HEADER,
+    AuthenticatedIdentity,
     MemberContext,
     SupabaseAuthSettings,
     SupabaseTokenVerifier,
@@ -86,6 +93,12 @@ class ApplicationServices:
     #: ``None`` until wired — uploads then fail closed
     #: with 503 before any storage or database mutation.
     evidence_index_sync: Any = field(default=None)
+    #: Phase 10.11 organization registration use case (or a
+    #: test fake implementing the store protocol). ``None``
+    #: means the dependency composes it lazily from the
+    #: database store; the route fails closed with 503 when
+    #: neither is available.
+    organization_registration: Any = field(default=None)
 
     @classmethod
     def from_environment(cls) -> "ApplicationServices":
@@ -121,6 +134,9 @@ class ApplicationServices:
                 packages=FinalAssessmentPackageRepository(database),
                 workflows=ComplianceWorkflowRepository(database),
                 shipments=ShipmentRepository(database),
+            ),
+            organization_registration=OrganizationRegistrationService(
+                OrganizationRegistrationStore(database),
             ),
         )
 
@@ -380,6 +396,65 @@ def get_evidence_upload_service(request: Request):
 
 EvidenceUploadServiceDependency = Annotated[
     Any, Depends(get_evidence_upload_service)]
+
+
+def get_organization_registration_service(request: Request):
+    """Resolve the Phase 10.11 organization registration use case.
+
+    Prefers a container-injected service (production wiring / test
+    fake); otherwise composes it lazily from the database-backed
+    provisioning store. Fails closed with 503 when neither the
+    service nor the database is available, before any write.
+    """
+    services = get_services(request)
+    service = getattr(services, "organization_registration", None)
+    if service is not None:
+        return service
+    database = getattr(services, "database", None)
+    if database is None:
+        raise APIError(
+            503,
+            "organization_registration_not_configured",
+            "Organization registration is not configured for this deployment",
+        )
+    return OrganizationRegistrationService(
+        OrganizationRegistrationStore(database)
+    )
+
+
+OrganizationRegistrationServiceDependency = Annotated[
+    Any, Depends(get_organization_registration_service)]
+
+
+def get_authenticated_identity(
+    authorization: Annotated[str | None, Header()] = None,
+    x_development_tenant_id: Annotated[
+        str | None, Header(alias=DEVELOPMENT_TENANT_HEADER)
+    ] = None,
+) -> AuthenticatedIdentity:
+    """Verify a Supabase access token and return the authenticated identity.
+
+    Registration-establishing endpoints need a *verified identity*
+    before any membership exists, so this dependency performs the
+    existing token-verification contract (ES256/JWKS or the retained
+    HS256 secret, with issuer/audience/expiration/subject checks) and
+    nothing more. It deliberately resolves no membership and grants
+    no tenant. The development tenant header carries no identity and
+    is rejected unconditionally in production.
+    """
+    if x_development_tenant_id is not None and _is_production():
+        raise APIError(
+            503,
+            "development_tenant_context_disabled",
+            "Development tenant context is disabled in production",
+        )
+    token = _bearer_token(authorization)
+    settings = SupabaseAuthSettings.from_environment()
+    return SupabaseTokenVerifier(settings).verify(token)
+
+
+AuthenticatedIdentityDependency = Annotated[
+    AuthenticatedIdentity, Depends(get_authenticated_identity)]
 
 
 def get_development_tenant_context(

@@ -3284,6 +3284,146 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
 - Task record:
   `tasks/completed/v1-production-deployment.md`.
 
+## Production Database Migrated 002–013 (Live, 2026-10-07)
+
+- Live migration executed against the Supabase
+  production database via repo files only (psycopg
+  equivalent of `psql ON_ERROR_STOP=1`, sequential,
+  001 skipped): 002–013 all succeeded first-try, no
+  errors, no repairs, nothing dropped or deleted.
+- Pre-existing rows preserved untouched: 6 canonical
+  authorities (001 seed), plus the `local-development`
+  bootstrap tenant/user/owner-membership (active) —
+  the brief's "empty" claim was inaccurate; recorded
+  here instead of cleaned.
+- Noted: `users.supabase_uid` already existed (002
+  applied idempotently: column no-op, index ensured).
+- Post-verified read-only: all 14 original + 14 newer
+  tables present; 8 upload columns; composite PKs;
+  shipment tenant FK; both `set_updated_at` triggers;
+  new indexes; `draft|bound|locked` checks; no new
+  rows created by migrations. No repo files changed,
+  nothing committed (task rule).
+- Task record:
+  `tasks/completed/production-database-migration.md`
+  (uncommitted).
+
+## Production Deployment Readiness Audit — Render target (Complete, 2026-10-08)
+
+- Read-only audit for the first hosted production deploy
+  (staging skipped; Supabase production per brief taken
+  as given, not redone). No code, dependency,
+  architecture, or Supabase change; no deployment; no
+  external calls; no secrets read or printed.
+- Code-level verdict unchanged (no behavior defects);
+  four wiring/operations blockers: B1 no `$PORT`/bind
+  handling (start command must supply
+  `--host 0.0.0.0 --port $PORT`); B2 no `/health`
+  endpoint (interim: unauthenticated
+  `GET /compliance/shipments` 401-probe); B3 default
+  lifespan composition leaves RAG/analysis/uploads at
+  503 (opt-in composers dead in production, no combined
+  composer); B4 `SUPABASE_URL` needed for issuer
+  verification. Hosted Qdrant required iff analysis/
+  knowledge-chat/uploads in scope; core flows run
+  without it. Single stateless web service sufficient
+  (no workers/queues/sockets). Frontend needs only a
+  `VITE_API_BASE_URL` rebuild (no code change).
+- Verification: production-security 44 + 24 subtests;
+  RAG composition 46; live OpenAPI/grep probes
+  (33 paths, no `/health`; no `PORT`/`sslmode`
+  handling; `APP_NAME`/`LOG_LEVEL` unread by code).
+- Task record:
+  `tasks/completed/production-deployment-readiness-audit-render.md`
+  (uncommitted). Next: `render-production-wiring`
+  (composition + `/health` + start command).
+
+## render-production-wiring (Complete, 2026-10-08)
+
+- Lifespan composes RAG/storage/index-sync through the existing
+  Phase 5.14 / Phase 10.4 composers (new
+  `from_environment_with_capabilities`; per-route 503s preserved;
+  DB + JWT secret remain boot gates); dependency-free
+  `GET /health` (`200 {"status": "ok"}`); SUPABASE_URL required
+  in production (issuer pin); Qdrant background version probe
+  disabled at composition (no startup connectivity); Render start
+  command `uvicorn xportra.api.app:app --host 0.0.0.0 --port $PORT`
+  and env contract documented; CORS unchanged. No deploy, no
+  Qdrant, no Supabase change, no new dependency, no auth change.
+- Verification: new 21/21; full `pytest tests` 2060 passed,
+  51 skipped (gated, no DATABASE_URL/live services), 61 subtests,
+  0 failures. No secrets committed or printed (placeholders only).
+- Task record: `tasks/completed/render-production-wiring.md`
+  (uncommitted). Next: hosted Qdrant iff RAG in v1 scope, then
+  Render service configuration + §10 smoke.
+
+## production-qdrant-provisioning (Complete, 2026-10-08)
+
+- Repo-derived spec: cosine-only, 384-dim `all-MiniLM-L6-v2`
+  baseline, collection auto-created at first ingestion (may be
+  absent), no manual payload indexes, NO API-key wiring in current
+  code (library supports it, app passes none), TLS via URL string.
+- Recommended: Qdrant Cloud Free Tier (0.5 vCPU/1 GB/4 GB, no card;
+  ample headroom) with documented caveat — Cloud mandates API-key
+  auth, so either provision now + follow-on key-wiring task, or
+  keyless self-host (not recommended). Provisioning ≠ ingestion:
+  expected end state is reachable, correct, and EMPTY.
+- Documented in `XPORTA-V1-DEPLOYMENT.md` §14 (spec + provider +
+  six-step verification) plus §2/§3/§11 updates. Safe RAG suites:
+  237 passed, 0 failures; no live calls, no secrets.
+- Task record: `tasks/completed/production-qdrant-provisioning.md`
+  (uncommitted). Next: user provisions via provider UI + records
+  §14.5, then Render configuration + deploy + §10 smoke.
+
+## qdrant-api-key-support (Complete, 2026-10-08)
+
+- Optional `QDRANT_API_KEY` wired through one shared parsing path
+  (`qdrant_api_key_from_environment`) to both `QdrantClient`
+  constructions (RAG stack + upload index-sync); absent = exactly
+  keyless behavior; never a boot gate; URL/collection fail-closed
+  unchanged; key `repr=False`, never logged, never in errors.
+  Required for Qdrant Cloud, optional otherwise. No architecture,
+  collection, embedding, Supabase, or dependency change.
+- Verification: new 13 tests + 2 subtests (mocks only); full
+  `pytest tests` 2073 passed, 51 skipped (gated), 63 subtests,
+  0 failures; no live services, no secrets (sentinel placeholders
+  only).
+- Task record: `tasks/completed/qdrant-api-key-support.md`
+  (uncommitted). Next: user provisions cluster + records §14.5,
+  then Render configuration + deploy + §10 smoke.
+
+## production-wiring-release (Complete, 2026-10-08)
+
+- Diagnosed Render `/health` 404: pushed `86f1aca` lacked
+  `health.py`/registration (reproduced 404 from a pristine
+  worktree; boot itself fast, no startup exception — timeout was
+  the health-grace period expiring).
+- Committed + pushed the coherent release with no implementation
+  changes: commit `e7cb844`
+  (`fix(deploy): include production runtime wiring`), 18 files,
+  verified `main == origin/main`. Gates: targeted 145 passed;
+  full suite 2077 passed, 51 skipped, 0 failures.
+- Task record: `tasks/completed/production-wiring-release.md`
+  (uncommitted). Next (operator): Render Clear build cache &
+  deploy from `e7cb844`, then Qdrant §14.5 + §10 smoke.
+
+## uvicorn-runtime-dependency (Complete, 2026-10-08)
+
+- Root cause of Render `uvicorn: command not found`: git HEAD
+  `pyproject.toml` declares no Uvicorn — the
+  `uvicorn[standard]>=0.30,<1.0` line existed only uncommitted, so
+  Render's committed-tree build installed FastAPI without the
+  console script (local venv healthy: dist 0.54.0, script on PATH).
+- Kept the existing range-pinned declaration (no duplication, no
+  new mechanism); new `test_production_runtime_dependencies.py`
+  pins declared + range-pinned + unique + console-script-exposed;
+  §7 documents deploy-from-a-commit + clear-build-cache.
+- Verification: new 4/4; full `pytest tests` 2077 passed,
+  51 skipped (gated), 63 subtests, 0 failures.
+- Task record: `tasks/completed/uvicorn-runtime-dependency.md`
+  (uncommitted). Next (operator): commit + push, Render Clear
+  build cache & deploy, then Qdrant §14.5 + deploy + §10 smoke.
+
 ## frontend-supabase-sign-in / Phase 10.10 (Implementation complete, not deployed, 2026-10-12)
 
 - Replaced the manual bearer-token paste with Supabase

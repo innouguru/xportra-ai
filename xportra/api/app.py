@@ -13,6 +13,7 @@ from .dependencies import ApplicationServices
 from .errors import register_exception_handlers
 from .evidence_uploads import router as evidence_uploads_router
 from .health import router as health_router
+from .organizations import router as organizations_router
 from .router import router
 from .runtime import (
     CORS_ALLOWED_HEADERS,
@@ -124,6 +125,7 @@ def create_app(services: ApplicationServices | None = None) -> FastAPI:
     application.include_router(compliance_router)
     application.include_router(conversations_router)
     application.include_router(evidence_uploads_router)
+    application.include_router(organizations_router)
     # Liveness probe: unauthenticated and dependency-free by
     # construction (see xportra.api.health) — safe to probe while
     # downstream services are unavailable.

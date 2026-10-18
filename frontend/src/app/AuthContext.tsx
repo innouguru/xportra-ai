@@ -8,7 +8,12 @@ import {
   type ReactNode,
 } from "react";
 import type { AuthCredentials } from "../api/client";
-import { authCallbackUrl, getSupabaseClient, supabaseConfigError } from "./supabaseClient";
+import {
+  authCallbackUrl,
+  getSupabaseClient,
+  passwordResetUrl,
+  supabaseConfigError,
+} from "./supabaseClient";
 
 /**
  * Session authentication state.
@@ -39,6 +44,39 @@ interface AuthState extends AuthCredentials {
     sent: boolean;
     errorMessage: string | null;
   }>;
+  /**
+   * Request a magic-link email that will create a Supabase account
+   * when none exists yet (organization self-service registration,
+   * Phase 10.11). Resolves to a safe status payload; failures stay
+   * generic so the surface is not an account-existence oracle.
+   */
+  registerWithEmail: (email: string) => Promise<{
+    sent: boolean;
+    errorMessage: string | null;
+  }>;
+  /**
+   * Sign in with an existing account email and password. Never
+   * creates accounts. Resolves to a safe status payload; failures
+   * stay generic so the surface is not an account-existence oracle.
+   */
+  signInWithPassword: (
+    email: string,
+    password: string,
+  ) => Promise<{ ok: boolean; errorMessage: string | null }>;
+  /**
+   * Request a password-recovery email for an existing account.
+   * Resolves to a safe status payload with a generic failure message.
+   */
+  requestPasswordReset: (
+    email: string,
+  ) => Promise<{ sent: boolean; errorMessage: string | null }>;
+  /**
+   * Set a new password for the current recovery/session user.
+   * Resolves to a safe status payload.
+   */
+  updatePassword: (
+    password: string,
+  ) => Promise<{ ok: boolean; errorMessage: string | null }>;
   /**
    * Sign out: clears local session state synchronously, then closes
    * the Supabase session. Local state stays cleared even if the
@@ -141,6 +179,98 @@ export function AuthProvider({
     [client],
   );
 
+  const registerWithEmail = useCallback(
+    async (email: string) => {
+      if (client === null) {
+        return { sent: false as const, errorMessage: supabaseConfigError() };
+      }
+      const { error } = await client.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: authCallbackUrl(),
+          // Registration is the one deliberate account-creation
+          // surface: the visitor has no account yet. Identity and
+          // the initial role are still derived server-side.
+          shouldCreateUser: true,
+        },
+      });
+      if (error) {
+        return {
+          sent: false as const,
+          errorMessage:
+            "We could not send your confirmation link. Check the email address and try again.",
+        };
+      }
+      return { sent: true as const, errorMessage: null };
+    },
+    [client],
+  );
+
+  const signInWithPassword = useCallback(
+    async (email: string, password: string) => {
+      if (client === null) {
+        return { ok: false as const, errorMessage: supabaseConfigError() };
+      }
+      const { data, error } = await client.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error || data.session === null) {
+        // Deliberately generic: no account-existence oracle, no
+        // provider details in the UI.
+        return {
+          ok: false as const,
+          errorMessage:
+            "We could not sign you in. Check your email and password and try again.",
+        };
+      }
+      // Set the session synchronously from the returned session so
+      // callers can navigate immediately without racing the listener.
+      setToken(data.session.access_token);
+      setUserEmail(data.session.user?.email ?? null);
+      return { ok: true as const, errorMessage: null };
+    },
+    [client],
+  );
+
+  const requestPasswordReset = useCallback(
+    async (email: string) => {
+      if (client === null) {
+        return { sent: false as const, errorMessage: supabaseConfigError() };
+      }
+      const { error } = await client.auth.resetPasswordForEmail(email, {
+        redirectTo: passwordResetUrl(),
+      });
+      if (error) {
+        return {
+          sent: false as const,
+          errorMessage:
+            "We could not send a reset link. Check the email address and try again.",
+        };
+      }
+      return { sent: true as const, errorMessage: null };
+    },
+    [client],
+  );
+
+  const updatePassword = useCallback(
+    async (password: string) => {
+      if (client === null) {
+        return { ok: false as const, errorMessage: supabaseConfigError() };
+      }
+      const { error } = await client.auth.updateUser({ password });
+      if (error) {
+        return {
+          ok: false as const,
+          errorMessage:
+            "We could not set your new password. Request a new reset link and try again.",
+        };
+      }
+      return { ok: true as const, errorMessage: null };
+    },
+    [client],
+  );
+
   const signOut = useCallback(async () => {
     // Local state clears synchronously so the UI responds
     // immediately and existing callers stay race-free.
@@ -165,6 +295,10 @@ export function AuthProvider({
       userEmail,
       supabaseConfigured: client !== null,
       signInWithEmail,
+      registerWithEmail,
+      signInWithPassword,
+      requestPasswordReset,
+      updatePassword,
       signOut,
     }),
     [
@@ -175,6 +309,10 @@ export function AuthProvider({
       userEmail,
       client,
       signInWithEmail,
+      registerWithEmail,
+      signInWithPassword,
+      requestPasswordReset,
+      updatePassword,
       signOut,
     ],
   );

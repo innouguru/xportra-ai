@@ -664,3 +664,36 @@ class EvidenceDownloadResponse(BaseModel):
     tenant_id: UUID
     download_url: str
     expires_in_seconds: int
+
+
+#: Organization self-service registration schemas (Phase 10.11).
+#:
+#: The request carries only organization/user *profile* input. It
+#: deliberately has no tenant id, user id, Supabase subject, role,
+#: or membership-status field, and ``extra="forbid"`` (via
+#: ``APIRequest``) rejects any attempt to smuggle one: identity,
+#: tenant, and the initial administrator role are derived entirely
+#: server-side from the verified authentication context. The
+#: response returns identifiers plus the initial role only — never
+#: tokens, secrets, or storage/infrastructure details.
+OrganizationType = Literal[
+    "farmer", "cooperative", "exporter", "service_provider", "other"
+]
+
+
+class OrganizationRegistrationRequest(APIRequest):
+    organization_name: str = Field(min_length=1, max_length=200)
+    organization_type: OrganizationType
+    country_code: str = Field(min_length=2, max_length=2)
+    region: str | None = Field(default=None, max_length=120)
+    contact_name: str | None = Field(default=None, max_length=200)
+    contact_email: str | None = Field(default=None, max_length=320)
+
+
+class OrganizationRegistrationResponse(BaseModel):
+    organization_id: UUID
+    organization_slug: str
+    organization_name: str
+    user_id: UUID
+    role: str
+    membership_status: str
