@@ -337,3 +337,38 @@ export interface ConversationMessageResponse {
   citations: ConversationCitation[];
   refusal_reason: string | null;
 }
+
+/**
+ * Organization registration (mirrors `OrganizationRegistrationRequest`
+ * / `OrganizationRegistrationResponse`, Phase 10.11).
+ *
+ * The request carries only organization/user profile input. It never
+ * carries a tenant id, user id, Supabase subject, role, or membership
+ * status — those are derived server-side from the authenticated
+ * session. Registration creates an active workspace; it never implies
+ * regulatory approval.
+ */
+export type OrganizationType =
+  | "farmer"
+  | "cooperative"
+  | "exporter"
+  | "service_provider"
+  | "other";
+
+export interface OrganizationRegistrationInput {
+  organization_name: string;
+  organization_type: OrganizationType;
+  country_code: string;
+  region?: string | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+}
+
+export interface OrganizationRegistrationResult {
+  organization_id: string;
+  organization_slug: string;
+  organization_name: string;
+  user_id: string;
+  role: string;
+  membership_status: string;
+}

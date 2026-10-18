@@ -16,6 +16,9 @@ export const SUPABASE_ANON_KEY_ENV = "VITE_SUPABASE_ANON_KEY";
 /** PKCE callback route, registered in `App` ahead of the catch-all. */
 export const AUTH_CALLBACK_PATH = "/auth/callback";
 
+/** Password-recovery destination, registered in `App` ahead of the catch-all. */
+export const PASSWORD_RESET_PATH = "/reset-password";
+
 export interface SupabasePublicConfig {
   url: string;
   anonKey: string;
@@ -77,6 +80,11 @@ export function resetSupabaseClientForTests(): void {
 /** Absolute PKCE redirect destination for magic-link emails. */
 export function authCallbackUrl(origin: string = window.location.origin): string {
   return `${origin.replace(/\/+$/, "")}${AUTH_CALLBACK_PATH}`;
+}
+
+/** Absolute PKCE redirect destination for password-recovery emails. */
+export function passwordResetUrl(origin: string = window.location.origin): string {
+  return `${origin.replace(/\/+$/, "")}${PASSWORD_RESET_PATH}`;
 }
 
 /** Internal route prefixes a post-sign-in return path may target. */
