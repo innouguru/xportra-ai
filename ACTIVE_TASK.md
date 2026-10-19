@@ -26,3 +26,9 @@ in commit `60e32bf986a9630a244ed4c61d78b11f0f8ece88`; live Render and Supabase
 verification remains outstanding. Deploy only the existing frontend service
 for this frontend-only follow-up. Confirm SPA fallback still serves direct
 routes; no new Supabase setting is introduced here.
+
+**Live check:** Read-only browser inspection on 2026-10-19 confirmed the current
+Render frontend still serves the pre-fix `/register` and `/session` UI. The
+landing route loaded without workspace navigation; unauthenticated `/dashboard`
+showed only session restoration text and no protected content. Redeployment and
+post-deploy verification are outstanding.

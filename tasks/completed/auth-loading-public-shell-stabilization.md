@@ -51,4 +51,11 @@ workspace behavior. This task is authorized by the active user assignment and
   changed by this task were already tracked; the ADR and task record were
   included in the commit. The implementation and follow-up state commits were
   pushed to `origin/main`; `git ls-remote origin refs/heads/main` verified the
-  remote after the state commit. Live production behavior remains unverified.
+  remote after the state commit. New-build live production behavior remains
+  unverified.
+- Read-only browser check of the existing Render frontend on 2026-10-19 showed
+  `/register` and `/session` still serving the old preparation states and shared
+  shipment shell. `/` showed the separate landing layout; unauthenticated
+  `/dashboard` exposed no protected content but remained at “Checking your
+  session…”. This is evidence that the new source has not yet been deployed, not
+  a failure of the committed build. Post-deployment live verification remains.

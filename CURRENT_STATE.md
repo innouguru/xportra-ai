@@ -56,7 +56,12 @@
 > typechecking, building, and importing `xportra.api.app` from a Git archive.
 > The implementation and state commits were pushed to `origin/main`; the remote
 > branch was verified with `git ls-remote`. Live browser, Render, and Supabase
-> behavior is not verified.
+> behavior is not verified for the new build. A read-only check of the existing
+> Render frontend still returned the old registration/sign-in preparation
+> messages and shared shipment chrome, so the frontend deployment has not yet
+> picked up this commit. The unauthenticated dashboard showed only its session
+> check and no protected content. The landing page loaded separately without
+> workspace navigation.
 
 ## Status
 
