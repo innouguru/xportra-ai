@@ -3,8 +3,8 @@
 ## Task: Public authentication routes and password recovery
 
 **Status:** Complete, committed, and pushed (2026-10-19). Implementation
-commit `3450e34`; final documentation commit `ab9e595`; `origin/main` was
-verified at `ab9e595c993ed76c81a4ae2123f45af75b48b490`.
+commit `3450e34`; project-state documentation and implementation are on
+`origin/main`, which was verified after the push.
 
 **Authorization:** User-assigned stabilization task; requirements R-10.8.12,
 R-10.12, ADR-0015, and ADR-0016.
