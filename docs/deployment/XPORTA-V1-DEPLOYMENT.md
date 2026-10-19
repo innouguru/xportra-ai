@@ -118,6 +118,7 @@ production database:
 011_evidence_upload_processing
 012_compliance_workflows
 013_shipments
+014_organization_registration_profile
 ```
 
 For each `NNN_name`:
@@ -140,8 +141,10 @@ Notes and caveats:
   002 adds `users.supabase_uid`; 011 adds upload/
   processing columns to `compliance_evidence`; 010/012/
   013 create the analysis, workflow, and shipment
-  tables. No migration deletes production data; every
-  file has a matching `.down.sql` rollback.
+  tables; 014 adds nullable organization profile fields
+  to `tenants` for self-service registration. No migration
+  deletes production data; every file has a matching
+  `.down.sql` rollback.
 - Never edit an applied migration in place; future
   schema work means a new numbered migration plus ADR.
 
@@ -161,6 +164,8 @@ none writes data):
   `compliance_workflow_rounds`,
   `final_assessment_packages`,
   `compliance_workflows` (012), `shipments` (013).
+- 014 columns present on `tenants`:
+  `organization_type`, `country_code`, and `region`.
 - 002 column present: `users.supabase_uid`.
 - 011 columns present on `compliance_evidence`
   (processing/status/upload fields).

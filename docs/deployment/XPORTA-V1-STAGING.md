@@ -56,7 +56,7 @@ item below is missing, so staging stops here:
   `SUPABASE_URL=<staging URL>`,
   `CORS_ALLOWED_ORIGINS=https://<staging frontend>`,
   storage/RAG variables per §2 availability.
-- Migrations `001 → 013` via the deployment-guide
+- Migrations `001 → 014` via the deployment-guide
   `psql` procedure against the staging database only,
   then the §5 checklist of the deployment guide.
 - Backend: `uvicorn xportra.api.app:app` on the

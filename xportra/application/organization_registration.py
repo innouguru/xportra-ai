@@ -246,7 +246,7 @@ class OrganizationRegistrationService:
     @staticmethod
     def _validate_country(value: object) -> str:
         text = value.strip().upper() if isinstance(value, str) else ""
-        if len(text) != 2 or not text.isalpha():
+        if len(text) != 2 or not text.isascii() or not text.isalpha():
             raise ApplicationValidationError(
                 "country_code must be a two-letter country code"
             )

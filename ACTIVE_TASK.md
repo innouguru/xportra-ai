@@ -1,33 +1,23 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: frontend-supabase-sign-in (Phase 10.10)
+## Task: organization-registration-startup (Phase 10.11)
 
-**Status:** Implementation complete, not yet deployed (2026-10-12).
+**Status:** Source correction verified; production verification blocked
+pending Render deployment.
 
-Implemented Supabase magic-link sign-in for the frontend
-(R-10.10, ADR-0014): `@supabase/supabase-js` client
-singleton (PKCE, manual code exchange), session
-bootstrap/subscribe/refresh/sign-out in `AuthContext`
-(manual-state API preserved), reworked `/session`
-(magic link + dev field, no token paste),
-`/auth/callback` route, `RequireAuth` on workspace
-routes, Supabase sign-out in shell + settings.
-`apiFetch` untouched (same Bearer contract). Backend
-untouched. Gates: frontend suite 69 files / 471 tests
-passing (64 new, mocked client, zero network);
-`tsc --noEmit` clean; `npm run build` succeeds.
-No secrets in code/bundle; no tenant/user/membership
-changes. Task record:
-`tasks/completed/frontend-supabase-sign-in.md`
-(uncommitted).
+The `5436dc8` source tree contained API wiring for organization
+registration but omitted the persistence store, API router, and
+supporting migration 014 from the committed tree. The clean-checkout
+import failed at `xportra.persistence.organization_registration`.
+The correction restores the complete import path and its supporting
+files, with coverage for persistence atomicity, retry conflicts,
+authorization-derived identity, migration shape, and API startup.
 
-Next (operator): set the Supabase dashboard redirect
-URLs (§8A: Site URL + exact `/auth/callback`
-destination — NOT verified), rebuild the frontend
-with `VITE_API_BASE_URL`, `VITE_SUPABASE_URL`,
-`VITE_SUPABASE_ANON_KEY`, redeploy the static site
-(including the SPA fallback for `/auth/callback`),
-then run the end-to-end smoke (magic-link sign-in,
-reload persistence, sign-out, unauthenticated 401,
-membership intact). Do not claim production
-authentication works until that smoke passes.
+No production database migration has been run. The last recorded
+production migration state is 002–013; verify whether migration 014
+has already been applied before any operator considers applying it.
+After the source is deployed, verify Render starts the expected commit
+and serves `/health` before claiming production is fixed.
+
+The prior frontend sign-in deployment and end-to-end checklist remain
+documented in its task record; they are not part of this backend task.
