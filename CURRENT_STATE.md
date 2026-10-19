@@ -54,7 +54,8 @@
 > passed with a large-chunk advisory. Commit
 > `a243a818da8fa8a537a3ae8b5d4fc97d43259227` was clean-tree verified by
 > typechecking, building, and importing `xportra.api.app` from a Git archive.
-> Push verification remains pending. Live browser, Render, and Supabase
+> The implementation and state commits were pushed to `origin/main`; the remote
+> branch was verified with `git ls-remote`. Live browser, Render, and Supabase
 > behavior is not verified.
 
 ## Status

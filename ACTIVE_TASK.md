@@ -2,9 +2,10 @@
 
 ## Task: Authentication initialization and public-shell stabilization
 
-**Status:** Source implementation and verification complete on 2026-10-19;
-commit `a243a818da8fa8a537a3ae8b5d4fc97d43259227` is created and clean-tree
-validated. Push verification is pending.
+**Status:** Complete on 2026-10-19. Implementation commit
+`a243a818da8fa8a537a3ae8b5d4fc97d43259227` passed clean-tree verification;
+implementation and state documentation were pushed to `origin/main` and the
+remote branch was verified.
 
 **Authorization:** User-assigned stabilization follow-up; `REQUIREMENTS.md`
 R-10.8.2, R-10.10, R-10.12; ADR-0012 and ADR-0015. The shell boundary detail is

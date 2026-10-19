@@ -49,4 +49,6 @@ workspace behavior. This task is authorized by the active user assignment and
   implementation. A Git archive of that exact commit passed `npm.cmd run lint`,
   `npm.cmd run build`, and a backend `xportra.api.app` import. The source files
   changed by this task were already tracked; the ADR and task record were
-  included in the commit. Push verification is pending.
+  included in the commit. The implementation and follow-up state commits were
+  pushed to `origin/main`; `git ls-remote origin refs/heads/main` verified the
+  remote after the state commit. Live production behavior remains unverified.
