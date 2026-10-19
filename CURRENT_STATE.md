@@ -12,7 +12,9 @@
 > cache ENOENT/worker-start errors; frontend typecheck and production build
 > passed (existing large-chunk advisory). No live Render/Supabase verification
 > or provider configuration changes were performed. Implementation commit
-> `3450e34` contains the tested source and task record; remote push is pending.
+> `3450e34` and task-state follow-up `ab9e595` are pushed; `origin/main` was
+> verified at `ab9e595c993ed76c81a4ae2123f45af75b48b490`. A clean Git archive
+> of that revision passed `npm.cmd run build` with the existing chunk warning.
 > Phase: Phase 10 complete through 10.7B (hardening,
 > conversational backend foundation, evidence upload
 > backend + UX, product information architecture,

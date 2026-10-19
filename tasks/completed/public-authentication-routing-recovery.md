@@ -1,7 +1,8 @@
 # Public authentication routes and password recovery
 
-**Status:** Complete — 2026-10-19. Implementation commit `3450e34`; push status
-is recorded in the final turn report.
+**Status:** Complete — 2026-10-19. Implementation commit `3450e34` and
+documentation commit `ab9e595` are pushed; the verified `origin/main` tip is
+`ab9e595c993ed76c81a4ae2123f45af75b48b490`.
 
 ## Authorized scope
 
@@ -54,10 +55,12 @@ PKCE exchange, account registration flow, and protected workspace boundary.
   ENOENT errors and worker-start timeouts (not test assertion failures).
 - `npm.cmd test -- --maxWorkers=2 --no-file-parallelism` — 522 passed across
   72 files.
+- Clean tracked-tree archive at `ab9e595` with the existing frontend
+  `node_modules` junction: `npm.cmd run build` passed.
 - No backend code or migrations changed. No production records were created.
 - No browser/live production verification was performed for this revision.
-- `git ls-remote origin refs/heads/main` was blocked by the environment's
-  network restriction; remote verification requires network permission.
+- `git ls-remote origin refs/heads/main` confirmed the branch points to
+  `ab9e595c993ed76c81a4ae2123f45af75b48b490`.
 
 ## Safety
 
