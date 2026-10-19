@@ -46,6 +46,8 @@ function renderPage(initialPath = "/session") {
         <WorkflowProvider>
           <Routes>
             <Route path="/session" element={<SessionPage />} />
+            <Route path="/register" element={<div>Create account screen</div>} />
+            <Route path="/reset-password" element={<div>Password recovery screen</div>} />
             <Route path="/start" element={<div>Start screen</div>} />
           </Routes>
         </WorkflowProvider>
@@ -272,22 +274,21 @@ describe("SessionPage password sign-in", () => {
     expect(alert).toHaveTextContent(/could not sign you in/i);
   });
 
-  it("requests a password reset link with the recovery destination", async () => {
+  it("links to the recovery route rather than submitting reset from sign-in", async () => {
     const user = userEvent.setup();
-    const { client, auth } = mockClient();
-    mockGetClient.mockReturnValue(client as never);
+    mockGetClient.mockReturnValue(mockClient().client as never);
     renderPage();
     await switchToPassword(user);
-    await user.type(screen.getByLabelText(/email address/i), "owner@example.com");
-    await user.click(screen.getByRole("button", { name: /forgot password/i }));
-    expect(
-      await screen.findByText(/a password reset link is on its way/i),
-    ).toBeInTheDocument();
-    const call = auth.resetPasswordForEmail.mock.calls[0];
-    expect(call[0]).toBe("owner@example.com");
-    expect(String((call[1] as { redirectTo: string }).redirectTo)).toMatch(
-      /\/reset-password$/,
-    );
+    await user.click(screen.getByRole("link", { name: /forgot password/i }));
+    expect(await screen.findByText("Password recovery screen")).toBeInTheDocument();
+  });
+
+  it("offers a direct registration cross-link", async () => {
+    const user = userEvent.setup();
+    mockGetClient.mockReturnValue(mockClient().client as never);
+    renderPage();
+    await user.click(await screen.findByRole("link", { name: /create an account/i }));
+    expect(await screen.findByText("Create account screen")).toBeInTheDocument();
   });
 
   it("switches between the email-link and password methods", async () => {

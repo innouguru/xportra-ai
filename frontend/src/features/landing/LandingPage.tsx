@@ -125,7 +125,7 @@ export function LandingPage() {
             and flags what&rsquo;s still missing.
           </p>
           <div className="xb-land-ctas" data-anim="ctas">
-            <Link className="primary-button xb-land-cta-primary" to="/start">
+            <Link className="primary-button xb-land-cta-primary" to="/register">
               Get Started
             </Link>
             <Link className="secondary-button" to="/session">

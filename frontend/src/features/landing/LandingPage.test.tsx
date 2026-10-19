@@ -91,8 +91,10 @@ describe("LandingPage hero", () => {
     expect(screen.queryByText(/start a shipment/i)).toBeNull();
     const started = screen.getAllByRole("link", { name: "Get Started" });
     expect(started.length).toBeGreaterThan(0);
-    expect(started.map((link) => link.getAttribute("href"))).toContain("/register");
-    expect(started.map((link) => link.getAttribute("href"))).toContain("/start");
+    expect(started.length).toBeGreaterThan(1);
+    for (const link of started) {
+      expect(link.getAttribute("href")).toBe("/register");
+    }
     const signins = screen.getAllByRole("link", { name: "Sign In" });
     expect(signins.length).toBeGreaterThan(0);
     for (const link of signins) {

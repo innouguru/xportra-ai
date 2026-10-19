@@ -39,6 +39,8 @@ interface AuthState extends AuthCredentials {
   initializationError: string | null;
   /** Signed-in account email, when a Supabase session is active. */
   userEmail: string | null;
+  /** True only while Supabase has issued a password-recovery session. */
+  isPasswordRecovery: boolean;
   /** Whether Supabase sign-in is configured for this build. */
   supabaseConfigured: boolean;
   /** Request a magic-link email. Resolves to a safe status payload. */
@@ -101,6 +103,7 @@ export function AuthProvider({
     initial?.devTenantId ?? null,
   );
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
   const [initializationError, setInitializationError] = useState<string | null>(null);
   // The single shared client for this build (null when unconfigured).
   const [client] = useState(getSupabaseClient);
@@ -125,10 +128,11 @@ export function AuthProvider({
     // Subscribe first: Supabase may emit INITIAL_SESSION before getSession's
     // promise settles. Either signal is sufficient to end initialization.
     const { data: subscription } = client.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
         authEventVersion += 1;
         setToken(session?.access_token ?? null);
         setUserEmail(session?.user?.email ?? null);
+        setIsPasswordRecovery(event === "PASSWORD_RECOVERY");
         setInitializationError(null);
         setInitializing(false);
       },
@@ -170,6 +174,7 @@ export function AuthProvider({
     setToken(null);
     setDevTenantId(null);
     setUserEmail(null);
+    setIsPasswordRecovery(false);
   }, []);
 
   const signInWithEmail = useCallback(
@@ -319,6 +324,7 @@ export function AuthProvider({
       initializing,
       initializationError,
       userEmail,
+      isPasswordRecovery,
       supabaseConfigured: client !== null,
       signInWithEmail,
       registerWithEmail,
@@ -334,6 +340,7 @@ export function AuthProvider({
       initializing,
       initializationError,
       userEmail,
+      isPasswordRecovery,
       client,
       signInWithEmail,
       registerWithEmail,

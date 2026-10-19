@@ -39,6 +39,11 @@ as proof that an organization was created.
    retry; clear it on successful provisioning or explicit cancellation.
 5. Continue to derive identity, tenant, and owner membership in the backend
    from the verified authentication context and its existing transaction.
+6. Route password-recovery requests through the public `/reset-password`
+   surface. Use Supabase `resetPasswordForEmail` with the current frontend
+   origin and that explicit path; require a valid PKCE recovery session (or
+   `PASSWORD_RECOVERY` event) before rendering the password-update form. Keep
+   the response account-neutral and provide a sign-in recovery link.
 
 ## Consequences
 

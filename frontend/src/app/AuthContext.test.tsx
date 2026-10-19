@@ -113,6 +113,23 @@ describe("AuthProvider with a Supabase client", () => {
     expect(auth.onAuthStateChange).toHaveBeenCalledTimes(1);
   });
 
+  it("records Supabase password-recovery events for the public reset route", async () => {
+    const { client, auth } = mockClient(null);
+    mockGetClient.mockReturnValue(client as never);
+    const state = probe();
+    await waitFor(() => expect(state().initializing).toBe(false));
+    act(() => {
+      auth.listener?.("PASSWORD_RECOVERY", {
+        access_token: "recovery-session",
+        user: { email: "owner@example.com" },
+      });
+    });
+    expect(state().isPasswordRecovery).toBe(true);
+    expect(state().userEmail).toBe("owner@example.com");
+    act(() => auth.listener?.("SIGNED_OUT", null));
+    expect(state().isPasswordRecovery).toBe(false);
+  });
+
   it("settles restoration when INITIAL_SESSION arrives before getSession resolves", async () => {
     let resolveSession!: (value: { data: { session: unknown } }) => void;
     const { client, auth } = mockClient(null);

@@ -86,11 +86,19 @@ describe("authenticated routes", () => {
       if (path === "/register") {
         expect(screen.getByRole("heading", { name: "Create your organization" })).toBeInTheDocument();
         expect(screen.getByLabelText("Organization name")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: /sign in/i })).toHaveAttribute("href", "/session");
       }
       if (path === "/session") {
         expect(screen.getByRole("heading", { name: "Connect to your workspace" })).toBeInTheDocument();
         expect(screen.getByRole("group", { name: "Sign-in method" })).toBeInTheDocument();
         expect(screen.getByLabelText("Email address")).toBeInTheDocument();
+        expect(screen.getByRole("link", { name: /create an account/i })).toHaveAttribute("href", "/register");
+        fireEvent.click(screen.getByRole("button", { name: /^password$/i }));
+        expect(screen.getByRole("link", { name: /forgot password/i })).toHaveAttribute("href", "/reset-password");
+      }
+      if (path === "/reset-password") {
+        expect(screen.getByRole("heading", { name: "Reset your password" })).toBeInTheDocument();
+        expect(screen.queryByText("Connect to your workspace")).toBeNull();
       }
     },
   );

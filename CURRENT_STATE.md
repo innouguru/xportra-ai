@@ -2,6 +2,16 @@
 
 > Source of truth for what is true about Xportra AI right now.
 > Updated: 2026-10-19
+>
+> Public authentication routing and password recovery (R-10.12 / ADR-0015)
+> corrected the landing hero CTA, added sign-in/registration cross-links, and
+> moved recovery initiation to `/reset-password` with account-neutral response,
+> PKCE recovery-session validation, and password update through Supabase.
+> Focused tests passed (69); full frontend suite passed (522 across 72 files)
+> with bounded Vitest workers after the default parallel run hit Windows temp
+> cache ENOENT/worker-start errors; frontend typecheck and production build
+> passed (existing large-chunk advisory). No live Render/Supabase verification
+> or provider configuration changes were performed.
 > Phase: Phase 10 complete through 10.7B (hardening,
 > conversational backend foundation, evidence upload
 > backend + UX, product information architecture,

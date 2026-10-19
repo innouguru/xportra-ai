@@ -363,7 +363,7 @@ export function RegisterPage() {
       )}
 
       <p>
-        Already have a workspace? <Link to="/session">Sign in</Link>.
+        Already have an account? <Link to="/session">Sign in</Link>.
       </p>
     </AppShell>
   );

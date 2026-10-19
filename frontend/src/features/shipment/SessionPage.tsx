@@ -32,7 +32,6 @@ export function SessionPage() {
   const [devTenantId, setDevTenantId] = useState("");
   const [sending, setSending] = useState(false);
   const [sentTo, setSentTo] = useState<string | null>(null);
-  const [resetSentTo, setResetSentTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [signOutError, setSignOutError] = useState<string | null>(null);
 
@@ -43,7 +42,6 @@ export function SessionPage() {
     setMode(nextMode);
     setError(null);
     setSentTo(null);
-    setResetSentTo(null);
   };
 
   const connectDev = (event: React.FormEvent) => {
@@ -107,31 +105,6 @@ export function SessionPage() {
       }
     } catch {
       setError("We could not sign you in. Check your connection and try again.");
-    } finally {
-      setSending(false);
-    }
-  };
-
-  const requestReset = async () => {
-    if (sending) {
-      return;
-    }
-    const address = email.trim();
-    if (!isValidEmail(address)) {
-      setError("Enter a valid email address to reset your password.");
-      return;
-    }
-    setSending(true);
-    setError(null);
-    try {
-      const result = await auth.requestPasswordReset(address);
-      if (result.sent) {
-        setResetSentTo(address);
-      } else {
-        setError(result.errorMessage ?? "We could not send a reset link. Try again.");
-      }
-    } catch {
-      setError("We could not send a reset link. Check your connection and try again.");
     } finally {
       setSending(false);
     }
@@ -273,12 +246,6 @@ export function SessionPage() {
             {error ? (
               <p role="alert">{error}</p>
             ) : null}
-            {resetSentTo ? (
-              <p role="status">
-                If an account exists for {resetSentTo}, a password reset link is
-                on its way. Open it to set a new password.
-              </p>
-            ) : null}
             {!auth.supabaseConfigured ? (
               <p role="alert">
                 Sign-in is not configured for this build. Set the Supabase
@@ -305,14 +272,9 @@ export function SessionPage() {
 
             {mode === "password" && !sentTo ? (
               <p>
-                <button
-                  type="button"
-                  className="ghost-button"
-                  onClick={() => void requestReset()}
-                  disabled={sending || !auth.supabaseConfigured}
-                >
+                <Link className="ghost-button" to="/reset-password">
                   Forgot password?
-                </button>
+                </Link>
               </p>
             ) : null}
           </fieldset>
@@ -350,6 +312,9 @@ export function SessionPage() {
           </fieldset>
         </form>
       ) : null}
+      <p>
+        New to Xportra? <Link to="/register">Create an account</Link>.
+      </p>
     </AppShell>
   );
 }
