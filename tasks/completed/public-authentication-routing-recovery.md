@@ -1,7 +1,7 @@
 # Public authentication routes and password recovery
 
-**Status:** Source verification complete — 2026-10-19. Git commit/push status is
-recorded in the final turn report.
+**Status:** Complete — 2026-10-19. Implementation commit `3450e34`; push status
+is recorded in the final turn report.
 
 ## Authorized scope
 

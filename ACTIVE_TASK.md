@@ -2,8 +2,8 @@
 
 ## Task: Public authentication routes and password recovery
 
-**Status:** Complete in source (2026-10-19); commit and remote verification
-are the remaining Git steps.
+**Status:** Complete and committed (2026-10-19) as implementation commit
+`3450e34`; remote push and verification are in progress.
 
 **Authorization:** User-assigned stabilization task; requirements R-10.8.12,
 R-10.12, ADR-0015, and ADR-0016.
@@ -21,8 +21,7 @@ requires an exchanged recovery session before password update, and offers a
 sign-in recovery link. Targeted/full frontend tests, lint, and production build
 pass. Full frontend suite passed with bounded workers (522 tests across 72
 files); see the task completion record for the default-worker environment
-failure and exact commands. Source files are tracked; task/state/docs and
-commit/push are being finalized.
+failure and exact commands. Source files and task/state/docs are committed.
 
 **Production:** No production account, organization, database, secret, or
 provider setting is changed. Render/Supabase deployment behavior is a separate
