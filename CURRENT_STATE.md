@@ -45,6 +45,15 @@
 > not verified. Supplied task context reports migration 014 applied; no
 > production database was accessed or changed for this task.
 
+> Authentication initialization and public-shell stabilization (R-10.8.2,
+> R-10.10, R-10.12 / ADR-0016) fixes the auth-event/session-restoration race,
+> keeps sign-in and registration usable while restoration is pending, surfaces
+> restoration errors, separates public auth chrome from workspace chrome, and
+> guards `/start` and `/settings`. Verification: focused tests 71 passed;
+> complete frontend suite 516 passed (72 files); typecheck and production build
+> passed with a large-chunk advisory. Commit, push, and clean-checkout validation
+> remain pending. Live browser, Render, and Supabase behavior is not verified.
+
 ## Status
 
 Harness initialization (Phase 0.1), project contract (Phase 0.2), canonical

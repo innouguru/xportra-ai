@@ -27,7 +27,7 @@ describe("AppShell", () => {
   it("renders brand, navigation, title, and body", () => {
     renderShell();
     expect(screen.getByRole("link", { name: "Xportra AI home" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Public" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Test page" })).toBeInTheDocument();
     expect(screen.getByText("Page body")).toBeInTheDocument();
   });
@@ -39,10 +39,11 @@ describe("AppShell", () => {
     expect(glyph?.querySelector("svg, path, img, canvas")).toBeNull();
   });
 
-  it("shows the empty workspace state and a sign-in action when unconfigured", () => {
+  it("keeps authentication pages free of shipment status and workspace actions", () => {
     renderShell();
-    expect(screen.getByText("No active shipment")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBeGreaterThan(0);
+    expect(screen.queryByText("No active shipment")).toBeNull();
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/");
+    expect(screen.queryByRole("link", { name: "Start a shipment" })).toBeNull();
   });
 
   it("exposes a skip link for keyboard users", () => {
@@ -50,19 +51,13 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "Skip to content" })).toBeInTheDocument();
   });
 
-  it("shows the public site map without an active shipment", () => {
+  it("does not mount workspace or marketing navigation in the authentication shell", () => {
     renderShell();
-    const primary = screen.getByRole("navigation", { name: "Primary" });
-    for (const name of ["Product", "How It Works", "For Exporters", "Resources"]) {
-      expect(primary).toHaveTextContent(name);
-    }
-    expect(screen.getByRole("link", { name: "Start a shipment" })).toBeInTheDocument();
-    // No workflow concepts leak into public navigation.
-    expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Primary" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Secondary" })).toBeNull();
   });
 
-  it("shows session status without leaking credentials", () => {
+  it("does not mount a session area on authentication pages", () => {
     const { container } = render(
       <MemoryRouter>
         <AuthProvider>
@@ -74,20 +69,14 @@ describe("AppShell", () => {
         </AuthProvider>
       </MemoryRouter>,
     );
-    expect(container.querySelector(".session-dot")).toBeInTheDocument();
+    expect(container.querySelector(".session-area")).toBeEmptyDOMElement();
     expect(container.textContent).not.toMatch(/bearer|token|secret|password/i);
   });
 
-  it("shows public navigation without an active record", () => {
+  it("shows no navigation without an active record in authentication mode", () => {
     renderShell();
-    // Without a shipment the secondary group carries the public
-    // entry points, never workflow concepts.
-    const secondary = screen.getByRole("navigation", { name: "Secondary" });
-    expect(secondary).toHaveTextContent("Sign in");
-    expect(secondary).toHaveTextContent("Start a shipment");
-    expect(screen.getByRole("navigation", { name: "Primary" })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
-    expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Primary" })).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Secondary" })).toBeNull();
   });
 
   it("shows the five product concepts with an active record", () => {
@@ -108,7 +97,7 @@ describe("AppShell", () => {
       <MemoryRouter initialEntries={["/workspace/documents"]}>
         <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
           <WorkflowProvider>
-            <AppShell title="Test page">
+            <AppShell title="Test page" variant="workspace">
               <p>Page body</p>
             </AppShell>
           </WorkflowProvider>
@@ -152,7 +141,7 @@ describe("AppShell", () => {
       <MemoryRouter initialEntries={["/workspace"]}>
         <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
           <WorkflowProvider>
-            <AppShell title="Test page">
+            <AppShell title="Test page" variant="workspace">
               <p>Page body</p>
             </AppShell>
           </WorkflowProvider>
@@ -164,7 +153,7 @@ describe("AppShell", () => {
     );
   });
 
-  it("renders public navigation, not workspace navigation, when a record exists without a session", () => {
+  it("renders no workspace controls when a record exists without a session", () => {
     sessionStorage.setItem(
       "xportra.workflow-record.v1",
       JSON.stringify({
@@ -189,15 +178,12 @@ describe("AppShell", () => {
         </AuthProvider>
       </MemoryRouter>,
     );
-    const primary = screen.getByRole("navigation", { name: "Primary" });
-    for (const name of ["Product", "How It Works", "For Exporters", "Resources"]) {
-      expect(primary).toHaveTextContent(name);
-    }
+    expect(screen.queryByRole("navigation", { name: "Primary" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
-    expect(screen.getByText("No active shipment")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBeGreaterThan(0);
+    expect(screen.queryByText("No active shipment")).toBeNull();
+    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
   });
 
   it("hides workspace navigation once the session ends", () => {
@@ -218,7 +204,7 @@ describe("AppShell", () => {
       <MemoryRouter initialEntries={["/workspace"]}>
         <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
           <WorkflowProvider>
-            <AppShell title="Test page">
+            <AppShell title="Test page" variant="workspace">
               <p>Page body</p>
             </AppShell>
           </WorkflowProvider>
@@ -229,6 +215,6 @@ describe("AppShell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
-    expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
   });
 });

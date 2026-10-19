@@ -181,9 +181,15 @@ export function RegisterPage() {
         verification or approval, and it grants no compliance status.
       </p>
 
-      {auth.initializing ? (
-        <p role="status">Preparing registration…</p>
-      ) : sentTo ? (
+      {auth.initializationError ? (
+        <section aria-label="Session recovery">
+          <p role="alert">{auth.initializationError}</p>
+          <button type="button" className="secondary-button" onClick={() => window.location.reload()}>
+            Reload session
+          </button>
+        </section>
+      ) : null}
+      {sentTo ? (
         <section aria-label="Confirm your email">
           <p role="status">
             Check {sentTo} to confirm your email and finish creating your

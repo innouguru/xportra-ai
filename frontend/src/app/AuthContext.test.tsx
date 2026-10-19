@@ -113,6 +113,33 @@ describe("AuthProvider with a Supabase client", () => {
     expect(auth.onAuthStateChange).toHaveBeenCalledTimes(1);
   });
 
+  it("settles restoration when INITIAL_SESSION arrives before getSession resolves", async () => {
+    let resolveSession!: (value: { data: { session: unknown } }) => void;
+    const { client, auth } = mockClient(null);
+    auth.getSession.mockReturnValue(new Promise((resolve) => { resolveSession = resolve; }));
+    mockGetClient.mockReturnValue(client as never);
+    const state = probe();
+    await waitFor(() => expect(auth.listener).not.toBeNull());
+    act(() => auth.listener?.("INITIAL_SESSION", {
+      access_token: "initial-event-token",
+      user: { email: "owner@example.com" },
+    }));
+    expect(state().initializing).toBe(false);
+    expect(state().isConfigured).toBe(true);
+    expect(state().userEmail).toBe("owner@example.com");
+    await act(async () => resolveSession({ data: { session: null } }));
+    expect(state().isConfigured).toBe(true);
+  });
+
+  it("ends failed restoration with a safe recovery message", async () => {
+    const { client, auth } = mockClient(null);
+    auth.getSession.mockRejectedValueOnce(new Error("storage failure"));
+    mockGetClient.mockReturnValue(client as never);
+    const state = probe();
+    await waitFor(() => expect(state().initializing).toBe(false));
+    expect(state().initializationError).toMatch(/reload this page or continue by signing in/i);
+  });
+
   it("follows sign-in, refresh, and sign-out events without duplicates", async () => {
     const { client, auth } = mockClient(null);
     mockGetClient.mockReturnValue(client as never);

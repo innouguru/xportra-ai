@@ -70,8 +70,8 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/signup" element={<Navigate to="/register" replace />} />
-              <Route path="/start" element={<NewShipmentPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/start" element={<RequireAuth><NewShipmentPage /></RequireAuth>} />
+              <Route path="/settings" element={<RequireAuth><SettingsPage /></RequireAuth>} />
               <Route
                 path="/dashboard"
                 element={

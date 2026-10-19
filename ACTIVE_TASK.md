@@ -1,28 +1,26 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: Production authentication and organization registration stabilization
+## Task: Authentication initialization and public-shell stabilization
 
-**Status:** Source implementation, verification, commit, and push complete on
-2026-10-19 (`60e32bf986a9630a244ed4c61d78b11f0f8ece88`). Live Render and
-Supabase verification remains outstanding.
+**Status:** Source implementation and frontend verification complete on
+2026-10-19; commit, push, and clean-checkout validation are pending.
 
-**Authorization:** `REQUIREMENTS.md` R-10.12 and ADR-0015, approved for this
-stabilization task.
+**Authorization:** User-assigned stabilization follow-up; `REQUIREMENTS.md`
+R-10.8.2, R-10.10, R-10.12; ADR-0012 and ADR-0015. The shell boundary detail is
+recorded in ADR-0016.
 
-**Scope:** Remove development-only controls from production builds while
-retaining local development behavior and backend production rejection; support
-Supabase magic-link and password sign-in; make sign-out honor remote results
-and clear session-derived UI state; repair registration callback recovery and
-safe retries using `sessionStorage`.
+**Scope:** Settle auth initialization correctly when auth events race with
+session restoration, keep public auth forms usable during pending restoration,
+provide a recovery state on restore failure, separate authentication-page
+chrome from protected workspace chrome, and guard `/start` and `/settings`.
 
-**Acceptance checks passed:** focused and complete frontend tests (506 passed),
-type check and production build, focused backend auth/registration tests (73
-passed), production-bundle development-control scan, and clean tracked-tree
-frontend build/backend import. No production organizations or users were
-created. Migration 014 was not rerun; task context reports it applied in the
-existing production database.
+**Verification passed:** focused frontend tests (71 passed), complete frontend
+suite (516 passed across 72 files), `npm.cmd run lint`, and `npm.cmd run build`.
+The build emitted a large-chunk advisory. No browser-based or live production
+verification was performed.
 
-**Deployment remains external:** verify Render build/start settings and deploy
-the existing frontend/backend services after source verification. Verify
-Supabase email/password provider policy and redirect allowlist before claiming
-live authentication and callback behavior.
+**Previous task:** Production authentication/registration implementation remains
+in commit `60e32bf986a9630a244ed4c61d78b11f0f8ece88`; live Render and Supabase
+verification remains outstanding. Deploy only the existing frontend service
+for this frontend-only follow-up. Confirm SPA fallback still serves direct
+routes; no new Supabase setting is introduced here.

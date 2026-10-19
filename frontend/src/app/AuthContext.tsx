@@ -35,6 +35,8 @@ interface AuthState extends AuthCredentials {
   isConfigured: boolean;
   /** True while the initial Supabase session is being restored. */
   initializing: boolean;
+  /** Safe message when session restoration failed. */
+  initializationError: string | null;
   /** Signed-in account email, when a Supabase session is active. */
   userEmail: string | null;
   /** Whether Supabase sign-in is configured for this build. */
@@ -99,6 +101,7 @@ export function AuthProvider({
     initial?.devTenantId ?? null,
   );
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [initializationError, setInitializationError] = useState<string | null>(null);
   // The single shared client for this build (null when unconfigured).
   const [client] = useState(getSupabaseClient);
   // Explicit test/initial credentials skip session restoration.
@@ -119,28 +122,44 @@ export function AuthProvider({
     let cancelled = false;
     let authEventVersion = 0;
     const restoreVersion = authEventVersion;
-    client.auth
-      .getSession()
-      .then(({ data }) => {
-        if (cancelled || authEventVersion !== restoreVersion) {
-          return;
-        }
-        setToken(data.session?.access_token ?? null);
-        setUserEmail(data.session?.user?.email ?? null);
-        setInitializing(false);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setInitializing(false);
-        }
-      });
+    // Subscribe first: Supabase may emit INITIAL_SESSION before getSession's
+    // promise settles. Either signal is sufficient to end initialization.
     const { data: subscription } = client.auth.onAuthStateChange(
       (_event, session) => {
         authEventVersion += 1;
         setToken(session?.access_token ?? null);
         setUserEmail(session?.user?.email ?? null);
+        setInitializationError(null);
+        setInitializing(false);
       },
     );
+    client.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (cancelled) {
+          return;
+        }
+        if (authEventVersion !== restoreVersion) {
+          setInitializing(false);
+          return;
+        }
+        setToken(data.session?.access_token ?? null);
+        setUserEmail(data.session?.user?.email ?? null);
+        setInitializationError(
+          error
+            ? "We could not check your saved sign-in session. Reload this page or continue by signing in."
+            : null,
+        );
+        setInitializing(false);
+      })
+      .catch(() => {
+        if (!cancelled && authEventVersion === restoreVersion) {
+          setInitializationError(
+            "We could not check your saved sign-in session. Reload this page or continue by signing in.",
+          );
+          setInitializing(false);
+        }
+      });
     return () => {
       cancelled = true;
       subscription.subscription.unsubscribe();
@@ -298,6 +317,7 @@ export function AuthProvider({
       clear,
       isConfigured: token !== null || devTenantId !== null,
       initializing,
+      initializationError,
       userEmail,
       supabaseConfigured: client !== null,
       signInWithEmail,
@@ -312,6 +332,7 @@ export function AuthProvider({
       devTenantId,
       clear,
       initializing,
+      initializationError,
       userEmail,
       client,
       signInWithEmail,

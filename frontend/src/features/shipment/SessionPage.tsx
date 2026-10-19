@@ -162,9 +162,15 @@ export function SessionPage() {
           : ""}
       </p>
 
-      {auth.initializing ? (
-        <p role="status">Preparing sign-in…</p>
-      ) : auth.isConfigured ? (
+      {auth.initializationError ? (
+        <section aria-label="Session recovery">
+          <p role="alert">{auth.initializationError}</p>
+          <button type="button" className="secondary-button" onClick={() => window.location.reload()}>
+            Reload session
+          </button>
+        </section>
+      ) : null}
+      {auth.isConfigured ? (
         <section aria-label="Current session">
           {signOutError ? <p role="alert">{signOutError}</p> : null}
           <p role="status">

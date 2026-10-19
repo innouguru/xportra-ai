@@ -25,7 +25,7 @@ export function WorkspacePage() {
 
   if (!record) {
     return (
-      <AppShell title="Shipment workspace">
+      <AppShell title="Shipment workspace" variant="workspace">
         <EmptyState
           title="No active shipment"
           body="Open a compliance case first. The workspace shows the shipment, its requirements, evidence, analysis, and assessment once a case exists."
@@ -55,6 +55,7 @@ export function WorkspacePage() {
     <ConversationProvider>
       <AppShell
         title="Shipment workspace"
+        variant="workspace"
         actions={
           <button type="button" className="ghost-button" onClick={() => navigate("/start")}>
             New shipment

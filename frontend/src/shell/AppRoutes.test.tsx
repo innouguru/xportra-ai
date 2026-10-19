@@ -73,16 +73,41 @@ describe("authenticated routes", () => {
   it("keeps the public landing page outside the application shell", () => {
     renderAt("/");
     expect(screen.queryByRole("complementary", { name: "Application" })).toBeNull();
+    expect(screen.queryByText("No active shipment")).toBeNull();
+  });
+
+  it.each(["/register", "/session", "/auth/callback", "/reset-password"])(
+    "%s uses public authentication chrome without shipment UI",
+    (path) => {
+      renderAt(path);
+      expect(screen.queryByText("No active shipment")).toBeNull();
+      expect(screen.queryByRole("navigation", { name: "Primary" })).toBeNull();
+      expect(screen.queryByRole("complementary", { name: "Application" })).toBeNull();
+      if (path === "/register") {
+        expect(screen.getByRole("heading", { name: "Create your organization" })).toBeInTheDocument();
+        expect(screen.getByLabelText("Organization name")).toBeInTheDocument();
+      }
+      if (path === "/session") {
+        expect(screen.getByRole("heading", { name: "Connect to your workspace" })).toBeInTheDocument();
+        expect(screen.getByRole("group", { name: "Sign-in method" })).toBeInTheDocument();
+        expect(screen.getByLabelText("Email address")).toBeInTheDocument();
+      }
+    },
+  );
+
+  it.each(["/start", "/settings"])("protects %s from signed-out visitors", (path) => {
+    renderAt(path);
+    expect(screen.getByRole("heading", { name: "Connect to your workspace" })).toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Application" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "New shipment" })).toBeNull();
   });
 
   it("does not render workspace navigation for a signed-out visitor with a stale record", async () => {
     sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
     renderAt("/session");
     expect(screen.getByText("Connect to your workspace")).toBeInTheDocument();
-    const primary = screen.getByRole("navigation", { name: "Primary" });
-    for (const name of ["Product", "How It Works", "For Exporters", "Resources"]) {
-      expect(primary).toHaveTextContent(name);
-    }
+    expect(screen.queryByRole("navigation", { name: "Primary" })).toBeNull();
+    expect(screen.queryByText("No active shipment")).toBeNull();
     expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
     // The coordination boundary clears the stale record on sign-out.

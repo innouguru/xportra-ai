@@ -18,11 +18,13 @@ import { BrandMark } from "./BrandMark";
  *   Documents, Requirements, Assessment, plus secondary
  *   Ask Xportra (provided by the workspace) and Settings.
  */
-export function AppShell({ title, actions, askAction, children }: {
+export function AppShell({ title, actions, askAction, children, variant = "auth" }: {
   title: string;
   actions?: React.ReactNode;
   /** Secondary conversational entry; rendered only where provided. */
   askAction?: React.ReactNode;
+  /** Workspace chrome is only mounted by authenticated workspace routes. */
+  variant?: "auth" | "workspace";
   children: React.ReactNode;
 }) {
   const auth = useAuth();
@@ -30,9 +32,9 @@ export function AppShell({ title, actions, askAction, children }: {
   const navigate = useNavigate();
   const signOut = useSignOut();
   const [signOutError, setSignOutError] = useState(false);
-  // Session state, not the client-held workflow record, decides
-  // whether authenticated product navigation is rendered.
-  const signedIn = auth.isConfigured;
+  // Workspace chrome is selected by protected route composition, never by
+  // a stale client-side workflow record on a public authentication page.
+  const workspace = variant === "workspace" && auth.isConfigured;
 
   const startOver = () => {
     clear();
@@ -46,7 +48,7 @@ export function AppShell({ title, actions, askAction, children }: {
       </a>
       <header className="topbar">
         <BrandMark />
-        {signedIn && record ? (
+        {workspace && record ? (
           <>
             <nav className="primary-nav" aria-label="Primary">
               <NavLink to="/workspace" end className={({ isActive }) => (isActive ? "active" : undefined)}>
@@ -87,49 +89,25 @@ export function AppShell({ title, actions, askAction, children }: {
               </NavLink>
             </nav>
           </>
-        ) : (
-          <>
-            <nav className="primary-nav" aria-label="Primary">
-              <a href="/#product">Product</a>
-              <a href="/#how-it-works">How It Works</a>
-              <a href="/#for-exporters">For Exporters</a>
-              <a href="/#resources">Resources</a>
-            </nav>
-            <nav className="shipment-nav" aria-label="Secondary">
-              <NavLink
-                to="/session"
-                className={({ isActive }) => (isActive ? "active" : undefined)}
-              >
-                Sign in
-              </NavLink>
-              <NavLink
-                to="/start"
-                className={({ isActive }) => (isActive ? "active" : undefined)}
-              >
-                Start a shipment
-              </NavLink>
-            </nav>
-          </>
-        )}
+        ) : variant === "auth" ? (
+          <nav className="shipment-nav" aria-label="Public">
+            <Link to="/">Home</Link>
+          </nav>
+        ) : null}
         <div className="session-area">
-          {signedIn && record ? (
+          {workspace && record ? (
             <span className="session-context" title={`Workflow ${record.id}`}>
               <span className="session-dot session-dot--signed-in" aria-hidden="true" />
               {record.shipment_id ? `Shipment ${record.shipment_id.slice(0, 8)}…` : "Shipment"} ·{" "}
               {workflowStateLabel(record.state)}
             </span>
-          ) : (
-            <span className="session-context muted">
-              <span className="session-dot" aria-hidden="true" />
-              No active shipment
-            </span>
-          )}
-          {signedIn && record && (
+          ) : null}
+          {workspace && record && (
             <button type="button" className="ghost-button" onClick={startOver}>
               Start over
             </button>
           )}
-          {signedIn ? (
+          {workspace ? (
             <button
               type="button"
               className="ghost-button"
@@ -137,11 +115,7 @@ export function AppShell({ title, actions, askAction, children }: {
             >
               Sign out
             </button>
-          ) : (
-            <Link className="ghost-button" to="/session">
-              Sign in
-            </Link>
-          )}
+          ) : null}
           {signOutError ? <p role="alert">We could not sign you out. Check your connection and try again.</p> : null}
         </div>
       </header>

@@ -63,6 +63,30 @@ afterEach(() => {
 });
 
 describe("SessionPage magic-link sign-in", () => {
+  it("keeps sign-in usable while Supabase session restoration is pending", async () => {
+    const user = userEvent.setup();
+    const { client, auth } = mockClient();
+    auth.getSession.mockReturnValue(new Promise(() => undefined));
+    mockGetClient.mockReturnValue(client as never);
+    renderPage();
+    expect(await screen.findByLabelText(/email address/i)).toBeInTheDocument();
+    const submit = screen.getByRole("button", { name: /email me a sign-in link/i });
+    expect(submit).toBeEnabled();
+    await user.type(screen.getByLabelText(/email address/i), "owner@example.com");
+    await user.click(submit);
+    expect(auth.signInWithOtp).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a recovery action when session restoration fails", async () => {
+    const { client, auth } = mockClient();
+    auth.getSession.mockRejectedValueOnce(new Error("storage unavailable"));
+    mockGetClient.mockReturnValue(client as never);
+    renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/reload this page or continue by signing in/i);
+    expect(screen.getByLabelText(/email address/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reload session/i })).toBeInTheDocument();
+  });
+
   it("validates the email address before submitting", async () => {
     const user = userEvent.setup();
     mockGetClient.mockReturnValue(mockClient().client as never);
@@ -179,10 +203,8 @@ describe("SessionPage magic-link sign-in", () => {
     );
     renderPage();
     expect(await screen.findByLabelText(/email address/i)).toBeInTheDocument();
-    const primary = screen.getByRole("navigation", { name: "Primary" });
-    for (const name of ["Product", "How It Works", "For Exporters", "Resources"]) {
-      expect(primary).toHaveTextContent(name);
-    }
+    expect(screen.queryByRole("navigation", { name: "Primary" })).toBeNull();
+    expect(screen.queryByText("No active shipment")).toBeNull();
     expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
     expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
