@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
+import { useSignOut } from "../app/useSignOut";
 import { BrandMark } from "../components/BrandMark";
 import { Breadcrumbs, WorkspaceContainer } from "../primitives/layout";
 import { useEscapeKey, useFocusRestore } from "../primitives/a11y";
@@ -141,7 +142,9 @@ function NotificationEntry() {
 
 function AccountMenu({ onNavigate }: { onNavigate?: () => void }) {
   const auth = useAuth();
+  const endSession = useSignOut();
   const [open, setOpen] = useState(false);
+  const [signOutError, setSignOutError] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLUListElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -199,9 +202,9 @@ function AccountMenu({ onNavigate }: { onNavigate?: () => void }) {
   };
 
   const signOut = () => {
-    void auth.signOut();
     setOpen(false);
     onNavigate?.();
+    void endSession().then((ok) => setSignOutError(!ok));
   };
 
   return (
@@ -253,6 +256,7 @@ function AccountMenu({ onNavigate }: { onNavigate?: () => void }) {
           </li>
         </ul>
       ) : null}
+      {signOutError ? <p role="alert">We could not sign you out. Check your connection and try again.</p> : null}
     </div>
   );
 }

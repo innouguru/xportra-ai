@@ -1,7 +1,18 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { App } from "../App";
+
+const STALE_RECORD = {
+  id: "11111111-1111-1111-1111-111111111111",
+  tenant_id: "22222222-2222-2222-2222-222222222222",
+  case_id: "33333333-3333-3333-3333-333333333333",
+  shipment_id: null,
+  state: "evidence_pending",
+  rounds: [],
+  supplied_evidence_ids: [],
+  open_requirements: [],
+};
 
 /**
  * Phase 10.8B route smoke tests, extended by Phase 10.10.
@@ -62,5 +73,52 @@ describe("authenticated routes", () => {
   it("keeps the public landing page outside the application shell", () => {
     renderAt("/");
     expect(screen.queryByRole("complementary", { name: "Application" })).toBeNull();
+  });
+
+  it("does not render workspace navigation for a signed-out visitor with a stale record", async () => {
+    sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
+    renderAt("/session");
+    expect(screen.getByText("Connect to your workspace")).toBeInTheDocument();
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    for (const name of ["Product", "How It Works", "For Exporters", "Resources"]) {
+      expect(primary).toHaveTextContent(name);
+    }
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
+    // The coordination boundary clears the stale record on sign-out.
+    await waitFor(() =>
+      expect(sessionStorage.getItem("xportra.workflow-record.v1")).toBeNull(),
+    );
+  });
+
+  it("still redirects unauthenticated visitors to sign in with a stale record", () => {
+    sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
+    renderAt("/dashboard");
+    expect(screen.getByText("Connect to your workspace")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Your shipments" })).toBeNull();
+    expect(screen.queryByRole("complementary", { name: "Application" })).toBeNull();
+  });
+
+  it("keeps workflow state and workspace navigation for an authenticated session", async () => {
+    sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
+    renderAt("/workspace", { token: "test-token" });
+    expect(screen.getByRole("navigation", { name: "Primary" })).toHaveTextContent("Documents");
+    await waitFor(() =>
+      expect(sessionStorage.getItem("xportra.workflow-record.v1")).not.toBeNull(),
+    );
+  });
+
+  it("ends the session on sign-out and clears session-scoped workspace state", async () => {
+    sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
+    renderAt("/workspace", { token: "test-token" });
+    expect(screen.getByRole("navigation", { name: "Primary" })).toHaveTextContent("Documents");
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    // Returned to the public sign-in surface, no workspace navigation.
+    expect(await screen.findByText("Connect to your workspace")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
+    // The coordination boundary clears the session-scoped record.
+    await waitFor(() =>
+      expect(sessionStorage.getItem("xportra.workflow-record.v1")).toBeNull(),
+    );
   });
 });

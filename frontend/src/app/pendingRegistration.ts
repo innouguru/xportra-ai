@@ -51,12 +51,18 @@ function sessionStorageOrNull(): Storage | null {
 }
 
 export function savePendingRegistration(pending: PendingRegistration): void {
+  const normalized = normalize(pending);
+  if (normalized === null) {
+    return;
+  }
   const store = sessionStorageOrNull();
   if (store === null) {
     return;
   }
   try {
-    store.setItem(STORAGE_KEY, JSON.stringify(pending));
+    // Serialize the allow-listed shape only; runtime callers cannot
+    // smuggle password, token, tenant, user, or role fields into storage.
+    store.setItem(STORAGE_KEY, JSON.stringify(normalized));
   } catch {
     // Storage unavailable or full: the callback simply skips
     // auto-finalization. Nothing sensitive is left behind.
@@ -81,9 +87,14 @@ export function readPendingRegistration(): PendingRegistration | null {
   try {
     parsed = JSON.parse(raw);
   } catch {
+    clearPendingRegistration();
     return null;
   }
-  return normalize(parsed);
+  const pending = normalize(parsed);
+  if (pending === null) {
+    clearPendingRegistration();
+  }
+  return pending;
 }
 
 export function clearPendingRegistration(): void {

@@ -833,6 +833,34 @@ this phase.
   backend authentication changes, and
   cookie-based sessions are excluded.
 
+## R-10.12: Production Authentication and Registration Stabilization — Approved
+
+The production stabilization task explicitly supersedes only the
+email/password exclusion in R-10.10.6. It retains Supabase as the sole
+authentication provider and preserves the verified-token, tenant-membership,
+and server-controlled registration boundaries.
+
+- R-10.12.1: Sign-in shall support both Supabase magic-link and
+  `signInWithPassword` methods. Passwords shall exist only in the submitted
+  request and transient component memory; they shall never be persisted in
+  application storage, pending registration data, logs, or analytics.
+- R-10.12.2: Development tenant controls shall be absent from production
+  builds, and `X-Development-Tenant-ID` shall remain rejected by the backend
+  when `APP_ENV=production`.
+- R-10.12.3: Sign-out shall inspect the Supabase result, clear frontend
+  session-derived state and redirect only after confirmed success. Protected
+  content shall remain gated while session restoration is unresolved.
+- R-10.12.4: Organization registration shall distinguish authentication
+  success from organization-provisioning success. The minimum pending profile
+  shall be held in `sessionStorage`, recovered and validated after the
+  registration callback, cleared after success or cancellation, and recoverable
+  with an explicit message/retry path when possible.
+- R-10.12.5: Backend identity, tenant, and initial owner role remain derived
+  from verified authentication context and existing transactional safeguards.
+  The client may submit organization profile fields only.
+- R-10.12.6: No new production services, Supabase projects, migrations, or
+  production test organizations are authorized by this task.
+
 ## R-1..R-10: Future Phases — Partially Scoped
 
 Phases 1–10 (see `ROADMAP.md`) have no approved detailed functional

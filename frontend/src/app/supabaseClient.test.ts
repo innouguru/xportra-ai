@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   AUTH_CALLBACK_PATH,
+  PASSWORD_RESET_PATH,
   authCallbackUrl,
   getSupabaseClient,
   getSupabasePublicConfig,
+  passwordResetUrl,
   resetSupabaseClientForTests,
   safeReturnPath,
   supabaseConfigError,
@@ -63,6 +65,15 @@ describe("authCallbackUrl", () => {
     expect(authCallbackUrl("https://app.example.com/")).toBe(
       `https://app.example.com${AUTH_CALLBACK_PATH}`,
     );
+  });
+});
+
+describe("passwordResetUrl", () => {
+  it("targets the recovery route on the given origin", () => {
+    expect(passwordResetUrl("https://app.example.com/")).toBe(
+      `https://app.example.com${PASSWORD_RESET_PATH}`,
+    );
+    expect(PASSWORD_RESET_PATH).toBe("/reset-password");
   });
 });
 

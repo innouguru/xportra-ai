@@ -12,8 +12,8 @@ import { useHeroReady, useReveal, useScrolled } from "./landingMotion";
  * the same page renders whether or not the visitor
  * is signed in. Navigation offers only Sign In (the
  * real sign-in route) and Get Started (the real
- * start route); there is no public "Start a
- * Shipment" CTA. The hero is one natural sentence
+ * organization-registration route); there is no
+ * public "Start a Shipment" CTA. The hero is one natural sentence
  * that wraps on its own — never manually broken.
  * Copy claims nothing beyond the implemented
  * product: no customers, statistics,
@@ -105,7 +105,7 @@ export function LandingPage() {
           <Link className="xb-land-signin" to="/session">
             Sign In
           </Link>
-          <Link className="primary-button" to="/start">
+          <Link className="primary-button" to="/register">
             Get Started
           </Link>
         </nav>

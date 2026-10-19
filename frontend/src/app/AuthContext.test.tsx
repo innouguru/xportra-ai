@@ -188,7 +188,7 @@ describe("AuthProvider with a Supabase client", () => {
     expect(result.errorMessage).toBeTruthy();
   });
 
-  it("signs out through the client and stays cleared on remote failure", async () => {
+  it("clears state only after Supabase confirms sign-out", async () => {
     const { client, auth } = mockClient({
       access_token: "live-token",
       user: { email: "owner@example.com" },
@@ -204,11 +204,23 @@ describe("AuthProvider with a Supabase client", () => {
     expect(auth.signOut).toHaveBeenCalledTimes(1);
     expect(state().isConfigured).toBe(false);
 
-    auth.signOut.mockRejectedValueOnce(new Error("network down"));
-    await act(async () => {
-      await state().signOut();
+    auth.getSession.mockResolvedValue({
+      data: { session: { access_token: "still-live", user: { email: "owner@example.com" } } },
     });
-    expect(state().isConfigured).toBe(false);
+    // Restore state to model a separate valid session before a failed attempt.
+    const renewed = probe({ token: "still-live" });
+    auth.signOut.mockResolvedValueOnce({ error: { message: "network down" } });
+    let failure: unknown;
+    await act(async () => {
+      try {
+        await renewed().signOut();
+      } catch (caught) {
+        failure = caught;
+      }
+    });
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).not.toMatch(/network down/i);
+    expect(renewed().isConfigured).toBe(true);
   });
 
   it("signs in with email and password and adopts the returned session", async () => {

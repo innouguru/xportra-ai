@@ -842,6 +842,49 @@ summary:focus-visible {
   text-underline-offset: 3px;
 }
 
+/* Sign-in method switch: a compact two-option segmented control. */
+.auth-modes {
+  display: inline-flex;
+  gap: 0.3rem;
+  padding: 0.25rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-warm, var(--surface));
+  margin: 0 0 0.6rem;
+}
+
+.auth-mode {
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--ink-soft);
+  padding: 0.35rem 0.95rem;
+}
+
+.auth-mode[aria-pressed="true"] {
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+
+/* Password input with an adjacent show/hide toggle. */
+.password-field {
+  display: flex;
+  gap: 0.5rem;
+  align-items: stretch;
+}
+
+.password-field input {
+  flex: 1 1 auto;
+}
+
+.password-field button {
+  flex: 0 0 auto;
+}
+
 .action-row {
   display: flex;
   gap: 0.6rem;

@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { AuthProvider } from "../app/AuthContext";
 import { WorkflowProvider } from "../app/WorkflowContext";
@@ -162,5 +162,73 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "Assessment" }).getAttribute("href")).toBe(
       "/workspace/assessment",
     );
+  });
+
+  it("renders public navigation, not workspace navigation, when a record exists without a session", () => {
+    sessionStorage.setItem(
+      "xportra.workflow-record.v1",
+      JSON.stringify({
+        id: "11111111-1111-1111-1111-111111111111",
+        tenant_id: "22222222-2222-2222-2222-222222222222",
+        case_id: "33333333-3333-3333-3333-333333333333",
+        shipment_id: null,
+        state: "evidence_pending",
+        rounds: [],
+        supplied_evidence_ids: [],
+        open_requirements: [],
+      }),
+    );
+    render(
+      <MemoryRouter initialEntries={["/session"]}>
+        <AuthProvider>
+          <WorkflowProvider>
+            <AppShell title="Test page">
+              <p>Page body</p>
+            </AppShell>
+          </WorkflowProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    for (const name of ["Product", "How It Works", "For Exporters", "Resources"]) {
+      expect(primary).toHaveTextContent(name);
+    }
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(screen.getByText("No active shipment")).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBeGreaterThan(0);
+  });
+
+  it("hides workspace navigation once the session ends", () => {
+    sessionStorage.setItem(
+      "xportra.workflow-record.v1",
+      JSON.stringify({
+        id: "11111111-1111-1111-1111-111111111111",
+        tenant_id: "22222222-2222-2222-2222-222222222222",
+        case_id: "33333333-3333-3333-3333-333333333333",
+        shipment_id: null,
+        state: "evidence_pending",
+        rounds: [],
+        supplied_evidence_ids: [],
+        open_requirements: [],
+      }),
+    );
+    render(
+      <MemoryRouter initialEntries={["/workspace"]}>
+        <AuthProvider initial={{ devTenantId: "22222222-2222-2222-2222-222222222222" }}>
+          <WorkflowProvider>
+            <AppShell title="Test page">
+              <p>Page body</p>
+            </AppShell>
+          </WorkflowProvider>
+        </AuthProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: "Documents" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
+    expect(screen.getAllByRole("link", { name: "Sign in" }).length).toBeGreaterThan(0);
   });
 });

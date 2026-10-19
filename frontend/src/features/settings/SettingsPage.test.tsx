@@ -1,5 +1,5 @@
-import { describe, expect, it, afterEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, afterEach, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
@@ -48,6 +48,7 @@ function renderPage() {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   window.localStorage.clear();
   window.sessionStorage.clear();
   delete document.documentElement.dataset.theme;
@@ -73,6 +74,13 @@ describe("SettingsPage", () => {
     expect(text).not.toMatch(/bearer|secret|password/i);
   });
 
+  it("does not expose a development authentication connection outside dev builds", () => {
+    vi.stubEnv("DEV", false);
+    renderPage();
+    expect(screen.getByText("Not connected")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/development tenant|local development only/i);
+  });
+
   it("changes the theme through the existing provider, nothing else", () => {
     renderPage();
     const group = screen.getByRole("group", { name: "Theme" });
@@ -96,5 +104,13 @@ describe("SettingsPage", () => {
     renderPage();
     fireEvent.click(screen.getByRole("button", { name: /back to dashboard/i }));
     expect(screen.getByText("Dashboard screen")).toBeInTheDocument();
+  });
+
+  it("signs out to the public sign-in surface", async () => {
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await waitFor(() => {
+      expect(screen.getByText("Session screen")).toBeInTheDocument();
+    });
   });
 });

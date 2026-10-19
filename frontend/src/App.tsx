@@ -3,11 +3,14 @@ import { AuthProvider } from "./app/AuthContext";
 import type { AuthCredentials } from "./api/client";
 import { RequireAuth } from "./app/RequireAuth";
 import { WorkflowProvider } from "./app/WorkflowContext";
+import { WorkflowSessionSync } from "./app/WorkflowSessionSync";
 import { AnalysisProvider } from "./app/AnalysisContext";
 import { AssessmentProvider } from "./app/AssessmentContext";
 import { LandingPage } from "./features/landing/LandingPage";
 import { SessionPage } from "./features/shipment/SessionPage";
 import { AuthCallbackPage } from "./features/auth/AuthCallbackPage";
+import { RegisterPage } from "./features/auth/RegisterPage";
+import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
 import { NewShipmentPage } from "./features/shipment/NewShipmentPage";
 import { WorkspacePage } from "./features/shipment/WorkspacePage";
 import { WorkspaceOverview } from "./features/shipment/WorkspaceOverview";
@@ -40,8 +43,12 @@ import { SettingsPage } from "./features/settings/SettingsPage";
  *   tenant field); also served as `/signin`, the public Sign In
  *   destination. Accepts an allow-listed `?next=` return path.
  * - `/auth/callback` — Supabase PKCE callback destination.
- * - `/start` — new shipment (human profile; identifiers generated); also
- *   served as `/signup`, the public Get Started destination.
+ * - `/reset-password` — Supabase password-recovery destination; sets
+ *   a new password once the recovery session is established.
+ * - `/register` — organization self-service registration (public); also
+ *   served as `/signup`. Confirms the email by magic link and creates
+ *   an active workspace; it is not a regulatory verification.
+ * - `/start` — new shipment (human profile; identifiers generated).
  * - `/settings` — utility surface (session, theme, honest unavailable states).
  * - `/dashboard`, `/shipments`, `/shipments/:caseId`,
  *   `/shipments/:caseId/report`, `/workspace` — authenticated
@@ -54,13 +61,16 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
       <WorkflowProvider>
         <AnalysisProvider>
           <AssessmentProvider>
+            <WorkflowSessionSync />
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/session" element={<SessionPage />} />
               <Route path="/signin" element={<Navigate to="/session" replace />} />
               <Route path="/auth/callback" element={<AuthCallbackPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/signup" element={<Navigate to="/register" replace />} />
               <Route path="/start" element={<NewShipmentPage />} />
-              <Route path="/signup" element={<Navigate to="/start" replace />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route
                 path="/dashboard"

@@ -14,7 +14,7 @@ type CallbackState =
   | { kind: "working" }
   | {
       kind: "failed";
-      reason: "missing" | "invalid" | "unconfigured" | "registration";
+      reason: "missing" | "missing-profile" | "invalid" | "unconfigured" | "registration";
     };
 
 /**
@@ -73,6 +73,10 @@ export function AuthCallbackPage() {
         const pending = readPendingRegistration();
         const sessionEmail = data.session.user?.email ?? null;
         if (pending === null) {
+          if (params.get("flow") === "registration") {
+            setState({ kind: "failed", reason: "missing-profile" });
+            return;
+          }
           navigate(next, { replace: true });
           return;
         }
@@ -82,7 +86,7 @@ export function AuthCallbackPage() {
         ) {
           // Stale cache from a different account: never finalize it.
           clearPendingRegistration();
-          navigate(next, { replace: true });
+          setState({ kind: "failed", reason: "invalid" });
           return;
         }
         registerOrganization(
@@ -139,6 +143,26 @@ export function AuthCallbackPage() {
         <p>
           <Link className="primary-button" to="/register">
             Back to registration
+          </Link>{" "}
+          <Link className="secondary-button" to="/session">
+            Sign in
+          </Link>
+        </p>
+      </AppShell>
+    );
+  }
+  if (state.reason === "missing-profile") {
+    return (
+      <AppShell title="Registration details unavailable">
+        <p role="alert">
+          Your email is confirmed, but the organization details could not be
+          recovered from this browser tab. Registration details are kept only
+          for the current browser session; they may be unavailable if the link
+          opened in another tab or browser.
+        </p>
+        <p>
+          <Link className="primary-button" to="/register">
+            Restart registration
           </Link>{" "}
           <Link className="secondary-button" to="/session">
             Sign in

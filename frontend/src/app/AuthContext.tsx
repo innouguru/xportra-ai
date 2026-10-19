@@ -78,9 +78,8 @@ interface AuthState extends AuthCredentials {
     password: string,
   ) => Promise<{ ok: boolean; errorMessage: string | null }>;
   /**
-   * Sign out: clears local session state synchronously, then closes
-   * the Supabase session. Local state stays cleared even if the
-   * remote call fails.
+   * Sign out and clear session-derived state only after Supabase
+   * confirms termination. Rejects with a safe error on failure.
    */
   signOut: () => Promise<void>;
 }
@@ -118,10 +117,12 @@ export function AuthProvider({
       return undefined;
     }
     let cancelled = false;
+    let authEventVersion = 0;
+    const restoreVersion = authEventVersion;
     client.auth
       .getSession()
       .then(({ data }) => {
-        if (cancelled) {
+        if (cancelled || authEventVersion !== restoreVersion) {
           return;
         }
         setToken(data.session?.access_token ?? null);
@@ -135,6 +136,7 @@ export function AuthProvider({
       });
     const { data: subscription } = client.auth.onAuthStateChange(
       (_event, session) => {
+        authEventVersion += 1;
         setToken(session?.access_token ?? null);
         setUserEmail(session?.user?.email ?? null);
       },
@@ -187,7 +189,7 @@ export function AuthProvider({
       const { error } = await client.auth.signInWithOtp({
         email,
         options: {
-          emailRedirectTo: authCallbackUrl(),
+          emailRedirectTo: `${authCallbackUrl()}?flow=registration`,
           // Registration is the one deliberate account-creation
           // surface: the visitor has no account yet. Identity and
           // the initial role are still derived server-side.
@@ -272,14 +274,18 @@ export function AuthProvider({
   );
 
   const signOut = useCallback(async () => {
-    // Local state clears synchronously so the UI responds
-    // immediately and existing callers stay race-free.
-    clear();
+    if (client === null) {
+      clear();
+      return;
+    }
     try {
-      await client?.auth.signOut();
+      const { error } = await client.auth.signOut();
+      if (error) {
+        throw error;
+      }
+      clear();
     } catch {
-      // Local session is already cleared; a failed remote call
-      // must not resurrect it or surface credentials.
+      throw new Error("We could not sign you out. Check your connection and try again.");
     }
   }, [client, clear]);
 

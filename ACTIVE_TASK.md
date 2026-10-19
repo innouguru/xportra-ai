@@ -1,23 +1,25 @@
 # ACTIVE_TASK.md — Current Active Task
 
-## Task: organization-registration-startup (Phase 10.11)
+## Task: Production authentication and organization registration stabilization
 
-**Status:** Source correction verified; production verification blocked
-pending Render deployment.
+**Status:** Implementation and verification in progress.
 
-The `5436dc8` source tree contained API wiring for organization
-registration but omitted the persistence store, API router, and
-supporting migration 014 from the committed tree. The clean-checkout
-import failed at `xportra.persistence.organization_registration`.
-The correction restores the complete import path and its supporting
-files, with coverage for persistence atomicity, retry conflicts,
-authorization-derived identity, migration shape, and API startup.
+**Authorization:** `REQUIREMENTS.md` R-10.12 and ADR-0015, approved for this
+stabilization task.
 
-No production database migration has been run. The last recorded
-production migration state is 002–013; verify whether migration 014
-has already been applied before any operator considers applying it.
-After the source is deployed, verify Render starts the expected commit
-and serves `/health` before claiming production is fixed.
+**Scope:** Remove development-only controls from production builds while
+retaining local development behavior and backend production rejection; support
+Supabase magic-link and password sign-in; make sign-out honor remote results
+and clear session-derived UI state; repair registration callback recovery and
+safe retries using `sessionStorage`.
 
-The prior frontend sign-in deployment and end-to-end checklist remain
-documented in its task record; they are not part of this backend task.
+**Acceptance checks:** focused frontend authentication/registration/routing
+tests; frontend type check and production build; relevant backend registration
+and production-development-header tests; review tracked source and final diff.
+No production organizations or users may be created. Do not rerun migration
+014; task context reports it applied in the existing production database.
+
+**Deployment remains external:** verify Render build/start settings and deploy
+the existing frontend/backend services after source verification. Verify
+Supabase email/password provider policy and redirect allowlist before claiming
+live authentication and callback behavior.

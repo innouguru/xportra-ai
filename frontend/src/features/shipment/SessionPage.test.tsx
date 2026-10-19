@@ -25,6 +25,14 @@ function mockClient(session: unknown = null) {
       data: { subscription: { unsubscribe: vi.fn() } },
     }),
     signInWithOtp: vi.fn().mockResolvedValue({ error: null }),
+    signInWithPassword: vi.fn().mockResolvedValue({
+      data: {
+        session: { access_token: "live-token", user: { email: "owner@example.com" } },
+      },
+      error: null,
+    }),
+    resetPasswordForEmail: vi.fn().mockResolvedValue({ error: null }),
+    updateUser: vi.fn().mockResolvedValue({ error: null }),
     signOut: vi.fn().mockResolvedValue({ error: null }),
     exchangeCodeForSession: vi.fn(),
   };
@@ -48,6 +56,7 @@ function renderPage(initialPath = "/session") {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
   mockGetClient.mockReturnValue(null);
   window.localStorage.clear();
   window.sessionStorage.clear();
@@ -76,7 +85,9 @@ describe("SessionPage magic-link sign-in", () => {
       /check owner@example.com/i,
     );
     expect(auth.signInWithOtp).toHaveBeenCalledTimes(1);
-    expect(document.body.textContent).not.toMatch(/token|secret|password/i);
+    // No credential material leaks; the word "password" is legitimate
+    // copy now that the surface also offers password sign-in.
+    expect(document.body.textContent).not.toMatch(/bearer|access.?token|secret/i);
   });
 
   it("prevents duplicate submissions while sending", async () => {
@@ -149,5 +160,143 @@ describe("SessionPage magic-link sign-in", () => {
     await waitFor(() => {
       expect(screen.getByText("Start screen")).toBeInTheDocument();
     });
+  });
+
+  it("does not show workspace navigation when a stale record persists without a session", async () => {
+    mockGetClient.mockReturnValue(null);
+    sessionStorage.setItem(
+      "xportra.workflow-record.v1",
+      JSON.stringify({
+        id: "11111111-1111-1111-1111-111111111111",
+        tenant_id: "22222222-2222-2222-2222-222222222222",
+        case_id: "33333333-3333-3333-3333-333333333333",
+        shipment_id: null,
+        state: "evidence_pending",
+        rounds: [],
+        supplied_evidence_ids: [],
+        open_requirements: [],
+      }),
+    );
+    renderPage();
+    expect(await screen.findByLabelText(/email address/i)).toBeInTheDocument();
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    for (const name of ["Product", "How It Works", "For Exporters", "Resources"]) {
+      expect(primary).toHaveTextContent(name);
+    }
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Assessment" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+  });
+});
+
+describe("SessionPage development gating", () => {
+  it("hides the development tenant control outside development builds", async () => {
+    vi.stubEnv("DEV", false);
+    mockGetClient.mockReturnValue(null);
+    renderPage();
+    expect(await screen.findByLabelText(/email address/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/development tenant id/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /^connect$/i })).toBeNull();
+    // Production copy must not advertise the development mechanism.
+    expect(document.body.textContent).not.toMatch(/development/i);
+  });
+
+  it("renders the development tenant control in development builds", async () => {
+    vi.stubEnv("DEV", true);
+    mockGetClient.mockReturnValue(null);
+    renderPage();
+    expect(await screen.findByLabelText(/development tenant id/i)).toBeInTheDocument();
+  });
+});
+
+describe("SessionPage password sign-in", () => {
+  async function switchToPassword(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByLabelText(/email address/i);
+    await user.click(screen.getByRole("button", { name: /^password$/i }));
+    return screen.getByLabelText(/^password$/i);
+  }
+
+  it("signs in with email and password and continues to the workspace", async () => {
+    const user = userEvent.setup();
+    const { client, auth } = mockClient();
+    mockGetClient.mockReturnValue(client as never);
+    renderPage();
+    await switchToPassword(user);
+    await user.type(screen.getByLabelText(/email address/i), "owner@example.com");
+    await user.type(screen.getByLabelText(/^password$/i), "correct horse battery");
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
+    expect(await screen.findByText("Start screen")).toBeInTheDocument();
+    expect(auth.signInWithPassword).toHaveBeenCalledWith({
+      email: "owner@example.com",
+      password: "correct horse battery",
+    });
+  });
+
+  it("keeps password failures generic", async () => {
+    const user = userEvent.setup();
+    const { client, auth } = mockClient();
+    auth.signInWithPassword.mockResolvedValueOnce({
+      data: { session: null },
+      error: { message: "Invalid login credentials" },
+    });
+    mockGetClient.mockReturnValue(client as never);
+    renderPage();
+    await switchToPassword(user);
+    await user.type(screen.getByLabelText(/email address/i), "owner@example.com");
+    await user.type(screen.getByLabelText(/^password$/i), "wrong-password");
+    await user.click(screen.getByRole("button", { name: /^sign in$/i }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).not.toMatch(/invalid login credentials/i);
+    expect(alert).toHaveTextContent(/could not sign you in/i);
+  });
+
+  it("requests a password reset link with the recovery destination", async () => {
+    const user = userEvent.setup();
+    const { client, auth } = mockClient();
+    mockGetClient.mockReturnValue(client as never);
+    renderPage();
+    await switchToPassword(user);
+    await user.type(screen.getByLabelText(/email address/i), "owner@example.com");
+    await user.click(screen.getByRole("button", { name: /forgot password/i }));
+    expect(
+      await screen.findByText(/a password reset link is on its way/i),
+    ).toBeInTheDocument();
+    const call = auth.resetPasswordForEmail.mock.calls[0];
+    expect(call[0]).toBe("owner@example.com");
+    expect(String((call[1] as { redirectTo: string }).redirectTo)).toMatch(
+      /\/reset-password$/,
+    );
+  });
+
+  it("switches between the email-link and password methods", async () => {
+    const user = userEvent.setup();
+    mockGetClient.mockReturnValue(mockClient().client as never);
+    renderPage();
+    await screen.findByLabelText(/email address/i);
+    expect(screen.queryByLabelText(/^password$/i)).toBeNull();
+    await user.click(screen.getByRole("button", { name: /^password$/i }));
+    expect(screen.getByLabelText(/^password$/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^sign in$/i })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /email me a sign-in link/i }),
+    ).toBeNull();
+    await user.click(screen.getByRole("button", { name: /email link/i }));
+    expect(screen.queryByLabelText(/^password$/i)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /email me a sign-in link/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("toggles password visibility", async () => {
+    const user = userEvent.setup();
+    mockGetClient.mockReturnValue(mockClient().client as never);
+    renderPage();
+    await switchToPassword(user);
+    const input = screen.getByLabelText(/^password$/i);
+    expect(input).toHaveAttribute("type", "password");
+    await user.click(screen.getByRole("button", { name: /^show$/i }));
+    expect(input).toHaveAttribute("type", "text");
+    await user.click(screen.getByRole("button", { name: /^hide$/i }));
+    expect(input).toHaveAttribute("type", "password");
   });
 });

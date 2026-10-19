@@ -3,7 +3,13 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { WorkflowProvider } from "../../app/WorkflowContext";
+import { savePendingRegistration } from "../../app/pendingRegistration";
 import { AuthCallbackPage } from "./AuthCallbackPage";
+
+vi.mock("../../api/organizations", () => ({
+  registerOrganization: vi.fn().mockResolvedValue({ tenant_id: "tenant-1" }),
+}));
+import { registerOrganization } from "../../api/organizations";
 
 vi.mock("../../app/supabaseClient", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../app/supabaseClient")>();
@@ -50,6 +56,7 @@ function renderAt(path: string) {
 afterEach(() => {
   vi.clearAllMocks();
   mockGetClient.mockReturnValue(null);
+  window.sessionStorage.clear();
 });
 
 describe("AuthCallbackPage", () => {
@@ -108,5 +115,56 @@ describe("AuthCallbackPage", () => {
     renderAt("/auth/callback?code=any-code");
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/not configured/i);
+  });
+
+  it("does not treat registration authentication as completed registration when its profile is missing", async () => {
+    const { client, auth } = mockClient();
+    auth.exchangeCodeForSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: "fresh-token",
+          user: { email: "owner@example.com" },
+        },
+      },
+      error: null,
+    });
+    mockGetClient.mockReturnValue(client as never);
+    renderAt("/auth/callback?code=valid-code&flow=registration");
+    expect(await screen.findByRole("alert")).toHaveTextContent(/details could not be recovered/i);
+    expect(screen.getByRole("link", { name: /restart registration/i })).toHaveAttribute(
+      "href",
+      "/register",
+    );
+    expect(screen.queryByText("Start screen")).toBeNull();
+  });
+
+  it("recovers the same-tab profile, provisions with the callback token, and clears it on success", async () => {
+    const pending = {
+      email: "owner@example.com",
+      organizationName: "Rift Valley Produce",
+      organizationType: "exporter" as const,
+      countryCode: "KE",
+      region: null,
+      contactName: null,
+    };
+    savePendingRegistration(pending);
+    const { client, auth } = mockClient();
+    auth.exchangeCodeForSession.mockResolvedValue({
+      data: {
+        session: {
+          access_token: "fresh-token",
+          user: { email: "owner@example.com" },
+        },
+      },
+      error: null,
+    });
+    mockGetClient.mockReturnValue(client as never);
+    renderAt("/auth/callback?code=valid-code&flow=registration");
+    expect(await screen.findByText("Dashboard screen")).toBeInTheDocument();
+    expect(registerOrganization).toHaveBeenCalledWith(
+      { token: "fresh-token", devTenantId: null },
+      expect.objectContaining({ organization_name: "Rift Valley Produce" }),
+    );
+    expect(window.sessionStorage.getItem("xportra.pending-registration.v1")).toBeNull();
   });
 });

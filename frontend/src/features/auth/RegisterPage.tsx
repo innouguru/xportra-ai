@@ -4,8 +4,11 @@ import { ApiError, userFacingErrorMessage } from "../../api/client";
 import { registerOrganization } from "../../api/organizations";
 import { useAuth } from "../../app/AuthContext";
 import {
+  clearPendingRegistration,
+  readPendingRegistration,
   savePendingRegistration,
   toRegistrationInput,
+  type PendingRegistration,
 } from "../../app/pendingRegistration";
 import { AppShell } from "../../components/AppShell";
 import type { OrganizationType } from "../../types/api";
@@ -51,10 +54,47 @@ export function RegisterPage() {
   const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
+  const [recoveryProfile, setRecoveryProfile] = useState<PendingRegistration | null>(
+    () => readPendingRegistration(),
+  );
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const signedIn = auth.token !== null;
+
+  const resumeRegistration = async () => {
+    if (sending || !auth.token || recoveryProfile === null) return;
+    if (
+      auth.userEmail &&
+      auth.userEmail.toLowerCase() !== recoveryProfile.email.toLowerCase()
+    ) {
+      setError("Sign in with the email address used to start this registration.");
+      return;
+    }
+    setSending(true);
+    setError(null);
+    try {
+      await registerOrganization(
+        { token: auth.token, devTenantId: null },
+        toRegistrationInput(recoveryProfile),
+      );
+      clearPendingRegistration();
+      setRecoveryProfile(null);
+      navigate("/dashboard", { replace: true });
+    } catch (caught) {
+      if (
+        caught instanceof ApiError &&
+        caught.code === "organization_already_registered"
+      ) {
+        clearPendingRegistration();
+        navigate("/dashboard", { replace: true });
+        return;
+      }
+      setError(userFacingErrorMessage(caught));
+    } finally {
+      setSending(false);
+    }
+  };
 
   const validate = (): string | null => {
     if (!organizationName.trim()) {
@@ -109,6 +149,7 @@ export function RegisterPage() {
           }
           throw caught;
         }
+        clearPendingRegistration();
         navigate("/dashboard", { replace: true });
         return;
       }
@@ -156,6 +197,38 @@ export function RegisterPage() {
           </p>
         </section>
       ) : (
+        <>
+        {signedIn && recoveryProfile ? (
+          <section aria-label="Resume organization registration">
+            <p role="status">
+              Saved registration details for {recoveryProfile.email} are
+              available in this browser session. Resume to safely retry
+              organization creation.
+            </p>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void resumeRegistration()}
+              disabled={sending}
+            >
+              {sending ? "Creating organization…" : "Resume registration"}
+            </button>{" "}
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => {
+                clearPendingRegistration();
+                setRecoveryProfile(null);
+                setError(null);
+              }}
+              disabled={sending}
+            >
+              Cancel saved registration
+            </button>
+            {error ? <p role="alert">{error}</p> : null}
+          </section>
+        ) : null}
+        {!(signedIn && recoveryProfile) ? (
         <form className="form" onSubmit={(event) => void onSubmit(event)} noValidate>
           <fieldset>
             <legend>Organization details</legend>
@@ -279,6 +352,8 @@ export function RegisterPage() {
             </button>
           </fieldset>
         </form>
+        ) : null}
+        </>
       )}
 
       <p>

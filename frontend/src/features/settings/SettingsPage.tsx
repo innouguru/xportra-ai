@@ -1,6 +1,7 @@
 import { Link, useNavigate } from "react-router-dom";
 import { apiBaseUrl } from "../../api/client";
 import { useAuth } from "../../app/AuthContext";
+import { useSignOut } from "../../app/useSignOut";
 import { BackButton, PageHeader } from "../../primitives/layout";
 import { AuthenticatedShell } from "../../shell/AuthenticatedShell";
 import { ThemeControl } from "../../theme/theme";
@@ -27,10 +28,12 @@ import "./settings.css";
 export function SettingsPage() {
   const auth = useAuth();
   const navigate = useNavigate();
+  const signOut = useSignOut();
+  const devEnabled = import.meta.env.DEV;
 
   const method = auth.token
     ? `Signed in with Supabase${auth.userEmail ? ` as ${auth.userEmail}` : ""}`
-    : auth.devTenantId
+    : devEnabled && auth.devTenantId
       ? "Development tenant (local development only)"
       : "Not connected";
 
@@ -67,7 +70,7 @@ export function SettingsPage() {
                 <button
                   type="button"
                   className="secondary-button"
-                  onClick={() => void auth.signOut()}
+                  onClick={() => void signOut()}
                 >
                   Sign out
                 </button>

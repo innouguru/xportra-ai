@@ -1,5 +1,7 @@
 import { Link, NavLink, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { useAuth } from "../app/AuthContext";
+import { useSignOut } from "../app/useSignOut";
 import { useWorkflow } from "../app/WorkflowContext";
 import { workflowStateLabel } from "../lib/workflow";
 import { BrandMark } from "./BrandMark";
@@ -26,6 +28,11 @@ export function AppShell({ title, actions, askAction, children }: {
   const auth = useAuth();
   const { record, clear } = useWorkflow();
   const navigate = useNavigate();
+  const signOut = useSignOut();
+  const [signOutError, setSignOutError] = useState(false);
+  // Session state, not the client-held workflow record, decides
+  // whether authenticated product navigation is rendered.
+  const signedIn = auth.isConfigured;
 
   const startOver = () => {
     clear();
@@ -39,7 +46,7 @@ export function AppShell({ title, actions, askAction, children }: {
       </a>
       <header className="topbar">
         <BrandMark />
-        {record ? (
+        {signedIn && record ? (
           <>
             <nav className="primary-nav" aria-label="Primary">
               <NavLink to="/workspace" end className={({ isActive }) => (isActive ? "active" : undefined)}>
@@ -105,7 +112,7 @@ export function AppShell({ title, actions, askAction, children }: {
           </>
         )}
         <div className="session-area">
-          {record ? (
+          {signedIn && record ? (
             <span className="session-context" title={`Workflow ${record.id}`}>
               <span className="session-dot session-dot--signed-in" aria-hidden="true" />
               {record.shipment_id ? `Shipment ${record.shipment_id.slice(0, 8)}…` : "Shipment"} ·{" "}
@@ -117,13 +124,17 @@ export function AppShell({ title, actions, askAction, children }: {
               No active shipment
             </span>
           )}
-          {record && (
+          {signedIn && record && (
             <button type="button" className="ghost-button" onClick={startOver}>
               Start over
             </button>
           )}
-          {auth.isConfigured ? (
-            <button type="button" className="ghost-button" onClick={auth.clear}>
+          {signedIn ? (
+            <button
+              type="button"
+              className="ghost-button"
+              onClick={async () => setSignOutError(!(await signOut()))}
+            >
               Sign out
             </button>
           ) : (
@@ -131,6 +142,7 @@ export function AppShell({ title, actions, askAction, children }: {
               Sign in
             </Link>
           )}
+          {signOutError ? <p role="alert">We could not sign you out. Check your connection and try again.</p> : null}
         </div>
       </header>
       <main id="main" className="main">
