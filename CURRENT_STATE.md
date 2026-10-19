@@ -36,11 +36,14 @@
 > Checkpoint: backend correction commit (see Git history);
 > Render verification remains blocked.
 
-> Active task (2026-10-19): production authentication and
-> organization-registration stabilization, authorized by R-10.12 and
-> ADR-0015. Implementation is in progress. The supplied task context reports
-> migration 014 applied in the existing Supabase project; this was not
-> independently checked against production during this source task.
+> Production authentication and organization-registration stabilization
+> (R-10.12 / ADR-0015) is source-complete and pushed as
+> `60e32bf986a9630a244ed4c61d78b11f0f8ece88`. Verification: frontend 506/506,
+> frontend production build/type check passed, focused backend 73/73,
+> production bundle excludes development-auth controls, and clean tracked-tree
+> frontend build/backend import passed. Live Render and Supabase behavior is
+> not verified. Supplied task context reports migration 014 applied; no
+> production database was accessed or changed for this task.
 
 ## Status
 
