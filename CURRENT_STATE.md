@@ -51,8 +51,11 @@
 > restoration errors, separates public auth chrome from workspace chrome, and
 > guards `/start` and `/settings`. Verification: focused tests 71 passed;
 > complete frontend suite 516 passed (72 files); typecheck and production build
-> passed with a large-chunk advisory. Commit, push, and clean-checkout validation
-> remain pending. Live browser, Render, and Supabase behavior is not verified.
+> passed with a large-chunk advisory. Commit
+> `a243a818da8fa8a537a3ae8b5d4fc97d43259227` was clean-tree verified by
+> typechecking, building, and importing `xportra.api.app` from a Git archive.
+> Push verification remains pending. Live browser, Render, and Supabase
+> behavior is not verified.
 
 ## Status
 
