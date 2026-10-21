@@ -3,6 +3,12 @@
 from .auth import MemberContext
 from .errors import PermissionDeniedError
 
+#: Global staff permission, enforced separately from tenant membership.
+#: Defined once in the grant/audit service and re-exported here so the
+#: permission name has a single source of truth. Tenant roles never imply
+#: this permission.
+from xportra.application.global_staff import GRANT_MANAGE
+
 OWNER_ROLE = "owner"
 MEMBER_ROLE = "member"
 

@@ -1855,3 +1855,317 @@ class FinalAssessmentPackageRepository:
                WHERE tenant_id = %s AND workflow_id = %s""",
             (tenant.tenant_id, workflow_id),
         )
+
+
+class GlobalStaffGrantRepository:
+    """Current-state global staff permission grants (Model A).
+
+    At most one row exists per ``(user_id, permission)`` pair. Revocation
+    UPDATEs the existing row (setting ``revoked_at``/``revoked_by``); it is
+    never deleted. Re-grant reactivates the existing row. Historical grant
+    periods are preserved only in the append-only audit table.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def get(self, user_id: UUID, permission: str) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """
+            SELECT * FROM xportra.global_staff_grants
+            WHERE user_id = %s AND permission = %s
+            """,
+            (user_id, permission),
+        )
+
+    def get_active(self, user_id: UUID, permission: str) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """
+            SELECT * FROM xportra.global_staff_grants
+            WHERE user_id = %s AND permission = %s AND status = 'active'
+            """,
+            (user_id, permission),
+        )
+
+    def list_for_user(self, user_id: UUID) -> list[Row]:
+        return _fetch_all(
+            self._database,
+            """
+            SELECT * FROM xportra.global_staff_grants
+            WHERE user_id = %s
+            ORDER BY permission, created_at, id
+            """,
+            (user_id,),
+        )
+
+    def lock_in_transaction(
+        self, connection, user_id: UUID, permission: str
+    ) -> Row | None:
+        """Lock and return the current-state grant row for mutation."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT * FROM xportra.global_staff_grants
+                WHERE user_id = %s AND permission = %s
+                FOR UPDATE
+                """,
+                (user_id, permission),
+            )
+            return cursor.fetchone()
+
+    def insert_in_transaction(
+        self,
+        connection,
+        user_id: UUID,
+        permission: str,
+        granted_by: UUID,
+        reason: str | None,
+    ) -> Row:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO xportra.global_staff_grants
+                        (user_id, permission, status, granted_at, granted_by, reason)
+                    VALUES (%s, %s, 'active', now(), %s, %s)
+                    RETURNING *
+                    """,
+                    (user_id, permission, granted_by, reason),
+                )
+                return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError(
+                "global staff grant creation", cause
+            ) from cause
+
+    def exists_any_in_transaction(self, connection, permission: str) -> bool:
+        """Return whether any grant row exists for the permission."""
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT 1 FROM xportra.global_staff_grants
+                WHERE permission = %s
+                LIMIT 1
+                """,
+                (permission,),
+            )
+            return cursor.fetchone() is not None
+
+    def reactivate_in_transaction(
+        self,
+        connection,
+        user_id: UUID,
+        permission: str,
+        granted_by: UUID,
+        reason: str | None,
+    ) -> Row | None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE xportra.global_staff_grants
+                SET status = 'active',
+                    granted_at = now(),
+                    granted_by = %s,
+                    revoked_at = NULL,
+                    revoked_by = NULL,
+                    reason = %s,
+                    updated_at = now()
+                WHERE user_id = %s AND permission = %s
+                RETURNING *
+                """,
+                (granted_by, reason, user_id, permission),
+            )
+            return cursor.fetchone()
+
+    def revoke_in_transaction(
+        self,
+        connection,
+        user_id: UUID,
+        permission: str,
+        revoked_by: UUID,
+        reason: str | None,
+    ) -> Row | None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE xportra.global_staff_grants
+                SET status = 'revoked',
+                    revoked_at = now(),
+                    revoked_by = %s,
+                    reason = %s,
+                    updated_at = now()
+                WHERE user_id = %s AND permission = %s AND status = 'active'
+                RETURNING *
+                """,
+                (revoked_by, reason, user_id, permission),
+            )
+            return cursor.fetchone()
+
+
+class GlobalStaffAuthorizationRepository:
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def get_by_ref(self, authorization_ref: str) -> Row | None:
+        return _fetch_one(
+            self._database,
+            "SELECT * FROM xportra.global_staff_authorizations WHERE authorization_ref = %s",
+            (authorization_ref,),
+        )
+
+    def get_approved_unconsumed(self, target_user_id: UUID, permission: str) -> Row | None:
+        return _fetch_one(
+            self._database,
+            """
+            SELECT * FROM xportra.global_staff_authorizations
+            WHERE target_user_id = %s AND permission = %s
+              AND status = 'approved' AND (consumed_at IS NULL OR status <> 'consumed')
+            ORDER BY approved_at DESC LIMIT 1
+            """,
+            (target_user_id, permission),
+        )
+
+    def consume_in_transaction(
+        self,
+        connection,
+        authorization_id: UUID,
+        consumed_by: UUID,
+    ) -> Row | None:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE xportra.global_staff_authorizations
+                    SET status = 'consumed', consumed_at = now(), consumed_by = %s, updated_at = now()
+                    WHERE id = %s AND status = 'approved' AND consumed_at IS NULL
+                    RETURNING *
+                    """,
+                    (consumed_by, authorization_id),
+                )
+                return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError(
+                "global staff authorization consumption", cause
+            ) from cause
+
+
+class GlobalStaffAuditRepository:
+    """Append-only audit of global staff permission-management events.
+
+    Rows are inserted only; ordinary application roles cannot update or
+    delete historical records (enforced by a database trigger).
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def insert_in_transaction(
+        self,
+        connection,
+        event_type: str,
+        actor_user_id: UUID,
+        target_user_id: UUID,
+        permission: str,
+        reason: str | None,
+        authorization_ref: str | None = None,
+    ) -> Row:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO xportra.global_staff_audit
+                        (event_type, actor_user_id, target_user_id, permission, reason, authorization_ref)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    RETURNING *
+                    """,
+                    (event_type, actor_user_id, target_user_id, permission, reason, authorization_ref),
+                )
+                return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError(
+                "global staff audit creation", cause
+            ) from cause
+
+    def list_for_target(self, target_user_id: UUID) -> list[Row]:
+        return _fetch_all(
+            self._database,
+            """
+            SELECT * FROM xportra.global_staff_audit
+            WHERE target_user_id = %s
+            ORDER BY created_at, id
+            """,
+            (target_user_id,),
+        )
+
+    def count_for_target(self, target_user_id: UUID) -> int:
+        row = _fetch_one(
+            self._database,
+            """
+            SELECT COUNT(*) AS count FROM xportra.global_staff_audit
+            WHERE target_user_id = %s
+            """,
+            (target_user_id,),
+        )
+        return int(row["count"]) if row is not None else 0
+
+
+class RegulatoryIngestionJobRepository:
+    def __init__(self, database) -> None:
+        self._database = database
+
+    def create(self, artifact_id, source_id, actor_user_id=None, audit_ref=None, parser_version="v1"):
+        from .database import Database
+        return _insert(
+            self._database,
+            "regulatory ingestion job creation",
+            "INSERT INTO xportra.regulatory_ingestion_jobs (artifact_id, source_id, status, actor_user_id, audit_ref, parser_version) VALUES (%s, %s, 'pending', %s, %s, %s) RETURNING *",
+            (artifact_id, source_id, actor_user_id, audit_ref, parser_version),
+        )
+
+    def get(self, job_id):
+        return _fetch_one(self._database, "SELECT * FROM xportra.regulatory_ingestion_jobs WHERE id = %s", (job_id,))
+
+    def get_by_artifact_attempt(self, artifact_id, attempt_number):
+        return _fetch_one(self._database, "SELECT * FROM xportra.regulatory_ingestion_jobs WHERE artifact_id = %s AND attempt_number = %s", (artifact_id, attempt_number))
+
+    def list_for_artifact(self, artifact_id):
+        return _fetch_all(self._database, "SELECT * FROM xportra.regulatory_ingestion_jobs WHERE artifact_id = %s ORDER BY attempt_number, created_at", (artifact_id,))
+
+    def list_for_source(self, source_id):
+        return _fetch_all(self._database, "SELECT * FROM xportra.regulatory_ingestion_jobs WHERE source_id = %s ORDER BY created_at, id", (source_id,))
+
+    def claim(self, job_id, actor_user_id=None):
+        from psycopg.errors import IntegrityError
+        from .errors import PersistenceIntegrityError
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("UPDATE xportra.regulatory_ingestion_jobs SET status = 'claimed', started_at = now(), actor_user_id = %s WHERE id = %s AND status = 'pending' RETURNING *", (actor_user_id, job_id))
+                    return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError("regulatory ingestion job claim", cause) from cause
+
+    def complete(self, job_id, actor_user_id=None):
+        from psycopg.errors import IntegrityError
+        from .errors import PersistenceIntegrityError
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute("UPDATE xportra.regulatory_ingestion_jobs SET status = 'completed', completed_at = now(), actor_user_id = COALESCE(%s, actor_user_id) WHERE id = %s AND status IN ('claimed', 'processing', 'retryable') RETURNING *", (actor_user_id, job_id))
+                    return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError("regulatory ingestion job complete", cause) from cause
+
+    def fail(self, job_id, error_details=None, make_retryable=False, actor_user_id=None):
+        from psycopg.errors import IntegrityError
+        from .errors import PersistenceIntegrityError
+        next_status = "retryable" if make_retryable else "failed"
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(f"UPDATE xportra.regulatory_ingestion_jobs SET status = '{next_status}', completed_at = now(), error_details = %s, actor_user_id = COALESCE(%s, actor_user_id) WHERE id = %s AND status IN ('claimed', 'processing', 'pending') RETURNING *", (error_details, actor_user_id, job_id))
+                    return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError("regulatory ingestion job fail", cause) from cause

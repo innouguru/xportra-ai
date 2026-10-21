@@ -23,6 +23,7 @@ from xportra.domain.services import (
     ExporterService,
     ProductService,
 )
+from xportra.application.global_staff import GRANT_MANAGE, GlobalStaffGrantService
 from xportra.persistence.database import Database, DatabaseSettings
 from xportra.persistence.organization_registration import (
     OrganizationRegistrationStore,
@@ -59,7 +60,7 @@ from .auth import (
     TenantMembershipResolver,
 )
 from .authorization import OWNER_ROLE, authorize, require_permission
-from .errors import APIError, AuthenticationError
+from .errors import APIError, AuthenticationError, PermissionDeniedError
 from .runtime import is_production_environment
 
 
@@ -638,3 +639,46 @@ def require_permission(permission: str):
         return authorize(member, permission)
 
     return dependency
+
+
+def require_global_staff(
+    permission: str = GRANT_MANAGE,
+):
+    """Require the caller to hold an active global staff grant.
+
+    Resolves the actor from the verified authenticated identity
+    (Supabase JWT subject -> ``users.supabase_uid`` -> ``users.id``),
+    then checks an active global staff grant. Tenant membership is not
+    required and never substitutes for a global grant. Fails closed:
+    missing/invalid authentication, an inactive or unknown user, a
+    missing or revoked grant, or an unavailable grant/audit store all
+    deny the request. Returns the actor's internal user ID.
+    """
+
+    def dependency(
+        request: Request,
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> UUID:
+        services = get_services(request)
+        database = getattr(services, "database", None)
+        if database is None:
+            raise APIError(
+                503,
+                "application_not_ready",
+                "Application services are not initialized",
+            )
+        grant_service = GlobalStaffGrantService(database)
+        token = _bearer_token(authorization)
+        settings = SupabaseAuthSettings.from_environment()
+        identity = SupabaseTokenVerifier(settings).verify(token)
+        user = UserRepository(database).get_by_supabase_uid(identity.subject)
+        if user is None or user.get("status") != "active":
+            raise PermissionDeniedError()
+        if not grant_service.is_granted(user["id"], permission):
+            raise PermissionDeniedError()
+        return user["id"]
+
+    return dependency
+
+
+GlobalStaffDependency = Annotated[UUID, Depends(require_global_staff)]

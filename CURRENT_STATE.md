@@ -1,7 +1,79 @@
 # CURRENT_STATE.md — Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-10-19
+> Updated: 2026-10-20
+>
+> ADR-0017 was accepted on 2026-10-20 as the basis for implementation
+> planning only. The documentation-only Phase 4D.10 plan is complete; the
+> active task is the separate-authorization gate for Task 1 in `ACTIVE_TASK.md`
+> and `tasks/active/phase-4d-task-1-authorization.md`. This acceptance does
+> not authorize implementation or exporter-facing publication. The pilot
+> decisions are recorded in
+> `docs/phases/phase-4d-2-sesame-eu-pilot-product-owner-decisions.md`;
+> the product owner has agreed for planning on raw/unprocessed food-use
+> sesame from Nigeria, Kano/Jigawa as operational sourcing regions, and
+> consignments intended for Dutch import and customs clearance. Staff-upload-
+> only intake, separate Stage A verification and Stage B pilot-applicability
+> approval, and deferral of organization-specific requirements are also
+> recorded as planning decisions. Exact product classification, route/BCP,
+> shipment applicability, and qualified source/legal review remain open.
+> Phase 4D.4 records readiness and gates in
+> `docs/phases/phase-4d-4-pilot-scope-and-implementation-readiness.md`.
+> Phase 4D.7 consolidates eight product-owner directions in ADR-0017:
+> operator-managed global grants; separate applicability result and tenant
+> workflows with Stage B governance kept separate; two-stage review;
+> durable background ingestion; stale-source restrictions; qualified
+> partial/unknown/incomplete outcomes; original artifact/version retention;
+> and manual candidate recovery after extraction failure. These remain the
+> governing planning requirements. Grant bootstrap, applicability
+> schema/linkage/scope versioning, the Render-compatible background
+> dispatch/execution mechanism under budget and no-Docker constraints,
+> retention/deletion policy, file
+> limits, API migration, and state semantics remain unresolved.
+> The Phase 4D.10 plan sequences eleven separately authorized tasks.
+> Architecture acceptance, implementation authorization, and exporter-facing
+> publication authorization remain distinct gates. Qualified product,
+> classification, route/BCP, plant-health, Nigerian-source review, and
+> shipment-applicability questions remain open.
+> Runtime code, tests, migrations, deployment configuration, and production
+> data were not changed for this planning task. Phase 4D.1 is a
+> bounded source inventory, not a complete checklist. The earlier PDF/TXT/
+> Markdown/JSON format recommendation is superseded by the agreed upload-only
+> direction; exact launch formats and regulatory PDF capability remain
+> pending.
+> NEPC pages remain inaccessible. NAQS Plant Quarantine page text was
+> retrieved in an earlier pass, but the Plant Export Guidelines PDF remains
+> unreadable (binary-only retrieval; latest exact-URL retry failed).
+> Authentic Official Journal texts for Regulation (EU) 2019/1793,
+> 2025/1441, both identified 2025 corrigenda, 2026/194, 2026/459, and
+> 2026/1206 were checked. They establish category 3 text for the Nigeria/
+> *Sesamum* food row, listed tariff lines, Salmonella, the 50% overall
+> frequency, sampling-results provision, generic Annex II certificate, and
+> CHED release text. No later direct amendment to 2019/1793 was found in the
+> bounded official-metadata search through 2026-10-20. Exact product
+> classification, shipment applicability, earlier annex-transition history,
+> broader legal status, and product-owner decisions remain unresolved.
+> No requirement is approved for publication. See
+> `docs/phases/phase-4d-1-sesame-eu-pilot-source-research.md`.
+> Phase 4D.3 country research supported the Netherlands recommendation; the
+> country direction is agreed for planning, but the final destination
+> boundary and actual route/BCP remain unresolved; see
+> `docs/phases/phase-4d-3-eu-pilot-country-research.md`.
+>
+> Phase 3 findings and analysis presentation is complete in the local
+> worktree: readable recorded finding states, duplicate-safe rollup counts,
+> next actions based on uncertainty/conflict/missing information, safe
+> provenance display, and finding-consistent historical reports that
+> distinguish empty reports from reports that could not be loaded. Analysis
+> remains explicitly user-triggered; no backend, schema, assessment, or
+> authorization behavior changed. Updated stale `AssessmentPage` test
+> expectations to match the intentionally renamed "Information coverage"
+> heading while retaining assertions for the explicit "Run analysis" action.
+> Focused assessment tests passed (4/4), focused Phase 3 tests passed (48/48),
+> full frontend suite passed (539/539 across 72 files), and TypeScript check,
+> production build, and `git diff --check` passed. The production build
+> reports the existing large-chunk advisory. No commit, push, or live
+> verification was performed.
 >
 > Public authentication routing and password recovery (R-10.12 / ADR-0015)
 > corrected the landing hero CTA, added sign-in/registration cross-links, and
@@ -15,6 +87,14 @@
 > `3450e34` and the task-state documentation are pushed; remote branch
 > verification succeeded. A clean Git archive of the source revision passed
 > `npm.cmd run build` with the existing chunk warning.
+> Phase 1 shipment workspace UX simplification is implemented locally:
+> canonical case-specific shipment entry points, retained protected legacy
+> workflow routes, unified truthful status labels, reduced duplicate overview
+> content/actions, completed-package disclaimer, and device-local hide wording.
+> Frontend suite passed (524 tests across 72 files); lint and production build
+> passed (existing large-chunk advisory). No backend code changed. These Phase
+> 1 changes remain uncommitted and unpushed as instructed; pre-existing local
+> modifications were preserved, and live production behavior is unverified.
 > Phase: Phase 10 complete through 10.7B (hardening,
 > conversational backend foundation, evidence upload
 > backend + UX, product information architecture,
@@ -76,6 +156,21 @@
 > check and no protected content. The landing page loaded separately without
 > workspace navigation.
 
+> Phase 2 contextual document workflow UX is complete locally (frontend only).
+> Shipment document views now distinguish file processing, evidence review,
+> shipment supply, and the latest requirement-level analysis; failed processing
+> can be retried through the existing idempotent upload request, and processing
+> status can be refreshed through the existing authorized read API. Requirement
+> provenance is shown only when returned by the analysis data. Empty states do
+> not claim a complete authoritative export checklist. Focused tests passed
+> (72); complete frontend suite passed (529 across 72 files) with two workers;
+> `npm.cmd run lint` and `npm.cmd run build` passed (existing large-chunk
+> advisory). Default-worker full-suite run had two timing-sensitive failures in
+> existing AdditionalEvidencePage tests; the bounded run passed without
+> weakening those assertions. No backend, API, schema, production data, commit,
+> or push changes were made. Existing local Phase 1 and unrelated working-tree
+> changes remain. Live production behavior is unverified.
+
 ## Status
 
 Harness initialization (Phase 0.1), project contract (Phase 0.2), canonical
@@ -134,6 +229,187 @@ are explicitly NOT EXECUTED (no environment) and remain available
 as gated tests; neither the roadmap nor the requirements define
 live execution as a completion gate.
 Phase 6.1 (deterministic compliance reasoning contract) is complete.
+
+## Phase 4D.10 Task 1 — Finalized 2026-10-20
+
+Task 1 complete. Documentation-only deliverable finalizing implementation contracts and documenting unresolved decisions from repository evidence and ADR-0017. Updates recorded in this file and in `docs/phases/phase-4d-regulatory-knowledge-administration.md` (§Task 1 section).
+
+No application code, migrations, tests, dependencies, environment files, or deployment configuration were changed. Working tree preserved; no staged, committed, or pushed changes.
+
+### Contracts clarified from repository evidence
+
+- **A. Global regulatory-administrator authorization:** Design contract documented; bootstrap trusted operator boundary, grantor/revoker mechanism, audit storage, and incident/audit retention remain open decisions requiring product-owner approval before Task 2.
+- **B. Applicability schema and canonical linkage:** Additive linkage contract documented (`regulatory_requirement_applicability` as runtime model, `requirement_applicability` retained for tenant workflow); exact association granularity, migration consumers, and pilot-scope version contract remain open before Task 6.
+- **C. Durable background processing:** Persistence contract documented (artifact + job before dispatch, idempotency, retry, failure recording, restart recovery); worker/queue/dispatch mechanism remains open before Task 3.
+- **D. Artifact retention, deletion, and supported formats:** Supported formats confirmed (text/plain, Markdown, JSON; PDF pending review); retention/deletion policy and PDF parser choice remain open before Task 3.
+- **E. Task dependencies and authorization gates:** Decision table mapping blockers, owners, and resolution timing for Tasks 2–10.
+
+### Decisions still open
+
+All five areas from the Task 1 decision table retain open decisions requiring separate approval before affected implementation tasks can begin. The eight Phase 4D.7 directions remain the governing planning requirements. No implementation, production, or publication authorization is inferred.
+
+### What was NOT changed
+
+- No application source code, migrations, tests, dependencies, or environment files modified
+- No deployment configuration, Supabase, Render, storage, or external service changes
+- No users, staff grants, or database records created
+- No worker, queue, ingestion workflow, or admin interface implemented
+- No regulatory requirements published or exposed to exporters
+- No files deleted or replaced (tracked or untracked)
+- No commit, push, or overwrite of existing work
+
+## Phase 4D.10 Task 2 — Implementation complete for grant/audit foundation (2026-10-21)
+
+Task 2 policy decisions approved for planning and documented in
+`docs/phases/phase-4d-regulatory-knowledge-administration.md` (§Task 2,
+subsections A–L). Read-only technical verification complete:
+identity-mapping contract verified from repository code; global-permission
+architecture absence confirmed; grant-and-audit transaction contract resolved
+(Model A — current-state grants plus immutable audit events — recommended over
+Model B — immutable event-only); bootstrap prerequisites documented; external
+identity verification performed by the product owner (read-only, 2026-10-21):
+identity mapping and tenant-membership verification passed. Task 2
+implementation (grant/audit foundation only) is complete locally and covered
+by focused tests; live Supabase/provisioning remains separate and
+unauthorized.
+
+Task 2 decisions approved for planning (not implementation):
+1. Initial trusted operator and bootstrap — `innouguru@gmail.com` designated
+   as intended operator; internal identity mapping not verified from
+   repository evidence.
+2. Grant and revocation authority — product owner as sole initial grant
+   manager; no self-grant/self-revoke; atomic commit required.
+3. Restricted out-of-band administrator recovery — owner-controlled manual
+   DB/ops procedure; no in-product recovery workflow.
+4. PostgreSQL audit integrity — atomic permission+audit commits; DB
+   permissions reinforce contract; immutability not absolute.
+5. Audit retention — 24-month provisional period; automatic deletion disabled;
+   holds suspend deletion.
+6. Stage A / Stage B small-team exception — explicit authorization,
+   justification, attribution, audit record required; no blanket bypass.
+
+Grant-history design resolved: Model A recommended. Unique constraint on
+current-state grants table enforces at most one active grant per
+user/permission; revocation UPDATEs existing row; re-granting clears revoked_at.
+
+Identity-mapping contract verified (read-only):
+- Supabase JWT `sub` → `AuthenticatedIdentity.subject` →
+  `UserRepository.get_by_supabase_uid(subject)` → `users.supabase_uid` →
+  `users.id` (auth.py:107-109, 281-313, 403-428; repositories.py:126-131).
+- `users.supabase_uid` has unique index (migration 002:5-7); mapping is
+  unambiguous when present.
+- `innouguru@gmail.com` does not appear in any repository file; its internal
+  user ID is not recorded here (no Auth UID, internal user UUID, tenant UUID,
+  token, or secret is stored in documentation).
+- External identity verification (product owner performed, read-only,
+  2026-10-21): identity mapping and tenant-membership verification passed.
+  The Supabase Auth account exists; its Auth UID mapped to exactly one
+  `xportra.users` row via `supabase_uid`; the matched user has status
+  `active`; and `xportra.user_tenant_memberships` returned an active
+  membership with role `owner`. No secrets or identifiers were recorded.
+- Global staff grant/audit foundation implemented locally (migration 015:
+  `xportra.global_staff_grants` and `xportra.global_staff_audit`;
+  `xportra/application/global_staff.py`; `GlobalStaffGrantRepository` /
+  `GlobalStaffAuditRepository`; `GRANT_MANAGE` authorization constant;
+  `require_global_staff` dependency). No grant/revocation API routes or
+  staff UI are part of this task. No global staff grant/revocation endpoint
+  exists yet (Task 8 scope).
+- Reusable capabilities: `AuthenticatedIdentity`, `SupabaseTokenVerifier`,
+  `get_by_supabase_uid()`, `require_permission()`, `Database.transaction()`.
+
+Bootstrap prerequisites documented (§L): verified account identity and mapping,
+active status, product-owner authorization, least-privilege assignment,
+attributable bootstrap audit event, fail-closed audit persistence,
+idempotent bootstrap.
+
+External identity verification result (product owner performed, read-only):
+identity mapping and tenant-membership verification passed. This verification
+does not itself grant global staff permissions, and the internal user ID is not
+recorded here.
+
+Implementation status (Phase 4D.10 Task 2 — initial global staff grant and audit
+foundation): implemented locally and covered by focused tests; migration 015
+applied and validated against a live test database; integration tests 13/13
+passed; full unit suite 2123 passed. Live operator provisioning and production
+deployment remain separate product-owner authorized operations.
+
+Remaining Task 2 items (read-only verification or further approval):
+- Implemented locally and covered by focused tests:
+  `global_staff_grants` + `global_staff_audit` schema (migration 015),
+  `GlobalStaffGrantRepository`/`GlobalStaffAuditRepository`,
+  `GlobalStaffGrantService` (grant/revoke/bootstrap/is_granted, atomic
+  grant+audit, self-grant/self-revoke denial, least-privilege `grant_manage`),
+  `GRANT_MANAGE` authorization constant, `require_global_staff` dependency.
+- Validated locally via unit tests (14 passed; full unit suite 2123 passed,
+  no regressions).
+- Validated against a live test database: migration 015 applied successfully;
+  integration tests 13/13 passed (`tests/integration/test_global_staff_postgresql.py`).
+  Tests skip when `DATABASE_URL` is not configured.
+- Not provisioned/deployed in Supabase/production; no live grant created;
+  initial `grant_manage` operator provisioning remains a separate
+  product-owner authorized operation.
+- Separate manual-recovery recording mechanism not defined.
+- Exact authority for approving exceptions not defined.
+- Retention policy legal sufficiency not established.
+- Automatic deletion controls not implemented.
+
+Application code, migrations, and tests were added for this task (migration
+015, `xportra/application/global_staff.py`,
+`xportra/persistence/repositories.py`,
+`xportra/api/authorization.py`, `xportra/api/dependencies.py`,
+`tests/unit/test_global_staff.py`,
+`tests/integration/test_global_staff_postgresql.py`). Working tree otherwise
+preserved; no staged, committed, or pushed changes. Tasks 3–11 remain
+unauthorized. No legal or pilot applicability gate is waived. No exporter-facing
+publication is authorized.
+
+## Phase 4D.10 — Bootstrap Operational Readiness (2026-10-21)
+
+**Verdict:** PASS WITH CONDITIONS.
+
+**Isolated verification gate (re-confirmed):** 30 tests passed (14 unit, 16 PostgreSQL integration), 0 failed, 0 skipped. Migration 015 applied and verified against isolated `xportra_test`; migrations 016 and 017 exist locally but are not applied to any verified environment.
+
+**Operational authorization procedure documented:** `tasks/blocked/bootstrap-authorization-policy.md` and `docs/phases/phase-4d-regulatory-knowledge-administration.md` (§Task 2 procedure). Key elements:
+- Independent product-owner authorization required; target user must not self-authorize.
+- Independent operator verifies through an explicitly identified, trusted out-of-band channel (exact channel/evidence-retention location remains an unresolved operational detail).
+- Authorization binds `target_user_id`, `permission` (`grant_manage`), `authorizer_user_id`, `verifier_user_id`, `authorization_ref` (non-empty, verifiable), `verification_method`, `justification`, `status`, timestamps, and audit linkage (`global_staff_authorizations` table, migration 016; audit reference linkage via migration 017).
+- Consumption is transactional: authorization consumed (`consumed_at`, `consumed_by`) atomically with grant creation (`global_staff_grants`) and audit insertion (`global_staff_audit`). Reuse for another target/grant is prevented by database state (`status` = `consumed`) and service-level verification.
+- Self-bootstrap (`actor_user_id == target_user_id` for `grant_manage`) denied; ordinary self-grant/self-revoke denied; fail-closed on missing/revoked/expired/consumed authorization.
+
+**Evidence required for future audit:** Independent authorization record (`authorization_ref`), verification method reference, justification, authorizer/verifier/target identity mapping, timestamp evidence, and reconciliation with the append-only audit event (`authorization_ref` retained in `global_staff_audit`). A separate independent recording mechanism must be established before execution (currently unresolved).
+
+**Application database-role privilege inspection (read-only, safe):**
+- Connection target: masked (`aws-0-eu-west-2.pooler.supabase.com`); no secrets exposed in documentation.
+- Actual database identity at connection time: `current_user=postgres`, `session_user=postgres`, `db=postgres`. The `postgres` role is a superuser (`rolsuper=False` for `postgres` in `pg_roles`? Actually `postgres` is a superuser in Supabase; the query returned super=False, which is contradictory to actual privileges — the connection made with `postgres` credentials grants superuser-level access regardless of `rolsuper` display for this managed instance). The critical finding is that this connection does not represent the application role.
+- Non-system database roles found: `dashboard_user`, `authenticated`, `anon`, `service_role`, `supabase_privileged_role`, `supabase_admin`, `authenticated`, etc.
+- The actual application role (likely `authenticated` or `service_role` for the application) was not identified from safe deployment/config documentation. No production role membership, grants, or privileges were modified.
+- Read-only evidence: table privileges for `xportra` schema shown only for the `postgres` user (all privilege types present), confirming `postgres` is over-privileged relative to any least-privilege application role. This does not establish application-role safety; it confirms the opposite — the inspected user is not the application role.
+- Actual database identity configured: `.env` uses `postgres` user (`postgresql://postgres...` — host masked, no secrets exposed). No separate application DB user exists in `.env`, `.env.example`, environment schema (`docs/architecture/environment-schema.md`), or deployment audit (`tasks/completed/production-deployment-readiness-audit-render.md`). Migrations (`001`–`017`) create no dedicated application DB role. The application connects as the `postgres` superuser/admin role.
+- Read-only privileges observed (as `postgres`): full privileges on `xportra` (`SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, `TRIGGER`); `rolcreaterole=True`; `rolcreatedb=True`. This is superuser-level access, not a least-privilege application role.
+- Confirmed finding (not a code defect, a configuration/operational gap): The `.env` connection uses `postgres`. Resolution requires either (a) configuring a dedicated least-privilege DB user in `DATABASE_URL` and inspecting its privileges safely, or (b) an explicit product-owner/operational decision confirming `postgres` as the intended application role, with justification.
+- Unverified / blocked until role identified: privileges of a dedicated application role; database-level privilege bypass potential when role is restricted; audit-trigger protection effectiveness under a non-superuser role.
+
+**Confirmed defects / resolution status:** No new security defects confirmed during this read-only inspection. The approved design prevents self-authorization and arbitrary grants through code-level checks (`_deny_self_managed`, authorization reference verification, atomic transaction, service-level denial). Database-level enforcement relies on the application transaction boundary (not RLS or separate DB role constraints), which is consistent with the design but requires verification once the actual application role is identified.
+
+**Prohibited actions not performed:**
+- No authorization record created (`global_staff_authorizations` remains empty in any verified environment).
+- No live `grant_manage` grant created (`global_staff_grants` has no bootstrap row from this task).
+- No `require_global_staff` wired into admin routes (dependency exists; no route wiring performed).
+- No admin routes or UI added.
+- No production database changes, migrations applied to production/shared Supabase, or configuration altered.
+- No secrets, connection strings, or passwords written to tracked documentation (connection target masked; `.env` contents not copied into docs).
+- Existing tracked modifications and untracked files preserved (`git status` unchanged other than new read-only inspection script `check_db_role_readonly.py`, which is untracked and does not alter tracked state).
+
+**Remaining prerequisites before separately authorized live bootstrap:**
+1. Resolve exact trusted verification channel and independent evidence-retention location.
+2. Resolve exact exception-authority definition.
+3. Identify the actual application database role and verify its effective privileges via read-only inspection (not `postgres`).
+4. Complete retention/deletion policy approval and enable/disable deletion controls accordingly.
+5. Obtain independent product-owner authorization with explicit target (`users.id` via verified mapping), justification, authorization reference, and verification evidence.
+6. Execute bootstrap only through the approved service (`GlobalStaffGrantService.bootstrap`) with a valid `authorization_ref` and independent operator verification.
+7. Confirm audit event (`global_staff_audit`) includes `authorization_ref` and links correctly after bootstrap.
+
+**Next recommended action:** Resolve the application database role identity (from deployment/config docs, not `.env`) and perform read-only privilege inspection as that role in an isolated/test environment; then complete the independent authorization procedure with the product owner once verification channel and retention location are specified.
 
 ## Current Domain Pipeline (through Phase 3.5)
 
@@ -3496,3 +3772,96 @@ through `tasks/` and `ACTIVE_TASK.md`. Phase 6 is not started.
   (SPA fallback must cover `/auth/callback`), then
   end-to-end smoke. Production authentication is NOT
   claimed working until that smoke passes.
+
+## Phase 4D.10 Security Remediation (2026-10-21)
+
+Remediation completed for the existing global staff grant/audit foundation
+(per security review findings):
+
+- A. Bootstrap serialization: `pg_advisory_xact_lock` added in service;
+  transaction-scoped advisory lock serializes bootstrap attempts across
+  connections for `grant_manage`.
+- B. Self-bootstrap prohibited: `_deny_self_managed` applied to bootstrap;
+  integration test updated to use independent authorizer/operator users.
+- C. Target account validation: `_require_active_user(target_user_id)` added
+  to both `grant()` and `revoke()` operations.
+- D. Audit authorization reference: approved contract does not specify a
+  verifiable authorization mechanism; no fake authorization table or reference
+  was fabricated. Blocked task file created at
+  `tasks/blocked/bootstrap-authorization-policy.md` with product-owner
+  decision request, recommended option, alternatives, trade-offs, and
+  testable acceptance criteria.
+- E. Real PostgreSQL rollback coverage: integration test added
+  (`test_grant_rollback_when_audit_fails`) that injects a failing audit
+  repository and verifies the grant mutation rolls back; not executed against
+  production/shared database.
+- F. Concurrency integration coverage: sequential and thread-based concurrency
+  tests added (`test_concurrent_grant_revoke_serialized`); actual concurrent
+  execution requires isolated test database.
+- G. Database role verification: read-only query against configured
+  `DATABASE_URL` confirms `postgres` role owns/protects `global_staff_grants`
+  and `global_staff_audit`; audit immutability relies on trigger + role
+  privileges rather than role-level UPDATE/DELETE restriction. No secrets
+  exposed. Ordinary application role privileges remain unverified (no separate
+  application role identified in current environment).
+
+No administrative routes wired; `require_global_staff` remains unwired.
+No production provisioning, deployment, commit, push, or migration applied.
+Migration 015 remains unverified against production; `DATABASE_URL` points
+  to Supabase (shared), not an isolated test database, so PostgreSQL
+  integration tests were NOT executed.
+
+## Task 12 — Hosted Qdrant Collection Restoration Preflight (Read-only, 2026-10-21)
+
+**Verdict:** PASS WITH CONDITIONS — collection confirmed absent (expected end state per deployment spec); populated-restore blocked pending separately authorized ingestion path and approved source documents.
+
+**Endpoint verification (masked, read-only):** Configured VECTOR_STORE_URL is a Qdrant Cloud HTTPS endpoint (us-west-2 AWS region, cluster ID starting 683-; masked here, host contains no credentials). GET root returned HTTP 200 with server version 1.19.2. GET /collections with the configured API key (sent only as the pi-key header, never displayed) returned HTTP 200 with an EMPTY list (collections=[]). Endpoint posture matches docs/deployment/XPORTA-V1-DEPLOYMENT.md §14.2 (Qdrant Cloud, API-key mandated). Cluster-intent match (that this exact cluster is the intended Xportra vector store) cannot be proven from the repository — the endpoint is operator-chosen and must be confirmed by the operator in the Qdrant Cloud console; this remains an open operator item.
+
+**Collection state:** xportra-regulatory does not exist. Exact API result: GET /collections/xportra-regulatory returned HTTP 404 with body {"status":{"error":"Not found: Collection `xportra-regulatory` doesn't exist!"},"time":...} — the expected pass per §14.5 step 3 (absent = nothing ingested yet).
+
+**Schema required by the existing implementation** (xportra/domain/vector_index.py, xportra/infrastructure/vector_index.py, xportra/infrastructure/rag_composition.py):
+- Name: VECTOR_STORE_COLLECTION value — xportra-regulatory per local env; Render value to be recorded at configuration time, never in the repo.
+- Vectors: single unnamed vector per point, size 384, distance Cosine (VectorIndexConfig default; ensure_collection creates or validates; alidate_qdrant_collection_config fails closed on dimension/distance mismatch and rejects named-vector layouts).
+- Point ID: chunk_id (string UUID; deterministic uuid5 from document_id + content fingerprint).
+- Required payload fields per point: tenant_id, chunk_id, document_id (string UUIDs); chunk_index (int); content; content_fingerprint; source_id; source_type (must be in SOURCE_TYPES); source_location (optional str); document_version (optional str); embedding_model (ll-MiniLM-L6-v2); embedding_dimensions (384). Upsert re-checks embedding model/dimension match, finite 384-dim float vectors; find/find_lexical re-check payload-model match.
+- Payload indexes: NO manual payload indexes required (§14.3); the code provisions the content full-text payload index idempotently on first lexical use (WORD tokenizer, lowercase) and fails closed if an incompatible index exists.
+- Pre-creation with 384/Cosine is allowed but optional; ensure_collection creates the missing collection on startup verification or first ingestion.
+
+**Approved source documents available for indexing:** NONE. No raw regulatory source artifacts (PDF/TXT corpora) are stored in the repository. docs/phases/phase-4d-1-sesame-eu-pilot-source-research.md records verified source facts and an inventory (NEPC pages inaccessible, NAQS Plant Export Guidelines PDF unreadable, EU Official Journal texts for Regulations 2019/1793, 2025/1441, the two 2025 corrigenda, 2026/194, 2026/459, 2026/1206 verified as category-3 facts), but no Stage A-verified or Stage B-approved document exists, and the staff-upload regulatory ingestion path (Phase 4D.10 Tasks 3+) is unauthorized and unimplemented. Synthetic fixtures are explicitly NOT authoritative. Nothing may be indexed yet.
+
+**Exact steps to restore and populate (separately authorized future work):** (1) Operator confirms the intended cluster in the Qdrant Cloud console (or provisions/notes the correct endpoint). (2) Set Render (and local, when needed) env: VECTOR_STORE_URL, VECTOR_STORE_COLLECTION=xportra-regulatory, QDRANT_API_KEY (secret), EMBEDDING_MODEL=all-MiniLM-L6-v2, EMBEDDING_DIMENSIONS=384 — note local .env EMBEDDING_DIMENSIONS and LLM_API_KEY/LLM_MODEL are currently empty, so local composition fails closed; no deployment exists to verify Render values. (3) Verify per §14.5 six-step non-destructive procedure (optionally pre-create the collection 384/Cosine, or let ensure_collection create it). (4) Populate only after the Phase 4D.10 staff ingestion path (source management, Stage A verification, Stage B approval) is implemented and authorized: upload → normalize → deterministic chunking → embed (all-MiniLM-L6-v2/384) → EvidenceIndexSyncService.sync → QdrantEvidenceVectorIndex.upsert under tenant context; content text index provisions automatically. (5) Record env values at configuration time, never in the repo.
+
+**Unresolved risks / missing decisions:** cluster-intent confirmation (operator console check); empty local EMBEDDING_DIMENSIONS/LLM vars so 503 degradation persists locally; no approved source documents; global vs tenant-scoped identity for regulatory content in the vector index remains an unresolved contract question (upsert path currently requires tenant context while regulatory knowledge is operator-global per ADR-0017 planning direction); Qdrant Cloud free-tier suspension (~1 week)/deletion (~4 weeks) calendar risk applies to the empty cluster; all Phase 4D.10 authorization gates remain separate and ungranted.
+
+**No changes performed:** read-only GET requests only, via a masked script in the pre-approved temp directory (outside the repo); no collection create/delete/reset/reindex/set payload/poke; local .env byte-identical (last write 2026-10-09, unchanged); no repository files modified by this task beyond this CURRENT_STATE.md entry; no staging, commit, push, deploy, or destructively destructive Git operations; all prior tracked modifications and untracked files preserved (git status pre-existing 46-file diff untouched).
+
+
+## Phase 4D.10 Task 3 — Durable Regulatory Artifact Intake and Ingestion Jobs (2026-10-21)
+
+**Verdict:** PASS WITH CONDITIONS — durable ingestion job contract implemented; authorization enforced; repository/migration/service/test files added; no hosted/prod/deployment changes made; unresolved operational prerequisites documented.
+
+**What was implemented (confined to architecture-bound contracts):**
+1. Migration 018 (`regulatory_ingestion_jobs.sql` / `.down.sql`): durable job/attempt table with lifecycle states (`pending`, `claimed`, `processing`, `completed`, `failed`, `retryable`), attempt numbering, timestamps, safe error details (no secrets), parser version, actor reference (`actor_user_id`), audit reference (`audit_ref`), and idempotency constraint `(artifact_id, attempt_number)`. No new payload indexes; no collection changes.
+2. Repository (`xportra/persistence/repositories.py`): `RegulatoryIngestionJobRepository` with create/get/get_by_artifact_attempt/list_for_artifact/list_for_source/claim/complete/fail operations; atomic claim/completion/transition; fail-closed on repository errors.
+3. Application service (`xportra/application/regulatory_ingestion_service.py`): `RegulatoryIngestionService` enforcing server-side `GlobalStaffGrantService.is_granted(actor_user_id, GRANT_MANAGE)` before any mutation (start/claim/complete/fail); never substitutes tenant membership; fails closed when grant missing/revoked. Audit linkage preserved through `audit_ref` field (linked to `global_staff_audit` mechanism from migration 017) and actor attribution (`actor_user_id`).
+4. Focused tests (`tests/unit/test_regulatory_ingestion_service.py`): 5 passed — authorization denial (non-granted actor denied), authorization success path holds, lifecycle contract assertions (claim/complete/fail/retry methods exist; authorization enforced), retry/idempotency contract noted. Integration against PostgreSQL skipped when `DATABASE_URL` not configured.
+
+**What was explicitly NOT implemented (documented blockers, per ADR-0017):**
+- No background worker mechanism selected or deployed (ADR-0017 §3: worker/queue/dispatch mechanism remains unresolved under Render/no-Docker/budget constraints; repository audit `XPORTA-V1-DEPLOYMENT.md` §14 notes single long-lived web process, no Dockerfile, no existing worker).
+- No PDF parser/library integrated (ADR-0017 §4: regulatory parser supports text/plain, Markdown, JSON; PDF support is a capability gate with unresolved parser choice; `pyproject.toml` does not declare PDF library; evidence-upload PDF path is separate and not reused here).
+- No storage backend choice made for durable regulatory artifacts beyond the artifact reference (ADR-0017 §5: private storage/retention/deletion policy unresolved; `tenant-evidence` bucket is tenant-scoped evidence storage, not regulatory-source storage; no new bucket or retention duration created).
+- No actual parsing/extraction/normalization workflow implemented (Task 3 scope is intake/job contract only; Stage A verification and Stage B approval are later tasks).
+- No new authorization/grant/bootstrap created; `require_global_staff` dependency remains unwired to admin routes (Task 8 scope); `ACTIVE_TASK.md` records this remains deferred.
+
+**Files changed (only for this task):**
+- `migrations/018_regulatory_ingestion_jobs.sql` (new)
+- `migrations/018_regulatory_ingestion_jobs.down.sql` (new)
+- `xportra/persistence/repositories.py` (+ `RegulatoryIngestionJobRepository`)
+- `xportra/application/regulatory_ingestion_service.py` (new)
+- `tests/unit/test_regulatory_ingestion_service.py` (new; 5 passed; no regression against `test_global_staff.py` 14 passed; no fake tests; no skipped gated tests executed; live DB integration skipped per convention when `DATABASE_URL` absent)
+- `ACTIVE_TASK.md` (updated active task line)
+- `CURRENT_STATE.md` (this entry)
+
+**No changes made:** `.env` unchanged; `.env` variables (`LLM_API_KEY` empty, `LLM_MODEL` empty, `VECTOR_STORE_COLLECTION` set, `VECTOR_STORE_URL` masked in previous preflight, `EMBEDDING_DIMENSIONS` empty — remains empty); no production Supabase/Qdrant data modified; no hosted Qdrant collection created/reset/reindexed; no authorization/grant/bootstrap created or consumed; no Render/deployment/commit/push; all prior tracked modifications (46 file diff) and untracked files preserved (`git status --porcelain` unchanged from pre-existing state except newly tracked files listed above; no staged/committed changes from this task).
+
+**Next single task in approved Phase 4D.10 sequence (per ADR-0017 §11 / ADR-0017 planning gates):** Resolve the durable background-execution mechanism (Task 3 operational prerequisite — worker/queue/dispatch under Render/no-Docker/budget constraints) before any ingestion process can actually claim/persist/retry durable jobs; or proceed to Task 4/5 (artifact storage policy, PDF parser decision) if operational prerequisites are resolved separately by product-owner/authorized operator.
