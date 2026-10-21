@@ -87,7 +87,37 @@ def create_app(services: ApplicationServices | None = None) -> FastAPI:
             services if services is not None
             else ApplicationServices.from_environment_with_capabilities()
         )
+        # Task 3B: durable ingestion worker (optional, fail-closed).
+        # Uses PostgreSQL-backed polling within the existing process
+        # (no new paid service, no Docker). Requires a configured
+        # service identity with an active GRANT_MANAGE grant; skips
+        # safely if authorization or configuration is missing.
+        try:
+            from xportra.application.regulatory_ingestion_worker import (
+                RegulatoryIngestionWorker,
+            )
+            from xportra.persistence.database import Database
+            db_for_worker = getattr(application.state.services, "database", None)
+            if db_for_worker is not None:
+                worker = RegulatoryIngestionWorker(db_for_worker)
+                if worker._is_authorized():
+                    worker.start()
+                    application.state.regulatory_ingestion_worker = worker
+                else:
+                    application.state.regulatory_ingestion_worker = None
+            else:
+                application.state.regulatory_ingestion_worker = None
+        except Exception:  # noqa: BLE001
+            # Worker initialization must never block core routes.
+            application.state.regulatory_ingestion_worker = None
         yield
+        # Graceful shutdown.
+        worker = getattr(application.state, "regulatory_ingestion_worker", None)
+        if worker is not None:
+            try:
+                worker.stop()
+            except Exception:  # noqa: BLE001
+                pass
 
     application = FastAPI(
         title="Xportra AI API",
