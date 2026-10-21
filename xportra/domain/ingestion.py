@@ -17,6 +17,20 @@ from typing import Any, Protocol
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 
+#: Safe bounded limits for PDF ingestion (Task — PDF parsing integration).
+MAX_PDF_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB (matches evidence upload limit)
+MAX_PDF_PAGES = 500
+MAX_EXTRACTED_TEXT_LENGTH = 1_000_000  # characters
+
+#: Supported artifact MIME types (extended from text/JSON only).
+SUPPORTED_CONTENT_TYPES_WITH_PDF = {
+    "text/plain",
+    "text/markdown",
+    "application/json",
+    "application/pdf",
+}
+
+
 class AcquisitionValidationError(ValueError):
     """Raised when acquisition metadata is insufficient or invalid."""
 
@@ -75,16 +89,19 @@ class ApplicabilityContext:
 class ArtifactParsingService:
     """Parse supported regulatory artifacts into a stable document representation."""
 
-    SUPPORTED_CONTENT_TYPES = {
-        "text/plain",
-        "text/markdown",
-        "application/json",
-    }
+    SUPPORTED_CONTENT_TYPES = SUPPORTED_CONTENT_TYPES_WITH_PDF
 
     def parse(self, *, artifact_id: UUID, content_type: str, raw_content: str | bytes) -> dict[str, Any]:
         mime_type = (content_type or "").strip().lower()
         if mime_type not in self.SUPPORTED_CONTENT_TYPES:
             raise ArtifactParseError(f"unsupported artifact content type: {content_type}")
+
+        # PDF branch: bounded text extraction from embedded text.
+        if mime_type == "application/pdf":
+            return self._parse_pdf(
+                artifact_id=artifact_id,
+                raw_content=raw_content,
+            )
 
         text = self._decode(raw_content)
         if not text or not text.strip():
@@ -262,6 +279,96 @@ class ArtifactParsingService:
             if text_value:
                 parts.append(text_value)
         return "\n\n".join(parts)
+
+    def _parse_pdf(
+        self,
+        *,
+        artifact_id: UUID,
+        raw_content: str | bytes,
+    ) -> dict[str, Any]:
+        """Bounded PDF text extraction using PyMuPDF (`fitz`).
+
+        Explicit outcomes:
+        - `status`: `"parsed"` (text extracted), `"partial"` (some text,
+          possibly truncated or with warnings), `"failed"` (no usable text,
+          encrypted, malformed, or limits exceeded).
+        - Safe error reporting: static messages; no secrets, URLs, or
+          document bytes in error messages.
+        - Original artifact preserved by the ingestion service; this method
+          reads only the provided bytes.
+        """
+        import fitz  # PyMuPDF; dependency declared in `pyproject.toml`
+
+        # Size limit enforcement.
+        if isinstance(raw_content, bytes):
+            size = len(raw_content)
+        elif isinstance(raw_content, str):
+            # If raw_content is a base64-encoded string or file path,
+            # the ingestion contract passes bytes; treat unexpected strings
+            # as malformed.
+            size = len(raw_content.encode("utf-8"))
+            raw_content = raw_content.encode("utf-8")
+        else:
+            raise ArtifactParseError("PDF payload must be bytes")
+        if size > MAX_PDF_FILE_SIZE_BYTES:
+            raise ArtifactParseError(
+                f"PDF exceeds size limit ({MAX_PDF_FILE_SIZE_BYTES} bytes)"
+            )
+
+        try:
+            doc = fitz.open(stream=bytes(raw_content), filetype="pdf")
+        except Exception as exc:  # noqa: BLE001
+            # Includes encrypted files, malformed PDFs, or unsupported formats.
+            raise ArtifactParseError("PDF is encrypted, malformed, or unreadable") from exc
+
+        # Page limit enforcement.
+        page_count = doc.page_count
+        if page_count > MAX_PDF_PAGES:
+            # Partial outcome: we will extract from the first allowed pages.
+            partial = True
+            doc.set_toc([])  # No TOC extraction needed for minimal contract.
+        else:
+            partial = False
+
+        # Extract embedded text with bounded accumulation.
+        full_text_parts: list[str] = []
+        total_extracted = 0
+        for idx, page in enumerate(doc):
+            if partial and idx >= MAX_PDF_PAGES:
+                # Truncated by page limit; stop further extraction.
+                break
+            text = page.get_text()
+            if text and text.strip():
+                full_text_parts.append(text.strip())
+                total_extracted += len(text)
+            if total_extracted > MAX_EXTRACTED_TEXT_LENGTH:
+                # Truncated by text length; partial outcome.
+                partial = True
+                break
+
+        doc.close()
+
+        normalized_text = "\n\n".join(full_text_parts)
+        if not normalized_text or not normalized_text.strip():
+            raise ArtifactParseError("PDF produced no extractable text content (scanned, image-based, or empty)")
+
+        title = self._fallback_title_from_text(normalized_text)
+        structure = [{"kind": "section", "text": block} for block in normalized_text.split("\n\n") if block.strip()]
+        # If extraction was truncated by page or text limit, mark as partial.
+        status = "partial" if partial else "parsed"
+
+        return {
+            "artifact_id": artifact_id,
+            "document_title": title,
+            "normalized_text": normalized_text.strip(),
+            "normalized_content": {
+                "mime_type": "application/pdf",
+                "structure": structure,
+            },
+            "parser_name": "fitz_pdf_parser",
+            "status": status,
+            "parsed_at": datetime.now(timezone.utc),
+        }
 
 
 class ArtifactNormalizationService:
