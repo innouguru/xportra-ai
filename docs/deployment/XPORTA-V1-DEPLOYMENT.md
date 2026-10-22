@@ -546,3 +546,17 @@ Record all six results (commands + status codes/bodies, secrets
 redacted) before closing this task. Expected end state: steps 1–2
 pass, step 3 returns 404, steps 4–5 pass vacuously, step 6 passes —
 Qdrant reachable, correct, and EMPTY.
+
+## 15. Current engineering readiness status (2026-10-22 update)
+
+- Migration 029 provenance: UNVERIFIED (`??` untracked; commit `7a65e120b...` message/content mismatch; ADR-0019 documents technical consistency and provenance gap). Blocked from production application until provenance or separately authorized reconstruction/review resolves the gap.
+- Migration 029 technical consistency: SATISFACTORY (schema/repositories/services/tests verified statically; rollback coherent; no dependency conflicts).
+- `xportra_app` least-privilege DB role: DOCUMENTED (`docs/deployment/bootstrap-authorization-db-role.md`); NOT PROVISIONED; `.env` uses `postgres` superuser.
+- Migration 028 (`global_staff_grants` + audit): VERIFIED (migration 015-017 applied locally; tests pass; authorization mechanism complete; no live bootstrap/grant executed).
+- Migration 015-028: VERIFIED in repository; 029: UNVERIFIED provenance.
+- Health endpoint (`GET /health`): VERIFIED by inspection/code; safe for platform probes.
+- Backend startup validation (`runtime.py`, `app.py`): VERIFIED (`APP_ENV`, `APP_DEBUG`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, CORS); production docs disabled; security headers present.
+- Frontend production build: VERIFIED (`npm run build` succeeds; existing chunk-size advisory preserved).
+- Live services/staging/deployment smoke: NOT VERIFIED; staging BLOCKED (`docs/deployment/XPORTA-V1-STAGING.md`); no authorized smoke performed.
+- Evidence retention mechanism: UNRESOLVED (documented in `docs/phases/phase-4d-10-authorization-evidence-procedure.md` and `docs/phases/regulatory-artifact-retention-policy.md`).
+- Pre-existing test failures: DOCUMENTED (Stage A fixture `dsn` fixed by `3070d4d`; ingestion audit/flaky remains; 029 provenance unverified; no new failures introduced by this update).
