@@ -91,6 +91,9 @@ class _FakeCursor:
             "created_at": None,
         }
 
+    def fetchall(self):
+        return [self.fetchone()]
+
 
 class FakeGrantService:
     def __init__(self, granted: dict[UUID, str] | None = None) -> None:
@@ -582,3 +585,20 @@ class RegulatoryStageAReviewTests(TestCase):
                 stage_a_status=STAGE_A_STATUS_VERIFIED,
                 rationale="Test rationale.",
             )
+
+    def test_regression_fetchall_and_audit_history_preserved(self):
+        """Regression: _FakeCursor.fetchall() must exist so that
+        RegulatoryReviewFlagRepository.list_pending_for_source
+        and list_stage_a_decisions work with the fixture.
+        This verifies the audit/history boundary without a live DB."""
+        factory = ServiceFactory()
+        service = factory.service()
+        service.verify_stage_a(
+            actor_user_id=ACTOR,
+            candidate_id=CANDIDATE,
+            stage_a_status=STAGE_A_STATUS_VERIFIED,
+            rationale="Regression verification.",
+        )
+        history = service.list_stage_a_decisions(CANDIDATE)
+        self.assertIsInstance(history, list)
+        self.assertTrue(len(history) >= 1)
