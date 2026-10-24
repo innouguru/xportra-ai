@@ -115,6 +115,39 @@ class TestRegulatoryIngestionServiceLifecycle(TestCase):
 class TestRegulatoryIngestionAuthorization(TestCase):
     """Global staff authorization enforcement for ingestion (Task 3)."""
 
+    def test_complete_job_denied_for_unauthorized_or_missing_actor(self):
+        db = FakeDB()
+        service = RegulatoryIngestionService(db)
+        actor_denied = UUID("dddddddd-0000-0000-0000-000000000004")
+        service._grant_service = FakeGrantRepo({})
+        with self.assertRaises(Exception):
+            service.complete_job(
+                job_id=UUID("11111111-0000-0000-0000-000000000001"),
+                actor_user_id=actor_denied,
+            )
+        # Missing actor must also be denied.
+        with self.assertRaises(Exception):
+            service.complete_job(
+                job_id=UUID("11111111-0000-0000-0000-000000000001"),
+                actor_user_id=None,
+            )
+
+    def test_fail_job_denied_for_unauthorized_or_missing_actor(self):
+        db = FakeDB()
+        service = RegulatoryIngestionService(db)
+        actor_denied = UUID("eeeeeeee-0000-0000-0000-000000000005")
+        service._grant_service = FakeGrantRepo({})
+        with self.assertRaises(Exception):
+            service.fail_job(
+                job_id=UUID("22222222-0000-0000-0000-000000000002"),
+                actor_user_id=actor_denied,
+            )
+        with self.assertRaises(Exception):
+            service.fail_job(
+                job_id=UUID("22222222-0000-0000-0000-000000000002"),
+                actor_user_id=None,
+            )
+
     def test_denied_for_non_granted_user(self):
         db = FakeDB()
         service = RegulatoryIngestionService(db)

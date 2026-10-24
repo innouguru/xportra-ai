@@ -60,6 +60,12 @@ class RegulatoryIngestionService:
         return self._job_repo.claim(job_id, actor_user_id)
 
     def complete_job(self, job_id: UUID, actor_user_id: UUID | None = None) -> Any:
+        if actor_user_id is None:
+            from xportra.api.errors import PermissionDeniedError
+            raise PermissionDeniedError()
+        if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
+            from xportra.api.errors import PermissionDeniedError
+            raise PermissionDeniedError()
         return self._job_repo.complete(job_id, actor_user_id)
 
     def fail_job(
@@ -69,6 +75,12 @@ class RegulatoryIngestionService:
         make_retryable: bool = False,
         actor_user_id: UUID | None = None,
     ) -> Any:
+        if actor_user_id is None:
+            from xportra.api.errors import PermissionDeniedError
+            raise PermissionDeniedError()
+        if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
+            from xportra.api.errors import PermissionDeniedError
+            raise PermissionDeniedError()
         return self._job_repo.fail(
             job_id,
             error_details=error_details,

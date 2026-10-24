@@ -68,6 +68,17 @@ class EvidenceObjectStore(Protocol):
         """Store bytes under a server-composed key."""
         ...  # pragma: no cover - protocol
 
+    def get(
+        self,
+        key: str,
+    ) -> bytes | None:
+        """Read stored bytes for one server-composed key (read, no mutation).
+
+        Returns ``None`` when the object is not present. Implementations must
+        not log or return keys, URLs, or credentials.
+        """
+        ...  # pragma: no cover - protocol
+
     def delete(self, key: str) -> None:
         """Remove one object (compensating delete only)."""
         ...  # pragma: no cover - protocol

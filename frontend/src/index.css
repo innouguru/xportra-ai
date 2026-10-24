@@ -1231,6 +1231,36 @@ summary:focus-visible {
   max-width: 60ch;
 }
 
+.finding-assessment {
+  margin: 0.6rem 0 0;
+}
+
+.finding-limit {
+  margin: 0.35rem 0 0;
+  max-width: var(--measure);
+}
+
+.finding-details {
+  border-top: 1px solid var(--line);
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+}
+
+.finding-details > summary {
+  color: var(--accent-deep);
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+}
+
+.finding-next-step {
+  border-top: 1px solid var(--line-strong);
+  margin: 1.5rem 0;
+  padding-top: 1rem;
+}
+
 .finding-meta {
   margin: 1rem 0 0;
   border-top: 1px solid var(--line);

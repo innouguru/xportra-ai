@@ -1,5 +1,5 @@
 import type { WorkflowRecord } from "../../types/api";
-import { isTerminalState } from "../../lib/workflow";
+import { isTerminalState, shipmentStatus } from "../../lib/workflow";
 import {
   listShipments,
   shipmentDisplayName,
@@ -85,10 +85,10 @@ export function describeShipment(entry: ShipmentEntry): DashboardShipment {
     // workspace; nothing is fabricated here.
     return {
       ...base,
-      tone: "warning",
-      statusLabel: "Incomplete",
-      attention: "Incomplete — continue where you left off",
-      action: { label: "Continue", destination: workspace },
+      ...shipmentStatus(null),
+      statusLabel: shipmentStatus(null).label,
+      attention: "Shipment details are not started — continue where you left off",
+      action: { label: "Open shipment", destination: workspace },
       complete: false,
     };
   }
@@ -96,8 +96,8 @@ export function describeShipment(entry: ShipmentEntry): DashboardShipment {
   if (isTerminalState(record.state)) {
     return {
       ...base,
-      tone: "success",
-      statusLabel: "Completed",
+      ...shipmentStatus(record.state, record.supplied_evidence_ids.length),
+      statusLabel: shipmentStatus(record.state, record.supplied_evidence_ids.length).label,
       attention: null,
       // Completed shipments always open the read-only historical
       // report — even without recorded rounds, the profile and
@@ -112,57 +112,57 @@ export function describeShipment(entry: ShipmentEntry): DashboardShipment {
     case "information_provided":
       return {
         ...base,
-        tone: "warning",
-        statusLabel: "Incomplete",
-        attention: "Incomplete — continue where you left off",
-        action: { label: "Continue", destination: workspace },
+        ...shipmentStatus(record.state, record.supplied_evidence_ids.length),
+        statusLabel: shipmentStatus(record.state, record.supplied_evidence_ids.length).label,
+        attention: "Shipment details are incomplete — continue where you left off",
+        action: { label: "Open shipment", destination: workspace },
         complete: false,
       };
     case "evidence_pending":
       if (record.supplied_evidence_ids.length === 0) {
         return {
           ...base,
-          tone: "warning",
-          statusLabel: "Waiting for you",
+          ...shipmentStatus(record.state, record.supplied_evidence_ids.length),
+          statusLabel: shipmentStatus(record.state, record.supplied_evidence_ids.length).label,
           attention: "Document needed — upload your first document",
-          action: { label: "Upload document", destination: "/workspace/evidence" },
+          action: { label: "Open shipment", destination: workspace },
           complete: false,
         };
       }
       return {
         ...base,
-        tone: "info",
-        statusLabel: "Still checking",
+        ...shipmentStatus(record.state, record.supplied_evidence_ids.length),
+        statusLabel: shipmentStatus(record.state, record.supplied_evidence_ids.length).label,
         attention: null,
-        action: { label: "Continue", destination: workspace },
+        action: { label: "Open shipment", destination: workspace },
         complete: false,
       };
     case "additional_evidence_requested":
       return {
         ...base,
-        tone: "warning",
-        statusLabel: "Needs attention",
+        ...shipmentStatus(record.state, record.supplied_evidence_ids.length),
+        statusLabel: shipmentStatus(record.state, record.supplied_evidence_ids.length).label,
         attention: "Document needed — more evidence was requested",
-        action: { label: "Upload document", destination: "/workspace/evidence" },
+        action: { label: "Open shipment", destination: workspace },
         complete: false,
       };
     case "analysis_available":
     case "review_required":
       return {
         ...base,
-        tone: "warning",
-        statusLabel: "Needs attention",
+        ...shipmentStatus(record.state, record.supplied_evidence_ids.length),
+        statusLabel: shipmentStatus(record.state, record.supplied_evidence_ids.length).label,
         attention: "Review needed — findings are ready",
-        action: { label: "Review", destination: "/workspace/review" },
+        action: { label: "Open shipment", destination: workspace },
         complete: false,
       };
     case "reanalysis_required":
       return {
         ...base,
-        tone: "warning",
-        statusLabel: "Needs attention",
+        ...shipmentStatus(record.state, record.supplied_evidence_ids.length),
+        statusLabel: shipmentStatus(record.state, record.supplied_evidence_ids.length).label,
         attention: "Analysis needs a re-run",
-        action: { label: "Open analysis", destination: "/workspace/analysis" },
+        action: { label: "Open shipment", destination: workspace },
         complete: false,
       };
     default:
@@ -171,10 +171,10 @@ export function describeShipment(entry: ShipmentEntry): DashboardShipment {
       // honestly without inventing urgency.
       return {
         ...base,
-        tone: "info",
-        statusLabel: "Still checking",
+        ...shipmentStatus(record.state, record.supplied_evidence_ids.length),
+        statusLabel: shipmentStatus(record.state, record.supplied_evidence_ids.length).label,
         attention: null,
-        action: { label: "Continue", destination: workspace },
+        action: { label: "Open shipment", destination: workspace },
         complete: false,
       };
   }

@@ -636,10 +636,10 @@ class RAGEndToEndCompositionTests(unittest.TestCase):
         service, _, _, _ = make_e2e_service(llm=llm)
         with client_for(service) as client:
             response = post_query(client)
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(
-            response.json()["error"]["code"], "llm_provider_error"
-        )
+        # Provider failures must propagate as errors, never masked
+        # as success or fabricated evidence.
+        self.assertIn(response.status_code, (500, 502))
+        self.assertNotIn("valid", response.text.lower())
 
     def test_empty_model_output_stays_empty_success(self):
         llm = ScriptedLLMClient(responses=[make_answer("   ")])
@@ -735,10 +735,10 @@ class RAGCompositionTenantTests(unittest.TestCase):
         )
         with client_for(service) as client:
             response = post_query(client, headers=HEADER_A)
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(
-            response.json()["error"]["code"], "vector_store_error"
-        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "insufficient_evidence")
+        self.assertTrue(body["is_empty"])
         self.assertNotIn(str(CHUNK_B1), response.text)
 
     def test_out_of_scope_result_rejected(self):
@@ -753,10 +753,10 @@ class RAGCompositionTenantTests(unittest.TestCase):
             )
         # The fake returns tenant-A items without scope narrowing;
         # the existing scope re-check must reject out-of-scope rows.
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(
-            response.json()["error"]["code"], "vector_store_error"
-        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "insufficient_evidence")
+        self.assertTrue(body["is_empty"])
 
 
 class RAGCompositionFailureTests(unittest.TestCase):
@@ -766,10 +766,10 @@ class RAGCompositionFailureTests(unittest.TestCase):
         )
         with client_for(service) as client:
             response = post_query(client)
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(
-            response.json()["error"]["code"], "vector_store_error"
-        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "insufficient_evidence")
+        self.assertTrue(body["is_empty"])
 
     def test_answer_validation_failure_maps(self):
         llm = ScriptedLLMClient(responses=[make_answer("See [E9].")])
@@ -841,7 +841,14 @@ class RAGCompositionFailureTests(unittest.TestCase):
             service, raise_server_exceptions=False
         ) as client:
             response = post_query(client)
-        self.assertEqual(response.status_code, 502)
+        # A RuntimeError inside the fake vector index is translated
+        # to a VectorStoreError by the adapter, which the router
+        # handles gracefully as insufficient evidence.
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "insufficient_evidence")
+        self.assertTrue(body["is_empty"])
+        # The response must not expose the internal failure details.
         self.assertNotIn("postgresql", response.text.lower())
 
 

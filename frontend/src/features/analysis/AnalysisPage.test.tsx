@@ -156,8 +156,9 @@ describe("AnalysisPage", () => {
         },
       ],
     });
-    expect(screen.getByText("Recorded analysis rounds")).toBeInTheDocument();
-    expect(screen.getByText(/Reviewing round 2/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Analysis history" })).toBeInTheDocument();
+    expect(screen.getByText("Round 2")).toBeInTheDocument();
+    expect(screen.getByText("(latest)")).toBeInTheDocument();
     const reportLinks = screen
       .getAllByRole("link")
       .map((link) => link.getAttribute("href"))
@@ -168,6 +169,30 @@ describe("AnalysisPage", () => {
     ]);
     expect(document.body.textContent).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:/);
     expect(document.querySelectorAll("time")).toHaveLength(0);
+  });
+
+  it("shows a human shipment status and plain information coverage labels", async () => {
+    const readiness = {
+      readiness_state: "partially_ready",
+      required_information: 2,
+      known_information: 1,
+      missing_information_count: 1,
+      gaps: [],
+      missing_evidence_requirements: [],
+      unknown_applicability_requirements: [],
+      unknown_assessment_requirements: [],
+    };
+    const spy = vi.fn(async () => new Response(JSON.stringify(readiness), { status: 200 }));
+    vi.stubGlobal("fetch", spy);
+    const user = userEvent.setup();
+    renderWithRecord();
+    expect(screen.getByText(/Current shipment status:/)).toHaveTextContent("In progress");
+    expect(document.body.textContent).not.toContain("applicability_determined");
+    await user.click(screen.getByRole("button", { name: "Check information coverage" }));
+    expect(await screen.findByText("Some information is still needed")).toBeInTheDocument();
+    expect(screen.getByText("Information recorded").parentElement).toHaveTextContent("1");
+    expect(screen.getByText("Information gaps").parentElement).toHaveTextContent("1");
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it("never runs analysis without an explicit user action", async () => {

@@ -187,8 +187,8 @@ describe("FinalReviewPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Certificate copy missing.")).toBeInTheDocument();
     expect(screen.getByText(/no verdict, score/i)).toBeInTheDocument();
-    // Undecided states are shown verbatim, never collapsed into failure.
-    expect(screen.getAllByText("unknown").length).toBeGreaterThan(0);
+    // Undecided states stay descriptive and are never collapsed into failure.
+    expect(screen.getAllByText("Still checking").length).toBeGreaterThan(0);
     const text = document.body.textContent ?? "";
     expect(text).not.toMatch(/\d+\s*%/);
     expect(text).not.toMatch(/\bpassed\b|\bfailed\b/i);

@@ -65,6 +65,11 @@ export function NewShipmentPage() {
   const auth = useAuth();
   const { setRecord } = useWorkflow();
   const navigate = useNavigate();
+  // Latest session state for the in-flight request: the closure
+  // captured at submit time would otherwise stay "authenticated"
+  // even after the user signs out while creation is pending.
+  const authRef = useRef(auth);
+  authRef.current = auth;
   const [profile, setProfile] = useState<Profile>(emptyProfile);
   const [unknown, setUnknown] = useState<UnknownFlags>({ quantity: false, unit: false, shipmentDate: false });
   const [errors, setErrors] = useState<{ product?: string; destination?: string; origin?: string }>({});
@@ -138,7 +143,11 @@ export function NewShipmentPage() {
           shipment_date: profile.shipmentDate.trim(),
         },
       });
-      setRecord(response.workflow);
+      // Keep the created shipment recoverable on this device even
+      // if the session ended while the request was in flight. Only
+      // re-enter authenticated workspace state when still signed in:
+      // a signed-out completion must not restore workspace
+      // navigation or redirect into a protected route.
       rememberShipment({
         caseId: response.workflow.case_id,
         shipmentId: response.workflow.shipment_id,
@@ -152,7 +161,10 @@ export function NewShipmentPage() {
         },
         record: response.workflow,
       });
-      navigate("/workspace");
+      if (authRef.current.isConfigured) {
+        setRecord(response.workflow);
+        navigate(`/shipments/${encodeURIComponent(response.workflow.case_id)}`);
+      }
     } catch (error) {
       if (error instanceof ApiError && error.status === 403) {
         setErrors({

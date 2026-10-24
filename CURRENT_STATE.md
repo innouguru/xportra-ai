@@ -1,7 +1,20 @@
 # CURRENT_STATE.md — Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-10-20
+> Updated: 2026-10-24
+>
+> Regulatory ingestion-to-EvidenceDocument linkage implemented locally
+> (`regulatory_ingestion_evidence_linkage_service.py` + focused tests 6/6 pass);
+> idempotency uses `EvidenceDocumentRepository.get_by_source_identity` (source + version);
+> provenance preserved (`artifact_id`, `content_hash`, `parser_version`, `ingestion_job_id` in metadata);
+> failed/partial ingestion blocked from linkage (`ApplicationValidationError`).
+> Regulatory publication eligibility endpoint implemented (`GET /regulatory/eligible-requirements`,
+> `RegulatoryPublicationEligibilityService`, repository `get_eligible_for_publication()`);
+> retrieval-time filter corrected from fail-open to fail-closed (`router.py`: DB-unavailable
+> returns `insufficient_evidence` instead of preserving stale/superseded citations);
+> endpoint contract tests 2/2 pass; eligibility service 10/10 pass. No production grants
+> created. No `.env` secrets exposed.
+>
 >
 > ADR-0017 was accepted on 2026-10-20 as the basis for implementation
 > planning only. The documentation-only Phase 4D.10 plan is complete; the
@@ -3865,3 +3878,101 @@ Migration 015 remains unverified against production; `DATABASE_URL` points
 **No changes made:** `.env` unchanged; `.env` variables (`LLM_API_KEY` empty, `LLM_MODEL` empty, `VECTOR_STORE_COLLECTION` set, `VECTOR_STORE_URL` masked in previous preflight, `EMBEDDING_DIMENSIONS` empty — remains empty); no production Supabase/Qdrant data modified; no hosted Qdrant collection created/reset/reindexed; no authorization/grant/bootstrap created or consumed; no Render/deployment/commit/push; all prior tracked modifications (46 file diff) and untracked files preserved (`git status --porcelain` unchanged from pre-existing state except newly tracked files listed above; no staged/committed changes from this task).
 
 **Next single task in approved Phase 4D.10 sequence (per ADR-0017 §11 / ADR-0017 planning gates):** Resolve the durable background-execution mechanism (Task 3 operational prerequisite — worker/queue/dispatch under Render/no-Docker/budget constraints) before any ingestion process can actually claim/persist/retry durable jobs; or proceed to Task 4/5 (artifact storage policy, PDF parser decision) if operational prerequisites are resolved separately by product-owner/authorized operator.
+
+---
+
+## Phase 4D.12 — Workstream B: Bootstrap and Runtime Security Foundation (2026-10-22)
+
+**Verdict:** PASS WITH CONDITIONS — no application-level security defect remains; acceptance is conditional on authorized operational provisioning (dedicated DB role, operator-applied authorization record, live staff identity). No production access, no schema changes, no live grants.
+
+**1. Runtime database role (verified from repository evidence only):**
+- Runtime role = whatever credentials `DATABASE_URL` carries; the app resolves a single DSN via `DatabaseSettings.from_environment` (`xportra/persistence/database.py:22-31`). No separate role variable exists in the architecture schema.
+- Repository evidence (`docs/deployment/bootstrap-authorization-db-role.md`): the live `.env` uses the `postgres` superuser (masked in docs; never read or printed by this task); the dedicated least-privilege role `xportra_app` is fully documented (required privileges, explicit exclusions, migration-role separation, operator verification SQL) but NOT provisioned anywhere. Migrations 001-028 create no DB role.
+- NOT verified (requires authorized hosted inspection): actual privileges of the runtime role in the hosted database. Migration/app-role separation remains an operational prerequisite.
+
+**2. Bootstrap authorization (verified in code + tests):**
+- `GlobalStaffGrantService.bootstrap` (`xportra/application/global_staff.py:170-246`) fails closed: a missing/None `authorization_ref`, a revoked/expired/consumed authorization, or a mismatched target/permission raises before any grant. Authorization consumption is single-use and race-safe (`consume_in_transaction` updates `WHERE status='approved' AND consumed_at IS NULL`, `repositories.py:2234-2255`). Advisory lock serializes concurrent bootstrap attempts; idempotent re-run returns the existing grant; a pre-existing `grant_manage` holder for a different user raises `AlreadyBootstrappedError`. Actor and target must be active users; self-bootstrap of `grant_manage` denied. Grant + audit insert commit atomically (rollback if the audit insert fails); audit event records `authorization_ref` (append-only audit table, trigger-rejected mutations).
+- `xportra/dev/bootstrap.py` (local development only) refuses `APP_ENV=production` before opening any connection; idempotent; refuses conflicting state; never prints credentials/DSN.
+- Design gap-by-intent: no application path creates `global_staff_authorizations` rows; they are provisioned out-of-band by an authorized operator (documented prerequisite). Not a code defect.
+
+**3. Staff permissions (GRANT_MANAGE, STAGE_A_VERIFY, STAGE_B_APPROVE):**
+- Server-side enforcement wired: `require_global_staff` / `require_stage_a_verify` / `require_stage_b_approve` (`xportra/api/dependencies.py:649-767`) resolve the actor from the verified JWT -> `users.supabase_uid` -> `users.id`, then check the active grant server-side; fail closed on unauthenticated/unknown/inactive users and missing/revoked grants (and 503 when the database is unavailable). The dependencies are wired to 17 admin routes in `xportra/api/regulatory_admin.py` (11 grants, 3 Stage A, 3 Stage B). Tenant membership never substitutes a global grant (`xportra/api/authorization.py`).
+- Grant/revoke restricted to `grant_manage` holders (`_require_actor_can_manage`); self-grant/self-revoke/self-bootstrap of `grant_manage` denied. Permissions remain distinct (`is_granted(user, permission)` checks the exact permission name against a 3-element frozenset). Revocation sets `status='revoked'` with `revoked_at`/`revoked_by`; `is_granted` filters `status='active'`, so revocation is effective for all subsequent protected operations. Historical grant periods live only in the append-only audit table.
+- Confirmed defect fixed (test-only): two stale assertions in `tests/unit/test_global_staff.py` (`test_global_staff_permissions`, `test_invalid_permission_is_rejected`) held pre-migration-028 expectations that `stage_b_approve` is not a defined permission. Migration 028 explicitly approved `stage_b_approve` in the DB CHECK constraint and the service matched; only the test expectations were stale. Updated both assertions; no production code changed.
+- NOT verified (requires authorized access): live staff identities/grants in the hosted database; no live grant, revocation, or bootstrap was created, altered, or inspected.
+
+**4. Tests (exact commands, local xportra_test only):**
+- DB identity verified before integration writes: `current_database=xportra_test current_user=postgres`.
+- `.venv\Scripts\python.exe -m pytest tests/unit/test_global_staff.py tests/unit/test_dev_bootstrap.py -q` -> initially 2 failed / 32 passed; after the stale-assertion fix -> **34 passed**.
+- `DATABASE_URL=postgresql://postgres:postgres@localhost:5432/xportra_test .venv\Scripts\python.exe -m pytest tests/integration/test_global_staff_postgresql.py -q` -> **16 passed** (grant/revoke/audit-atomicity, bootstrap idempotency/refusal/serialization, revoked/missing-grant denial).
+- `.venv\Scripts\python.exe -m pytest tests/unit/test_phase_10_1_production_security.py -q` -> **44 passed** + 24 subtests (production auth/dev-header rejection, boot gates).
+- `.venv\Scripts\python.exe -m pytest tests/unit/test_regulatory_ingestion_worker.py -q` -> **5 passed** (worker authorization fail-closed).
+- Pre-existing unrelated failures: `tests/unit/test_regulatory_stage_a_review.py` / `test_regulatory_stage_b_review.py` dsn fixture failures (11 total) remain recorded from Phase 4D.11 — test-infrastructure configuration issue, not repaired here, not a security defect.
+
+**5. Files changed (this task):**
+- `tests/unit/test_global_staff.py` — corrected 2 stale permission-set assertions to match approved migration 028 (only change; application/service/migration code already correct).
+- `tmp_verify_db_identity.py` — scratch verification script (untracked, local only).
+- `ACTIVE_TASK.md`, `CURRENT_STATE.md` — this acceptance record.
+- Everything else preserved: `.env` untouched, no production writes, no migrations applied, no git stage/commit/push/reset, no live grants/revocations.
+
+**6. Outstanding operational prerequisites (requiring authorized action, per `docs/deployment/bootstrap-authorization-db-role.md`):**
+1. Provision the dedicated `xportra_app` runtime role (or record an explicit product-owner justification for `postgres` as the application role), update `DATABASE_URL`, and verify privileges via `pg_roles`/`information_schema.table_privileges`.
+2. Re-grant privileges on `xportra` objects created by future migrations.
+3. Operator-applied `global_staff_authorizations` record (approved, unconsumed, target/permission-bound).
+4. Authorized live staff identity, then bootstrap only through `GlobalStaffGrantService.bootstrap` with a valid `authorization_ref`.
+5. Audit-event verification after live bootstrap (`global_staff_audit.authorization_ref` linkage).
+
+**7. Workstream B decision:** PASS WITH CONDITIONS. The application security foundation (server-side permission checks, fail-closed bootstrap, atomic grant/audit, append-only audit, revoked-grant enforcement) is verified in code and tests. The smallest remaining acceptance step is authorized operational provisioning of the dedicated DB role + authorization record + live staff bootstrap (items 1, 3, 4 above) with the documented verification SQL. No Workstream C work was started.
+
+
+---
+
+## Phase 4D.13 — Workstream C: Regulatory Administration Interface (2026-10-22)
+
+**Verdict:** PASS WITH CONDITIONS — the administration interface existed only as an authorized backend API; a UI did not exist at all. A minimal coherent slice was implemented reusing existing endpoints, components, and auth conventions, plus two additive read-only backend exposures (source list, governance-flag reads) that the required workflow demands but no endpoint supplied. No governance contract, schema, or state semantics were changed.
+
+**1. Existing interface verified (UI-to-API trace, not endpoint-only):**
+- Backend: 17 authorized routes in `xportra/api/regulatory_admin.py` (11 GRANT_MANAGE: sources register/get, supersession, artifacts upload/list, ingestion-jobs get/list, extract, manual candidate, candidates list/get; 3 STAGE_A_VERIFY: stage-a post/get/history; 3 STAGE_B_APPROVE: stage-b post/get/history) — all server-side enforced (Workstream B evidence).
+- Frontend before this task: NO regulatory administration surface existed (no API client for `/regulatory/*`, no admin page, no route). Confirmed via full frontend tree inspection.
+- Confirmed UI-blocking API gaps in the required workflow: (a) no source-list endpoint (sources fetchable only by UUID); (b) no governance-flag read endpoints (pending flags unreadable from any API path). Both were additive read-only exposures of existing services/repos.
+
+**2. Workflow coverage as implemented:**
+- Sources: list + detail with full provenance (authority, jurisdiction, version, status, effective/publication dates, source URL marked metadata-only, retrieval timestamp shown as "Unknown — not recorded" when absent), supersession links displayed verbatim as "as recorded" (never inferred).
+- Ingestion jobs: list with recorded status/attempt/timestamps; failures remain visible with `error_details`.
+- Candidates: list + detail showing requirement text/type, source location, status, extraction outcome, extracted/manual entry, artifact reference, reviewer attribution.
+- Stage A and Stage B: separate forms, separate routes (`/stage-a` vs `/stage-b`), required rationale; decision histories displayed (append-only records reshown after each action); reviewer attribution displayed.
+- Governance: source-level and requirement-level pending flags displayed with recorded rationale, `trigger_type`, and status verbatim; explicit notices that pending flags cannot be cleared from the view and completion follows governance rules only.
+- Publication state: static notice that neither extraction nor Stage A/B decisions publish a requirement or make it exporter-applicable; no publication transition exists (none invented); no freshness/supersession inference.
+- Retry: NO retry endpoint exists in the backend — none was invented. Failed jobs remain visible with failure details; re-attempt paths remain the existing safe operations only.
+
+**3. Backend changes (additive, read-only for reads; smallest safe fixes only):**
+- `xportra/persistence/repositories.py` — `RegulatorySourceRepository.list_all()` (read-only listing, ordered by created_at).
+- `xportra/application/regulatory_source_intake_service.py` — `list_sources()` read method.
+- `xportra/api/schemas.py` — `RegulatorySourceListResponse`, `RegulatoryGovernanceFlagResponse`, `RegulatoryGovernanceFlagListResponse` (fields mirror migration 029 columns exactly).
+- `xportra/api/regulatory_admin.py` — governance service dependency + 3 routes: GET `/regulatory/sources`, GET `/regulatory/sources/{id}/governance-flags`, GET `/regulatory/requirements/{id}/governance-flags` — all GRANT_MANAGE-gated like the existing routes; flags shown for all statuses (pending AND resolved).
+- Rationale: these were confirmed UI-blocking gaps in the REQUIRED workflow items "List regulatory sources" and "Display pending governance flags and their reasons" — additive read-only exposure of already-supported service capabilities; no state semantics or governance rules changed.
+
+**4. Frontend changes:**
+- `frontend/src/api/regulatory.ts` (new) — typed client for all covered routes via the central `apiFetch`; no raw fetch, no invented states.
+- `frontend/src/features/regulatory/RegulationAdminPage.tsx` (new) — `/regulatory` administration page in existing visual conventions (StatusBits primitives, ledger pattern, honest loading/empty/error states); Stage A/B rationale validation messages rendered directly (role=alert), backend errors via `ErrorNotice` with `userFacingErrorMessage`.
+- `frontend/src/App.tsx` — `/regulatory` route behind `RequireAuth` + `AuthenticatedShell` breadcrumbs. Sidebar untouched (ADR-0012 contract: exactly two primary nav destinations — reachable by direct URL; report: nav entry is a deliberate design-contract decision for the product owner).
+- `ui permission checks`: the frontend deliberately does not fabricate a "can I administer" probe (no such endpoint exists); authorization failure surfaces as an explicit error state. The server remains the authority, as required.
+
+**5. Tests:**
+- Backend: `tests/unit/test_regulatory_governance_service.py` + `test_regulatory_source_intake.py` — 50 passed (incl. new: source read-only listing, verbatim pending+resolved flag reads; FakeReviewFlagRepo now generates unique flag ids — test-double fix, no production change).
+- Frontend typecheck: `npm run lint` (tsc --noEmit) — clean.
+- Frontend targeted: `npx vitest run src/api/regulatory.test.ts src/features/regulatory/RegulationAdminPage.test.tsx` — 18 passed (list/detail/provenance/failed-job/403-as-error/empty/distinct Stage A+B/pending-flag un-bypassable/no-publication copy/rationale-required/refresh-after-action).
+- Frontend full: `npx vitest run` — **74 files, 557 tests passed**, no regressions.
+- Backend full unit: `python -m pytest tests/unit -q` — **2265 passed / 13 failed**: 10 pre-existing Stage A `dsn` fixture failures (same `AttributeError: 'object' object has no attribute 'dsn'` at database.py:51 — test-infrastructure configuration only) + 2 pre-existing working-tree failures unrelated to this task (`test_rag_production_verification` domain `open(` audit finding in `xportra/domain/ingestion.py`, untouched here; `test_regulatory_ingestion_worker` start-stop — passes standalone, order-dependent suite flakiness) — none introduced by this task.
+
+**6. Safety:** `.env` never read/printed; no production access; no migrations; no schema change; no git stage/commit/push/reset; no live grants; prior tracked/untracked work preserved; no scratch files deleted.
+
+**7. Known limitations (evidenced):**
+- Manual candidate entry and supersession recording remain API-only (existing endpoints; not added to the UI in this minimal slice).
+- No ingestion retry operation exists server-side; failed work beyond idempotent artifact re-upload has no retry path (reported gap, not invented).
+- No "who am I / my grants" endpoint exists, so the page cannot pre-gate rows by permission; unauthorized users see explicit denial errors (server-enforced).
+- `xportra_app` runtime role provisioning and live-staff bootstrap remain Workstream B operational prerequisites.
+
+**8. Workstream C decision:** Accepted with conditions above; smallest remaining UI step: add source/jobs navigation polish + review determinations on real data after authorized staff identity exists. No Workstream D started.
+
+\n## Phase 4D.15 Workstream E Verification (2026-10-22)\nVerdict PASS WITH CONDITIONS. No new defects; 364 focused tests passed; known failures documented (stage A fixture, ingestion audit, order-dependency, 029 provenance unverified); no code/test/file changes; no live smoke/deployment; xportra_app DB role remains prerequisite; Workstream F deferred.\n

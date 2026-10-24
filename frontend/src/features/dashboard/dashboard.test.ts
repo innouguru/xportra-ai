@@ -74,12 +74,12 @@ describe("shipment description", () => {
     expect(described.title).not.toContain("33333333");
   });
 
-  it("marks early states incomplete with a continuation action", () => {
+  it("marks early states plainly and opens the canonical shipment route", () => {
     for (const state of ["created", "information_provided"]) {
       const described = describeShipment(entry({ state }));
       expect(described.attention).toMatch(/incomplete/i);
       expect(described.action).toEqual({
-        label: "Continue",
+        label: "Open shipment",
         destination: `/shipments/${described.entry.caseId}`,
       });
       expect(described.complete).toBe(false);
@@ -89,29 +89,24 @@ describe("shipment description", () => {
   it("asks for a document only when none is supplied", () => {
     const empty = describeShipment(entry({ state: "evidence_pending" }));
     expect(empty.attention).toMatch(/document needed/i);
-    expect(empty.action).toEqual({ label: "Upload document", destination: "/workspace/evidence" });
+    expect(empty.action).toEqual({ label: "Open shipment", destination: `/shipments/${empty.entry.caseId}` });
 
     const supplied = describeShipment(
       entry({ state: "evidence_pending", record: { supplied_evidence_ids: ["e1"] } as Partial<WorkflowRecord> }),
     );
     expect(supplied.attention).toBeNull();
-    expect(supplied.statusLabel).toBe("Still checking");
+    expect(supplied.statusLabel).toBe("In progress");
   });
 
-  it("routes explicit evidence and review requests to real destinations", () => {
-    expect(describeShipment(entry({ state: "additional_evidence_requested" })).action.destination).toBe(
-      "/workspace/evidence",
-    );
-    expect(describeShipment(entry({ state: "review_required" })).action).toEqual({
-      label: "Review",
-      destination: "/workspace/review",
-    });
-    expect(describeShipment(entry({ state: "analysis_available" })).action.destination).toBe(
-      "/workspace/review",
-    );
-    expect(describeShipment(entry({ state: "reanalysis_required" })).action.destination).toBe(
-      "/workspace/analysis",
-    );
+  it("opens actionable shipments at their canonical shipment workspace", () => {
+    for (const state of ["additional_evidence_requested", "review_required", "analysis_available", "reanalysis_required"]) {
+      const shipment = describeShipment(entry({ state }));
+      expect(shipment.action).toEqual({
+        label: "Open shipment",
+        destination: `/shipments/${shipment.entry.caseId}`,
+      });
+      expect(shipment.statusLabel).toBe("Needs your attention");
+    }
   });
 
   it("treats completed shipments as history with a report link", () => {
@@ -140,7 +135,7 @@ describe("shipment description", () => {
   it("renders unknown states honestly without inventing urgency", () => {
     const described = describeShipment(entry({ state: "some_future_state" }));
     expect(described.attention).toBeNull();
-    expect(described.statusLabel).toBe("Still checking");
+    expect(described.statusLabel).toBe("In progress");
   });
 
   it("never exposes technical state names as user language", () => {
@@ -204,9 +199,9 @@ describe("dashboard loading", () => {
     const target = entry({ state: "created" });
     const setRecord = vi.fn();
     const navigate = vi.fn();
-    openShipment(target, setRecord, navigate, "/workspace");
+    openShipment(target, setRecord, navigate, `/shipments/${target.caseId}`);
     expect(setRecord).toHaveBeenCalledWith(target.record);
-    expect(navigate).toHaveBeenCalledWith("/workspace");
+    expect(navigate).toHaveBeenCalledWith(`/shipments/${target.caseId}`);
   });
 
   it("reads an empty registry as an empty dashboard", () => {

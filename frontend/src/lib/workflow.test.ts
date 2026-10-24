@@ -5,6 +5,7 @@ import {
   applicabilityTone,
   journeyStepForState,
   journeyStepStatuses,
+  shipmentStatus,
   workflowStateLabel,
 } from "./workflow";
 
@@ -72,6 +73,18 @@ describe("journey mapping", () => {
     expect(journeyStepStatuses("reanalysis_required").analysis).toBe(
       "action-required",
     );
+  });
+});
+
+describe("shipment-facing status", () => {
+  it("maps backend states to the approved user vocabulary", () => {
+    expect(shipmentStatus(null).label).toBe("Not started");
+    expect(shipmentStatus("created").label).toBe("Not started");
+    expect(shipmentStatus("information_provided").label).toBe("In progress");
+    expect(shipmentStatus("evidence_pending", 0).label).toBe("Needs your attention");
+    expect(shipmentStatus("evidence_pending", 1).label).toBe("In progress");
+    expect(shipmentStatus("review_required").label).toBe("Needs your attention");
+    expect(shipmentStatus("assessment_package_ready").label).toBe("Completed");
   });
 });
 

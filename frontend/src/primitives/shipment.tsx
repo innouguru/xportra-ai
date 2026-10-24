@@ -147,6 +147,7 @@ export function ShipmentWorklistRow({
   name,
   route,
   state,
+  detail,
   tone,
   href,
   actionLabel,
@@ -157,6 +158,7 @@ export function ShipmentWorklistRow({
   name: string;
   route?: string;
   state: string;
+  detail?: string | null;
   tone: StatusTone;
   href: string;
   actionLabel?: string;
@@ -185,6 +187,7 @@ export function ShipmentWorklistRow({
           {name}
         </a>
         {route ? <span className="xb-row__route">{route}</span> : null}
+        {detail ? <span className="xb-row__route">{detail}</span> : null}
       </span>
       <span className="xb-row__state">{state}</span>
       {actionLabel ? (

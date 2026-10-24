@@ -62,6 +62,9 @@ class RegulatorySourceStorageAdapter:
     def put(self, key: str, content: bytes, *, content_type: str) -> None:
         return self._store.put(key, content, content_type=content_type)
 
+    def get_artifact(self, key: str) -> bytes | None:
+        return self._store.get(key)
+
     def delete(self, key: str) -> None:
         return self._store.delete(key)
 

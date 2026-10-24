@@ -79,7 +79,24 @@ function storedReport(): AnalysisReport {
     uncertain_requirement_ids: [],
     requirements_with_conflicting_evidence: [],
     conflicting_evidence_count: 0,
-    findings: [finding("satisfied", "r1"), finding("unknown", "r2")],
+    findings: [
+      finding("satisfied", "r1"),
+      {
+        ...finding("unknown", "r2"),
+        uncertainty: "uncertain",
+        uncertainty_explanation: "The available source records leave this point unresolved.",
+        contradiction_state: "present",
+        missing_information: ["A supporting certificate is not recorded."],
+        conflicting_evidence: [
+          {
+            evidence_id: "ev-conflict",
+            evidence_type: "certificate",
+            reference: "page 4",
+            status: "rejected",
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -224,16 +241,21 @@ describe("historical report", () => {
       await screen.findByRole("heading", { name: "Cocoa · Lagos → Rotterdam", level: 1 }),
     ).toBeInTheDocument();
     const banner = screen.getByRole("note");
-    expect(banner.textContent).toContain("This shipment is complete and read-only.");
-    expect(banner.textContent).toContain("It’s kept as a compliance record.");
-    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(banner.textContent).toContain("assessment package is complete and read-only.");
+    expect(banner.textContent).toContain("does not mean a government authority has approved or cleared");
+    expect(screen.getByText("Completed shipment")).toBeInTheDocument();
     expect(screen.getByText("Assessment finalized.")).toBeInTheDocument();
-    expect(screen.getByText(/1 of 2 requirements addressed\./)).toBeInTheDocument();
+    expect(screen.getByText(/1 of 2 findings addressed in the recorded analysis/)).toBeInTheDocument();
     expect(screen.getByText("Requirement r1")).toBeInTheDocument();
-    expect(screen.getByText("Addressed")).toBeInTheDocument();
-    expect(screen.getByText("Still checking")).toBeInTheDocument();
+    expect(screen.getAllByText("Addressed in this analysis").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Still checking").length).toBeGreaterThan(0);
+    expect(screen.getByText("A supporting certificate is not recorded.")).toBeInTheDocument();
+    expect(screen.getByText("Conflicting evidence — shown as recorded, not resolved")).toBeInTheDocument();
+    expect(screen.getByText("The available source records leave this point unresolved.")).toBeInTheDocument();
     expect(await screen.findByText(/Phytosanitary certificate scan/)).toBeInTheDocument();
-    expect(screen.getByText("Destination plant health regulation")).toBeInTheDocument();
+    expect(screen.getAllByText("Destination plant health regulation").length).toBeGreaterThan(0);
+    expect(screen.queryByText("ev-conflict")).toBeNull();
+    expect(screen.queryByText("DEST-PH-1")).toBeNull();
     expect(screen.getByText(/1 analysis round recorded/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "New shipment" })).toHaveAttribute("href", "/start");
   });
@@ -266,7 +288,7 @@ describe("historical report", () => {
     ]);
     stubBackend(storedReport());
     renderReport("/shipments/case-done/report");
-    await screen.findByText(/1 of 2 requirements addressed\./);
+    await screen.findByText(/1 of 2 findings addressed in the recorded analysis/);
     const main = screen.getByRole("main");
     expect(main.textContent).not.toContain("ev-1");
     expect(main.textContent).not.toContain("rep-1");
@@ -297,10 +319,25 @@ describe("historical report", () => {
     expect(
       await screen.findByRole("heading", { name: "Cocoa · Lagos → Rotterdam", level: 1 }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/no recorded findings/i)).toBeInTheDocument();
+    expect(screen.getByText(/no stored analysis report is available/i)).toBeInTheDocument();
+    expect(screen.queryByText(/no findings were recorded in this report/i)).toBeNull();
     expect(screen.getByText(/no documents recorded/i)).toBeInTheDocument();
+    expect(screen.getByText(/does not establish compliance or government clearance/i)).toBeInTheDocument();
     // Absent facts are omitted, never placeholder-filled.
     expect(screen.queryByText("Unknown")).toBeNull();
+  });
+
+  it("states that an empty stored report does not establish compliance", async () => {
+    const emptyReport = { ...storedReport(), findings: [] };
+    seed([
+      seedEntry("case-done", "assessment_package_ready", {
+        rounds: [{ round_index: 0, report_id: "rep-1", analysis_ids: [], trace_ids: [], input_fingerprints: [] }],
+      }),
+    ]);
+    stubBackend(emptyReport);
+    renderReport("/shipments/case-done/report");
+    expect((await screen.findAllByText(/no findings were recorded in this report/i)).length).toBeGreaterThan(0);
+    expect(screen.getByText(/does not establish compliance or confirm that the shipment is cleared/i)).toBeInTheDocument();
   });
 
   it("retries a failed report read with the profile intact", async () => {
@@ -335,7 +372,7 @@ describe("historical report", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(screen.getByText("Cocoa")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(await screen.findByText(/1 of 2 requirements addressed\./)).toBeInTheDocument();
+    expect(await screen.findByText(/1 of 2 findings addressed in the recorded analysis/)).toBeInTheDocument();
   });
 
   it("resolves a completed shipment from the server with an empty registry", async () => {
@@ -425,7 +462,7 @@ describe("historical report", () => {
     expect(
       await screen.findByRole("heading", { name: "Cocoa · Lagos → Rotterdam", level: 1 }),
     ).toBeInTheDocument();
-    expect(await screen.findByText(/1 of 2 requirements addressed\./)).toBeInTheDocument();
+    expect(await screen.findByText(/1 of 2 findings addressed in the recorded analysis/)).toBeInTheDocument();
   });
 
   it("reports an unknown reference honestly", () => {
@@ -435,7 +472,7 @@ describe("historical report", () => {
     expect(screen.getByRole("heading", { name: "Report unavailable" })).toBeInTheDocument();
   });
 
-  it("keeps sources readable and secondary", async () => {
+  it("keeps source details attached to each historical finding without technical identifiers", async () => {
     seed([
       seedEntry("case-done", "assessment_package_ready", {
         rounds: [{ round_index: 0, report_id: "rep-1", analysis_ids: [], trace_ids: [], input_fingerprints: [] }],
@@ -443,10 +480,11 @@ describe("historical report", () => {
     ]);
     stubBackend(storedReport());
     renderReport("/shipments/case-done/report");
-    const sources = await screen.findByRole("heading", { name: "Regulatory sources" });
-    const section = sources.closest("section");
-    expect(section).not.toBeNull();
-    expect(within(section as HTMLElement).getByText("Destination plant health regulation")).toBeInTheDocument();
-    expect(within(section as HTMLElement).queryByText(/\{.*kind.*\}/)).toBeNull();
+    await screen.findAllByText("Destination plant health regulation");
+    const findingCard = screen.getByRole("article", { name: "Finding: Requirement r1" });
+    expect(within(findingCard).getByText("Sources and provenance")).toBeInTheDocument();
+    expect(within(findingCard).getByText("Destination plant health regulation")).toBeInTheDocument();
+    expect(within(findingCard).queryByText("DEST-PH-1")).toBeNull();
+    expect(within(findingCard).queryByText(/\{.*kind.*\}/)).toBeNull();
   });
 });

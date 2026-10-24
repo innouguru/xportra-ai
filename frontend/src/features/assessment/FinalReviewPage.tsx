@@ -17,6 +17,7 @@ import {
   TerminalNotice,
 } from "../../components/StatusBits";
 import { isTerminalState, workflowStateLabel } from "../../lib/workflow";
+import { countRequirementsNeedingAttention } from "../../lib/findings";
 import type { AnalysisReport, ReadinessReason } from "../../types/api";
 
 /**
@@ -147,11 +148,7 @@ export function FinalReviewPage() {
     }
   };
 
-  const attentionCount =
-    report === null
-      ? 0
-      : report.requirements_with_missing_information.length +
-        report.uncertain_requirement_ids.length;
+  const attentionCount = report === null ? 0 : countRequirementsNeedingAttention(report);
 
   return (
     <div>
@@ -208,10 +205,7 @@ export function FinalReviewPage() {
               <span className="muted">Unbound</span>
             )}
           </Field>
-          <Field label="Workflow state">
-            <StatusBadge value={record.state} tone="neutral" />{" "}
-            <span className="muted">— {workflowStateLabel(record.state)}</span>
-          </Field>
+          <Field label="Shipment stage">{workflowStateLabel(record.state)}</Field>
           <Field label="Rounds recorded">{record.rounds.length}</Field>
           {report ? (
             <Field label="Report">

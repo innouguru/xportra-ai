@@ -130,7 +130,7 @@ describe("EvidencePage", () => {
     await user.click(screen.getByRole("button", { name: "Upload evidence" }));
     await waitFor(() =>
       expect(
-        screen.getByText(/is ready as evidence\. This does not mean any requirement is satisfied\./),
+        screen.getByText(/is ready to use\. It has not been supplied to the shipment or assessed yet\./),
       ).toBeInTheDocument(),
     );
     expect(calls).toHaveLength(1);
@@ -142,7 +142,7 @@ describe("EvidencePage", () => {
     expect(body).not.toHaveProperty("tenant_id");
     const page = document.body.textContent ?? "";
     expect(page).not.toMatch(/compliant|verified|approved/i);
-    expect(screen.getByText("Ready")).toBeInTheDocument();
+    expect(screen.getByText("Ready to use")).toBeInTheDocument();
   });
 
   it("shows failed processing as unusable without compliance meaning", async () => {
@@ -165,10 +165,36 @@ describe("EvidencePage", () => {
     await waitFor(() =>
       expect(screen.getAllByText(/cannot be used as evidence/).length).toBeGreaterThan(0),
     );
-    expect(screen.getByText("Failed")).toBeInTheDocument();
-    const supply = screen.getByRole("button", { name: "Supply to workflow" });
+    expect(screen.getByText("Processing failed")).toBeInTheDocument();
+    const supply = screen.getByRole("button", { name: "Supply to this shipment" });
     expect(supply).toBeDisabled();
-    expect(supply).toHaveAttribute("title", "Failed documents cannot be supplied");
+    expect(supply).toHaveAttribute("title", "Processing failed; retry processing before supplying");
+  });
+
+  it("retries failed processing on the same evidence record without making it supplied", async () => {
+    let uploads = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("/compliance-evidence/uploads")) {
+          uploads += 1;
+          return new Response(
+            JSON.stringify(uploadResult({ processing_status: uploads === 1 ? "failed" : "ready" })),
+            { status: 201 },
+          );
+        }
+        return new Response(JSON.stringify({}), { status: 200 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithRecord({ ...RECORD, supplied_evidence_ids: [] });
+    await user.upload(screen.getByLabelText("Choose a file to upload"), pdfFile());
+    await user.click(screen.getByRole("button", { name: "Upload evidence" }));
+    await user.click(await screen.findByRole("button", { name: "Retry processing" }));
+    expect(await screen.findByText(/ready to use/)).toBeInTheDocument();
+    expect(uploads).toBe(2);
+    expect(screen.getByText("Not supplied")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Supply to this shipment" })).toBeEnabled();
   });
 
   it("surfaces upload failure without losing the selection", async () => {
@@ -212,7 +238,7 @@ describe("EvidencePage", () => {
     renderWithRecord({ ...RECORD, supplied_evidence_ids: [] });
     await user.upload(screen.getByLabelText("Choose a file to upload"), pdfFile());
     await user.click(screen.getByRole("button", { name: "Upload evidence" }));
-    await user.click(await screen.findByRole("button", { name: "Supply to workflow" }));
+    await user.click(await screen.findByRole("button", { name: "Supply to this shipment" }));
     await waitFor(() => {
       expect(calls.some((url) => url.endsWith("/compliance/workflows/supply-evidence"))).toBe(true);
     });
@@ -240,8 +266,8 @@ describe("EvidencePage", () => {
     renderWithRecord();
     const section = screen.getByRole("region", { name: "Supplied evidence" });
     expect(await within(section).findByText("Phyto certificate")).toBeInTheDocument();
-    expect(within(section).getByText("accepted")).toBeInTheDocument();
-    expect(within(section).getByText("Ready")).toBeInTheDocument();
+    expect(within(section).getByText("Accepted as evidence")).toBeInTheDocument();
+    expect(within(section).getByText("Ready to use")).toBeInTheDocument();
   });
 
   it("downloads through the authorized endpoint without showing the URL", async () => {

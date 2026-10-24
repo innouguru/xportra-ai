@@ -1,5 +1,5 @@
 import type { AnalysisReport, WorkflowRecord } from "../../types/api";
-import { isTerminalState } from "../../lib/workflow";
+import { isTerminalState, shipmentStatus } from "../../lib/workflow";
 import { shipmentDisplayName, type ShipmentEntry } from "../../lib/shipments";
 import type { StatusTone } from "../../primitives/status";
 
@@ -31,6 +31,7 @@ export interface WorkspaceRequirement {
   tone: StatusTone;
   explanation: string | null;
   missing: string[];
+  sources: Array<{ label: string; reference: string | null }>;
 }
 
 export type WorkspaceRequirements =
@@ -207,6 +208,28 @@ export function describeWorkspace(
         tone: words.tone,
         explanation: finding.explanation.trim() || null,
         missing: finding.missing_information.filter((item) => item.trim().length > 0),
+        sources: [
+          ...finding.sources.flatMap((source) => {
+            const kind = typeof source["kind"] === "string" ? source["kind"] : null;
+            const identifier =
+              typeof source["identifier"] === "string" ? source["identifier"] : null;
+            return kind || identifier
+              ? [{ label: kind ?? "Source", reference: identifier }]
+              : [];
+          }),
+          ...finding.knowledge_references.flatMap((reference) => {
+            const label = typeof reference["label"] === "string" ? reference["label"] : null;
+            const location =
+              typeof reference["source_location"] === "string"
+                ? reference["source_location"]
+                : typeof reference["source_id"] === "string"
+                  ? reference["source_id"]
+                  : null;
+            return label || location
+              ? [{ label: label ?? "Knowledge source", reference: location }]
+              : [];
+          }),
+        ],
       };
     });
     requirements = { kind: "findings", items };
@@ -222,8 +245,8 @@ export function describeWorkspace(
 
   return {
     title,
-    statusLabel: closed ? "Ready" : briefing.attention ? "Needs attention" : "In progress",
-    statusTone: closed ? "success" : briefing.attention ? "warning" : "info",
+    statusLabel: shipmentStatus(record.state, record.supplied_evidence_ids.length).label,
+    statusTone: shipmentStatus(record.state, record.supplied_evidence_ids.length).tone,
     briefing: briefing.message,
     briefingDetail: briefing.detail,
     primaryAction: primaryActionFor(record, record.case_id),

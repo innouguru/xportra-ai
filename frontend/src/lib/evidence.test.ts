@@ -3,6 +3,7 @@ import {
   MAX_UPLOAD_BYTES,
   contradictionTone,
   describeUnsupportedFile,
+  evidenceStatusLabel,
   formatFileSize,
   gapKindLabel,
   processingStateLabel,
@@ -77,8 +78,12 @@ describe("evidence presentation helpers", () => {
   });
 
   it("labels processing states without compliance meaning", () => {
-    expect(processingStateLabel("ready")).toBe("Ready");
-    expect(processingStateLabel("failed")).toBe("Failed");
+    expect(processingStateLabel("ready")).toBe("Ready to use");
+    expect(processingStateLabel("failed")).toBe("Processing failed");
+    expect(processingStateLabel("processing")).toBe("Processing");
+    expect(evidenceStatusLabel("uploaded")).toBe("Uploaded — not reviewed");
+    expect(evidenceStatusLabel("reviewed")).toBe("Reviewed");
+    expect(evidenceStatusLabel("accepted")).toBe("Accepted as evidence");
     expect(processingStateTone("ready")).toBe("info");
     expect(processingStateTone("failed")).toBe("attention");
     const notes = [

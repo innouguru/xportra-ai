@@ -23,13 +23,14 @@ this layer persists nothing and invents no facts.
 from __future__ import annotations
 
 from typing import Any
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from xportra.domain.errors import DomainValidationError
 from xportra.domain.ingestion import (
     ApplicabilityContextBuilder,
     ComplianceApplicabilityService,
     ComplianceCaseReadinessService,
+    RegulatoryRequirementApplicabilityService,
 )
 
 from ._guards import (
@@ -43,6 +44,13 @@ from .errors import (
     ApplicationNotFoundError,
     ApplicationValidationError,
     InvalidTransitionError,
+)
+from xportra.application.regulatory_publication_eligibility_service import (
+    RegulatoryPublicationEligibilityService,
+)
+from xportra.persistence.repositories import (
+    RegulatoryReviewFlagRepository,
+    RegulatoryRequirementRepository,
 )
 
 
@@ -58,6 +66,9 @@ class AssessmentApplicationService:
         readiness_service: (
             ComplianceCaseReadinessService | None) = None,
         shipment_reader: Any | None = None,
+        requirement_repository: RegulatoryRequirementRepository | None = None,
+        review_flag_repository: RegulatoryReviewFlagRepository | None = None,
+        publication_eligibility_service: RegulatoryPublicationEligibilityService | None = None,
     ) -> None:
         self._applicability = (
             applicability_service or ComplianceApplicabilityService())
@@ -78,6 +89,9 @@ class AssessmentApplicationService:
             raise ApplicationValidationError(
                 "a shipment reader is required")
         self._shipment_reader = shipment_reader
+        self._requirement_repository = requirement_repository
+        self._review_flag_repository = review_flag_repository
+        self._publication_eligibility_service = publication_eligibility_service
 
     def determine_applicability(
         self,
@@ -122,6 +136,76 @@ class AssessmentApplicationService:
                 self._with_shipment_defaults(
                     ctx, shipment_id,
                     exporter, product, destination))
+        # Regulatory governance validation: only requirements that have
+        # passed Stage A verification and Stage B pilot approval, and have
+        # no pending governance flags, may be treated as approved
+        # applicable requirements. Unreviewed requirements are reported as
+        # unknown (never silently promoted to applicable).
+        # When an authoritative publication eligibility service is configured,
+        # use it to obtain eligible requirements rather than relying solely
+        # on caller-supplied lists, ensuring only verified, approved, current,
+        # fully-provenanced requirements reach assessment.
+        validated_requirements: list[dict[str, Any]] = []
+        blocked_reasons: dict[UUID, str] = {}
+        if (self._publication_eligibility_service is not None
+                and not checked_requirements):
+            from xportra.persistence.tenant import TenantContext
+            eligible_rows = self._publication_eligibility_service.get_eligible_requirements(
+                tenant=TenantContext(ctx.tenant_id) if hasattr(ctx, "tenant_id") else None,
+                include_provenance=True,
+            )
+            validated_requirements = [
+                {"id": UUID(str(row.get("id"))) if row.get("id") else None,
+                 "requirement_text": row.get("requirement_text", ""),
+                 "requirement_type": row.get("requirement_type", "unknown"),
+                 "normalized_document_id": row.get("normalized_document_id"),
+                 "source_id": row.get("source_id"),
+                 "status": "extracted",
+                 "extraction_outcome": "succeeded",
+                 "parser_version": row.get("parser_version", "v1"),
+                 "ingestion_job_id": row.get("ingestion_job_id"),
+                 "stage_b_pilot_scope": row.get("stage_b_pilot_scope"),
+                 } for row in eligible_rows if row.get("id") is not None
+            ]
+            if not validated_requirements:
+                checked_requirements = []
+        if self._requirement_repository is not None:
+            for requirement in checked_requirements:
+                requirement_id = requirement.get("id")
+                if not isinstance(requirement_id, UUID):
+                    blocked_reasons[requirement_id] = "malformed requirement identity"  # type: ignore[arg-type]
+                    continue
+                row = self._requirement_repository.get(requirement_id)
+                if row is None:
+                    blocked_reasons[requirement_id] = (
+                        "requirement not in regulatory store")
+                    continue
+                if row.get("stage_a_status") != "verified":
+                    blocked_reasons[requirement_id] = (
+                        "Stage A verification required")
+                    continue
+                if row.get("stage_b_status") != "approved":
+                    blocked_reasons[requirement_id] = (
+                        "Stage B pilot approval required")
+                    continue
+                # Check pending governance flags on source and requirement.
+                source_id = row.get("source_id")
+                if source_id is not None and (
+                        self._review_flag_repository is not None):
+                    pending_source_flags = (
+                        self._review_flag_repository.list_pending_for_source(
+                            source_id))
+                    pending_requirement_flags = (
+                        self._review_flag_repository.get_for_requirement(
+                            requirement_id))
+                    if pending_source_flags or pending_requirement_flags:
+                        blocked_reasons[requirement_id] = (
+                            "pending governance review")
+                        continue
+                validated_requirements.append(requirement)
+        else:
+            validated_requirements = list(checked_requirements)
+
         try:
             context = self._builder.build(
                 tenant_id=ctx.tenant_id,
@@ -131,11 +215,47 @@ class AssessmentApplicationService:
                 actor_role=actor_role,
                 business_characteristics=business_characteristics,
             )
-            report = self._applicability.determine(
-                checked_requirements, context)
+            if validated_requirements:
+                report = self._applicability.determine(
+                    validated_requirements, context)
+            else:
+                report = {
+                    "tenant_id": ctx.tenant_id,
+                    "context_fingerprint": (
+                        RegulatoryRequirementApplicabilityService
+                        .context_fingerprint(context)),
+                    "total_requirements": 0,
+                    "applicable_count": 0,
+                    "not_applicable_count": 0,
+                    "unknown_count": 0,
+                    "results": [],
+                    "status": "determined",
+                }
         except DomainValidationError as cause:
             raise ApplicationValidationError(
                 str(cause), cause=cause) from cause
+        # Add blocked requirements as unknown results, preserving the
+        # domain fingerprint and counts.
+        fingerprint = report["context_fingerprint"]
+        unknown_count = int(report.get("unknown_count", 0))
+        for requirement in checked_requirements:
+            requirement_id = requirement.get("id")
+            if requirement_id in blocked_reasons:
+                report["total_requirements"] = (
+                    int(report.get("total_requirements", 0)) + 1)
+                unknown_count += 1
+                report["unknown_count"] = unknown_count
+                report["results"].append({
+                    "id": uuid5(
+                        NAMESPACE_URL,
+                        f"{ctx.tenant_id}:{requirement_id}:{fingerprint}"),
+                    "tenant_id": ctx.tenant_id,
+                    "requirement_id": requirement_id,
+                    "context_fingerprint": fingerprint,
+                    "outcome": "unknown",
+                    "reason": blocked_reasons[requirement_id],
+                    "status": "evaluated",
+                })
         return ApplicabilityDTO.from_report(report)
 
     def _with_shipment_defaults(

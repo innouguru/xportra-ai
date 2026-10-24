@@ -236,6 +236,115 @@ class RegulatorySourceRepository:
             (authority_id,),
         )
 
+    def list_all(self) -> list[Row]:
+        """Return all regulatory sources (administration listing).
+
+        Read-only; displays stored rows verbatim, including
+        supersession links, without inferring any relationship.
+        """
+        return _fetch_all(
+            self._database,
+            """
+            SELECT * FROM xportra.regulatory_sources
+            ORDER BY created_at DESC, id
+            """,
+            (),
+        )
+
+    def create(
+        self,
+        authority_id: UUID,
+        jurisdiction: str,
+        title: str,
+        version: str | None = None,
+        status: str = "draft",
+        effective_date: Any | None = None,
+        publication_date: Any | None = None,
+        source_url: str | None = None,
+    ) -> Row:
+        return _insert(
+            self._database,
+            "regulatory source creation",
+            """
+            INSERT INTO xportra.regulatory_sources
+                (authority_id, jurisdiction, title, version, status,
+                 effective_date, publication_date, source_url, retrieval_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+            RETURNING *
+            """,
+            (
+                authority_id, jurisdiction, title, version, status,
+                effective_date, publication_date, source_url,
+            ),
+        )
+
+    def update_source(
+        self,
+        source_id: UUID,
+        *,
+        supersedes_source_id: UUID | None = None,
+        superseded_by_source_id: UUID | None = None,
+        status: str | None = None,
+    ) -> Row | None:
+        parts: list[str] = []
+        params: list[Any] = []
+        if supersedes_source_id is not None:
+            parts.append("supersedes_source_id = %s")
+            params.append(supersedes_source_id)
+        if superseded_by_source_id is not None:
+            parts.append("superseded_by_source_id = %s")
+            params.append(superseded_by_source_id)
+        if status is not None:
+            parts.append("status = %s")
+            params.append(status)
+        parts.append("updated_at = now()")
+        params.append(source_id)
+        return _insert(
+            self._database,
+            "regulatory source update",
+            f"""
+            UPDATE xportra.regulatory_sources
+            SET {", ".join(parts)}
+            WHERE id = %s
+            RETURNING *
+            """,
+            tuple(params),
+        )
+
+    def update_source_in_transaction(
+        self,
+        connection,
+        source_id: UUID,
+        *,
+        supersedes_source_id: UUID | None = None,
+        superseded_by_source_id: UUID | None = None,
+        status: str | None = None,
+    ) -> Row | None:
+        parts: list[str] = []
+        params: list[Any] = []
+        if supersedes_source_id is not None:
+            parts.append("supersedes_source_id = %s")
+            params.append(supersedes_source_id)
+        if superseded_by_source_id is not None:
+            parts.append("superseded_by_source_id = %s")
+            params.append(superseded_by_source_id)
+        if status is not None:
+            parts.append("status = %s")
+            params.append(status)
+        parts.append("updated_at = now()")
+        params.append(source_id)
+        return _insert_in_transaction(
+            connection,
+            "regulatory source update",
+            f"""
+            UPDATE xportra.regulatory_sources
+            SET {", ".join(parts)}
+            WHERE id = %s
+            RETURNING *
+            """,
+            tuple(params),
+        )
+
 
 class ExporterRepository:
     def __init__(self, database: Database) -> None:
@@ -484,6 +593,7 @@ class RegulatoryDocumentNormalizationRepository:
     def create(
         self,
         *,
+        id: UUID,
         artifact_id: UUID,
         source_id: UUID,
         document_title: str,
@@ -493,27 +603,33 @@ class RegulatoryDocumentNormalizationRepository:
         parser_name: str,
         status: str = "normalized",
         normalized_at: Any | None = None,
+        created_at: Any | None = None,
+        updated_at: Any | None = None,
     ) -> Row:
         return _insert(
             self._database,
             "regulatory document normalization creation",
             """
             INSERT INTO xportra.regulatory_document_normalizations
-                (artifact_id, source_id, document_title, normalized_text,
-                 normalized_content, content_type, parser_name, status, normalized_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (id, artifact_id, source_id, document_title, normalized_text,
+                 normalized_content, content_type, parser_name, status, normalized_at,
+                 created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
+                id,
                 artifact_id,
                 source_id,
                 document_title,
                 normalized_text,
-                normalized_content,
+                Jsonb(normalized_content),
                 content_type,
                 parser_name,
                 status,
                 normalized_at or None,
+                created_at or None,
+                updated_at or None,
             ),
         )
 
@@ -624,8 +740,15 @@ class RegulatoryRequirementRepository:
             """
             INSERT INTO xportra.regulatory_requirements
                 (id, normalized_document_id, requirement_text, requirement_type,
-                 source_location, position, actor, condition_metadata, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 source_location, position, actor, condition_metadata, status,
+                 ingestion_job_id, extraction_outcome, parser_version,
+                 manual_entry, reviewer_user_id, reviewed_at, source_id,
+                 stage_a_status, stage_a_reviewer_user_id,
+                 stage_a_reviewed_at, stage_a_rationale,
+                 stage_b_status, stage_b_reviewer_user_id,
+                 stage_b_reviewed_at, stage_b_rationale, stage_b_pilot_scope)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
             (
@@ -638,8 +761,58 @@ class RegulatoryRequirementRepository:
                 values.get("actor"),
                 Jsonb(condition_metadata) if condition_metadata is not None else None,
                 values["status"],
+                values.get("ingestion_job_id"),
+                values.get("extraction_outcome", "succeeded"),
+                values.get("parser_version"),
+                values.get("manual_entry", False),
+                values.get("reviewer_user_id"),
+                values.get("reviewed_at"),
+                values.get("source_id"),
+                values.get("stage_a_status", "pending"),
+                values.get("stage_a_reviewer_user_id"),
+                values.get("stage_a_reviewed_at"),
+                values.get("stage_a_rationale"),
+                values.get("stage_b_status", "pending"),
+                values.get("stage_b_reviewer_user_id"),
+                values.get("stage_b_reviewed_at"),
+                values.get("stage_b_rationale"),
+                values.get("stage_b_pilot_scope"),
             ),
         )
+
+    def get_eligible_for_publication(
+        self,
+        source_filter: UUID | None = None,
+        pilot_scope_filter: str | None = None,
+    ) -> list[Row]:
+        """Select only requirements meeting all publication eligibility rules."""
+        conditions: list[str] = [
+            "r.status = 'extracted'",
+            "r.extraction_outcome = 'succeeded'",
+            "r.stage_a_status = 'verified'",
+            "r.stage_b_status = 'approved'",
+        ]
+        params: list[Any] = []
+        if source_filter is not None:
+            conditions.append("r.source_id = %s")
+            params.append(str(source_filter))
+        if pilot_scope_filter is not None:
+            conditions.append("r.stage_b_pilot_scope = %s")
+            params.append(pilot_scope_filter.strip())
+        sql = f"""
+            SELECT r.*, s.status AS source_status, s.version AS source_version,
+                   r.source_location, r.ingestion_job_id, r.normalized_document_id,
+                   r.parser_version, r.extraction_outcome, r.stage_a_status,
+                   r.stage_a_reviewer_user_id, r.stage_a_reviewed_at, r.stage_a_rationale,
+                   r.stage_b_status, r.stage_b_reviewer_user_id,
+                   r.stage_b_reviewed_at, r.stage_b_rationale, r.stage_b_pilot_scope,
+                   r.manual_entry, r.status, r.created_at, r.updated_at
+            FROM xportra.regulatory_requirements AS r
+            LEFT JOIN xportra.regulatory_sources AS s ON s.id = r.source_id
+            WHERE {" AND ".join(conditions)}
+            ORDER BY r.created_at ASC, r.id ASC
+        """
+        return _fetch_all(self._database, sql, tuple(params) if params else ())
 
     def list_for_document(self, normalized_document_id: UUID) -> list[Row]:
         return _fetch_all(
@@ -655,6 +828,20 @@ class RegulatoryRequirementRepository:
             (normalized_document_id,),
         )
 
+    def list_for_source(self, source_id: UUID) -> list[Row]:
+        return _fetch_all(
+            self._database,
+            """
+            SELECT requirement.*, document.artifact_id, document.source_id
+            FROM xportra.regulatory_requirements AS requirement
+            JOIN xportra.regulatory_document_normalizations AS document
+              ON document.id = requirement.normalized_document_id
+            WHERE requirement.source_id = %s
+            ORDER BY requirement.position, requirement.id
+            """,
+            (source_id,),
+        )
+
     def get(self, requirement_id: UUID) -> Row | None:
         return _fetch_one(
             self._database,
@@ -666,6 +853,72 @@ class RegulatoryRequirementRepository:
             WHERE requirement.id = %s
             """,
             (requirement_id,),
+        )
+
+    def update_stage_a(
+        self,
+        requirement_id: UUID,
+        stage_a_status: str,
+        reviewer_user_id: UUID,
+        reviewed_at: Any,
+        rationale: str,
+    ) -> Row | None:
+        return _insert(
+            self._database,
+            "regulatory requirement stage-a update",
+            """
+            UPDATE xportra.regulatory_requirements
+            SET stage_a_status = %s,
+                stage_a_reviewer_user_id = %s,
+                stage_a_reviewed_at = %s,
+                stage_a_rationale = %s,
+                updated_at = %s
+            WHERE id = %s
+            RETURNING *
+            """,
+            (
+                stage_a_status,
+                reviewer_user_id,
+                reviewed_at,
+                rationale,
+                reviewed_at,
+                requirement_id,
+            ),
+        )
+
+
+    def update_stage_b(
+        self,
+        requirement_id: UUID,
+        stage_b_status: str,
+        reviewer_user_id: UUID,
+        reviewed_at: Any,
+        rationale: str,
+        pilot_scope: str,
+    ) -> Row | None:
+        return _insert(
+            self._database,
+            "regulatory requirement stage-b update",
+            """
+            UPDATE xportra.regulatory_requirements
+            SET stage_b_status = %s,
+                stage_b_reviewer_user_id = %s,
+                stage_b_reviewed_at = %s,
+                stage_b_rationale = %s,
+                stage_b_pilot_scope = %s,
+                updated_at = %s
+            WHERE id = %s
+            RETURNING *
+            """,
+            (
+                stage_b_status,
+                reviewer_user_id,
+                reviewed_at,
+                rationale,
+                pilot_scope,
+                reviewed_at,
+                requirement_id,
+            ),
         )
 
 
@@ -2169,3 +2422,236 @@ class RegulatoryIngestionJobRepository:
                     return cursor.fetchone()
         except IntegrityError as cause:
             raise PersistenceIntegrityError("regulatory ingestion job fail", cause) from cause
+
+
+class RegulatoryArtifactLegalHoldRepository:
+    """Durable, append-only legal-hold records for regulatory artifacts."""
+
+    def __init__(self, database) -> None:
+        self._database = database
+
+    def create(
+        self,
+        artifact_id,
+        actor_user_id,
+        authorization_ref,
+        reason,
+        status="active",
+    ):
+        return _insert(
+            self._database,
+            "regulatory artifact legal hold creation",
+            """
+            INSERT INTO xportra.regulatory_artifact_legal_hold
+                (artifact_id, status, actor_user_id, authorization_ref, reason)
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (artifact_id, status, actor_user_id, authorization_ref, reason),
+        )
+
+    def get_active_for_artifact(self, artifact_id):
+        return _fetch_all(
+            self._database,
+            "SELECT * FROM xportra.regulatory_artifact_legal_hold WHERE artifact_id = %s AND status = 'active' ORDER BY placed_at ASC",
+            (artifact_id,),
+        )
+
+    def get_by_hold_id(self, hold_id):
+        return _fetch_one(
+            self._database,
+            "SELECT * FROM xportra.regulatory_artifact_legal_hold WHERE id = %s",
+            (hold_id,),
+        )
+
+    def release(
+        self,
+        hold_id,
+        released_by,
+        release_authorization_ref,
+    ):
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE xportra.regulatory_artifact_legal_hold SET status = 'released', released_at = now(), released_by = %s, release_authorization_ref = %s WHERE id = %s AND status = 'active' RETURNING *",
+                        (released_by, release_authorization_ref, hold_id),
+                    )
+                    return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError("regulatory artifact legal hold release", cause) from cause
+
+
+class RegulatoryArtifactDeletionIntentRepository:
+    """Durable deletion-intent records with safe state-machine support."""
+
+    def __init__(self, database) -> None:
+        self._database = database
+
+    def create(
+        self,
+        artifact_id,
+        content_hash,
+        actor_user_id,
+        authorization_ref,
+        reason,
+        retention_eligibility,
+        legal_hold_active=False,
+        audit_event_ref=None,
+    ):
+        return _insert(
+            self._database,
+            "regulatory artifact deletion intent creation",
+            """
+            INSERT INTO xportra.regulatory_artifact_deletion_intent
+                (artifact_id, content_hash, status, actor_user_id, authorization_ref, reason, retention_eligibility, legal_hold_active, audit_event_ref)
+            VALUES (%s, %s, 'pending', %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (artifact_id, content_hash, actor_user_id, authorization_ref, reason, retention_eligibility, legal_hold_active, audit_event_ref),
+        )
+
+    def get_by_artifact_auth_actor(self, artifact_id, authorization_ref, actor_user_id):
+        return _fetch_one(
+            self._database,
+            "SELECT * FROM xportra.regulatory_artifact_deletion_intent WHERE artifact_id = %s AND authorization_ref = %s AND actor_user_id = %s ORDER BY created_at DESC LIMIT 1",
+            (artifact_id, authorization_ref, actor_user_id),
+        )
+
+    def get_by_artifact(self, artifact_id):
+        return _fetch_all(
+            self._database,
+            "SELECT * FROM xportra.regulatory_artifact_deletion_intent WHERE artifact_id = %s ORDER BY created_at DESC",
+            (artifact_id,),
+        )
+
+    def update_status(
+        self,
+        intent_id,
+        status,
+        deleted_at=None,
+        reconciled=None,
+        reconciliation_note=None,
+        retry_attempt=None,
+        max_retry_attempt=None,
+    ):
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    parts = ["UPDATE xportra.regulatory_artifact_deletion_intent SET status = %s"]
+                    params = [status]
+                    if deleted_at is not None:
+                        parts.append("deleted_at = %s")
+                        params.append(deleted_at)
+                    if reconciled is not None:
+                        parts.append("reconciled = %s")
+                        params.append(reconciled)
+                    if reconciliation_note is not None:
+                        parts.append("reconciliation_note = %s")
+                        params.append(reconciliation_note)
+                    if retry_attempt is not None:
+                        parts.append("retry_attempt = %s")
+                        params.append(retry_attempt)
+                    if max_retry_attempt is not None:
+                        parts.append("max_retry_attempt = %s")
+                        params.append(max_retry_attempt)
+                    parts.append("updated_at = now() WHERE id = %s RETURNING *")
+                    params.append(intent_id)
+                    cursor.execute(" ".join(parts), tuple(params))
+                    return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError("regulatory artifact deletion intent status update", cause) from cause
+
+
+class RegulatoryReviewFlagRepository:
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create(
+        self,
+        requirement_id: UUID | None,
+        trigger_source_id: UUID | None,
+        trigger_type: str,
+        actor_user_id: UUID | None,
+        rationale: str,
+    ) -> dict[str, Any]:
+        return _insert(
+            self._database,
+            "regulatory review flag creation",
+            """
+            INSERT INTO xportra.regulatory_review_flags
+                (requirement_id, trigger_source_id, trigger_type,
+                 status, actor_user_id, rationale, created_at, updated_at)
+            VALUES (%s, %s, %s, 'pending_review', %s, %s, now(), now())
+            RETURNING *
+            """,
+            (requirement_id, trigger_source_id, trigger_type, actor_user_id, rationale),
+        )
+
+    def create_in_transaction(
+        self,
+        connection,
+        requirement_id: UUID | None,
+        trigger_source_id: UUID | None,
+        trigger_type: str,
+        actor_user_id: UUID | None,
+        rationale: str,
+    ) -> dict[str, Any]:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO xportra.regulatory_review_flags
+                    (requirement_id, trigger_source_id, trigger_type,
+                     status, actor_user_id, rationale, created_at, updated_at)
+                VALUES (%s, %s, %s, 'pending_review', %s, %s, now(), now())
+                RETURNING *
+                """,
+                (requirement_id, trigger_source_id, trigger_type, actor_user_id, rationale),
+            )
+            return dict(cursor.fetchone())
+
+    def get_for_requirement(self, requirement_id: UUID) -> list[dict[str, Any]]:
+        return _fetch_all(
+            self._database,
+            "SELECT * FROM xportra.regulatory_review_flags WHERE requirement_id = %s ORDER BY created_at DESC",
+            (requirement_id,),
+        )
+
+    def get_for_source(self, source_id: UUID) -> list[dict[str, Any]]:
+        return _fetch_all(
+            self._database,
+            "SELECT * FROM xportra.regulatory_review_flags WHERE trigger_source_id = %s ORDER BY created_at DESC",
+            (source_id,),
+        )
+
+    def update_status(
+        self,
+        flag_id: UUID,
+        status: str,
+        rationale: str | None = None,
+    ) -> dict[str, Any] | None:
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE xportra.regulatory_review_flags
+                    SET status = %s, rationale = COALESCE(%s, rationale), updated_at = now()
+                    WHERE id = %s RETURNING *
+                    """,
+                    (status, rationale, flag_id),
+                )
+                return cursor.fetchone()
+
+    def get_by_id(self, flag_id: UUID) -> dict[str, Any] | None:
+        return _fetch_one(
+            self._database,
+            "SELECT * FROM xportra.regulatory_review_flags WHERE id = %s",
+            (flag_id,),
+        )
+
+    def list_pending_for_source(self, source_id: UUID) -> list[dict[str, Any]]:
+        return _fetch_all(
+            self._database,
+            "SELECT * FROM xportra.regulatory_review_flags WHERE trigger_source_id = %s AND status = 'pending_review' ORDER BY created_at",
+            (source_id,),
+        )

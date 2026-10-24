@@ -861,6 +861,212 @@ and server-controlled registration boundaries.
 - R-10.12.6: No new production services, Supabase projects, migrations, or
   production test organizations are authorized by this task.
 
+## R-4D: Regulatory Knowledge Administration — Proposed; Planning Authorized Only
+
+**Status:** Proposed functional scope. The product owner accepted ADR-0017
+as the basis for implementation planning only on 2026-10-20. This section
+does not authorize implementation or exporter-facing publication. Remaining
+technical decisions and qualified product/legal gates must be resolved
+before affected implementation tasks are authorized. See
+`docs/phases/phase-4d-regulatory-knowledge-administration.md` and proposed
+`docs/decisions/ADR-0017-regulatory-knowledge-administration.md`. Initial
+source research for a proposed sesame-to-EU pilot is recorded in
+`docs/phases/phase-4d-1-sesame-eu-pilot-source-research.md`; it is not
+legal verification or pilot approval. The product owner has agreed with the
+planning direction of raw/unprocessed sesame for human consumption from
+Nigeria, Kano/Jigawa as operational sourcing regions, and consignments
+intended for Dutch import and customs clearance. Product classification, shipment applicability, and entry/BCP facts remain
+unresolved.
+The consolidated decision and readiness records are at
+`docs/phases/phase-4d-2-sesame-eu-pilot-product-owner-decisions.md` and
+`docs/phases/phase-4d-4-pilot-scope-and-implementation-readiness.md`.
+Phase 4D.6 records a repository-grounded architecture review and Phase
+4D.7 consolidates product-owner directions in ADR-0017.
+The proposed runtime result model is `regulatory_requirement_applicability`,
+pending additive canonical linkage and pilot-scope versioning;
+`requirement_applicability` remains a separate tenant-owned workflow.
+Stage B approval remains separate append-only governance history. ADR-0017
+is accepted as the architecture basis for planning only. The
+proposed functional scope and unresolved technical decisions remain subject
+to their task gates; neither architecture acceptance nor pilot direction
+authorizes implementation or publication.
+
+The proposed first release separates Xportra-managed shared regulatory
+knowledge from tenant-owned exporter workspaces. Authorized Xportra knowledge
+staff would maintain official sources, submit supported documents, inspect
+ingestion outcomes, review extracted candidates, publish eligible canonical
+requirements, and maintain freshness and re-review state. Exporters would
+consume only published requirements through a deterministic applicability
+path, submit evidence through the existing tenant evidence flow, and see
+unknown or incomplete coverage explicitly.
+
+### Proposed first-release boundaries
+
+- Shared source and authority records are managed only through a backend-
+ enforced global regulatory-administration permission, separate from tenant
+ owner/member roles.
+- Staff-upload-only intake is the agreed pilot direction. Preserve original
+ uploaded artifacts and record known official URLs as metadata only; do not
+ retrieve URLs. Exact text formats are pending architecture approval.
+ Regulatory parsing handles TXT, Markdown, and JSON, but not PDF. PDF
+ support is a launch capability gate requiring parser-contract, library,
+ safety-limit, and page-provenance review. OCR, crawling, and broad web
+ scraping are excluded.
+- The agreed planning direction is raw/unprocessed, food-use sesame
+ (*Sesamum indicum*) from Nigeria, with Kano and Jigawa as operational
+ sourcing regions and consignments intended for Dutch import and customs
+ clearance. This does not establish the first EU entry point, BCP, shipment
+ applicability, or any state-specific regulatory effect. Product
+ classification, entry route, plant-health scope, current legal applicability,
+ and source gaps remain unresolved.
+- Each accepted artifact remains immutable and linked to its source; parsing,
+ metadata extraction, and normative-statement extraction create reviewable
+ candidates, never published requirements by themselves.
+- Stage A human verification records source/artifact provenance, the exact
+ supporting text/location, wording, interpretation, reviewer, timestamp,
+ and rationale. Stage B separately records approval or unresolved status
+ for applicability to a versioned pilot scope. One stage does not imply the
+ other. Prefer different reviewers; a small-team same-person exception
+ must be explicit, permission-controlled where feasible, justified, and
+ auditable.
+- Only requirements that pass both required approval stages and remain
+ current may be presented as applicable exporter-facing requirements.
+ Unknown applicability remains explicit. A supporting official source,
+ exact document location, product scope, and sufficient information for
+ deterministic shipment assessment are required.
+- Source or artifact changes flag affected published requirements for human
+ re-review; they do not silently rewrite or withdraw historical records.
+- `regulatory_requirement_applicability` is the proposed sole persisted
+ runtime evaluation-result model for the pilot, not the Stage B approval
+ record. Scope version participates in evaluation identity; incomplete
+ catalog coverage is distinct from `unknown` applicability. Do not add a
+ third applicability table or evaluator.
+- Exporter-facing APIs load eligible canonical requirements server-side;
+ caller-supplied requirement lists are not the authoritative catalog.
+ Missing requirements, no matching catalog rows, missing shipment facts,
+ and stale or incomplete source coverage must not be presented as proof that
+ no requirements exist.
+- Xportra assessment is decision support, not government approval, legal
+ certification, or export clearance.
+- Organization-internal and buyer-specific requirement management is
+ deferred from the initial pilot, including its schema/API/UI. If later
+ approved, it must be a separate, tenant-isolated category and must never
+ be merged indistinguishably with official regulatory requirements.
+
+### Proposed end-to-end acceptance criteria
+
+1. A source can be registered and edited only by an authorized global
+  knowledge administrator; authority, jurisdiction, URL, scope, status,
+  and known dates/version remain explicit, with unknown values left unknown.
+2. An authorized administrator can submit a supported document; unsupported
+  or malformed input is rejected before it is treated as an acquired
+  artifact.
+3. Every accepted submission creates a durable ingestion attempt linked to
+  source and immutable artifact identity, with actor, timestamps, stage,
+  status, and a safe failure code.
+4. The document is parsed and normalized through the existing regulatory
+  parsing services; failures remain visible and do not produce success-
+  shaped records.
+5. Extracted metadata and candidates retain source → artifact → normalized
+  document → candidate and section/position provenance.
+6. A successful run with no usable candidates is distinguishable from
+  failed or partial processing.
+7. An authorized Stage A reviewer records source, provenance, wording, and
+  interpretation verification with actor, timestamp, exact location, and
+  rationale. This decision does not establish applicability.
+8. A separately authorized Stage B approver records applicability to the
+  versioned pilot scope with actor, timestamp, scope, and rationale.
+  Unknown or unresolved applicability is not approved as applicable.
+9. A reviewed candidate can be linked to one or more canonical requirements
+  without losing the extracted wording or source location.
+10. Publication fails closed unless both required decisions, source/location,
+  jurisdiction, scope, established validity information, and deterministic
+  applicability inputs are present and current.
+11. Exporter-facing APIs load only current canonical requirements with an
+  explicit approved publication state that passed both stages; drafts,
+  rejected candidates, unverified candidates, unknown applicability, and
+  non-current publications are not represented as approved applicable
+  requirements.
+12. Missing shipment facts produce `unknown` applicability; missing catalog
+  rows and incomplete coverage produce an explicit incomplete-coverage
+  state, never a “no requirements” conclusion.
+13. A source update, changed content hash, withdrawal, or supersession flags
+  linked requirements for re-review while preserving prior artifacts and
+  publication history.
+14. Tenant owners and members, including owners of the tenant that supplied
+  a shipment, cannot administer or publish shared regulatory knowledge.
+15. Organization-specific or buyer-specific requirements, if later
+  introduced, remain tenant-isolated and visibly distinct from official law.
+16. Automated tests cover both approval stages, authorization denials,
+  tenant isolation, provenance, idempotent retry, publication gating,
+  source change/re-review, catalog filtering, and coverage-state rendering.
+17. Only explicitly authorized platform operators can grant or revoke global
+  regulatory-administration access through a controlled, auditable process.
+  Grant resolution fails closed; tenant owner/member roles confer no global
+  privilege, and the global administration grant does not grant Stage A or
+  Stage B authority.
+18. Ingestion persists the original immutable artifact and durable job before
+  background processing begins. Jobs and attempts survive process restart,
+  provide safe idempotent retry and recovery, and preserve visible partial
+  and failed outcomes without overwriting artifact or decision history.
+19. Source-version changes preserve prior artifacts and do not inherit prior
+  review or publication approval. Affected candidates, canonical
+  requirements, and prior applicability decisions are identifiable; stale
+  material is restricted from current applicable use pending required
+  review, without implying that every linked requirement is legally invalid.
+20. When extraction fails or is partial, authorized staff may enter a
+  candidate with preserved source/artifact references, author/reviewer
+  attribution, and explicit extraction outcome. Manual candidates pass the
+  same Stage A and Stage B gates as extracted candidates.
+21. A partial assessment is returned only when the request is within the
+  supported scope and current verified requirements support a defensible,
+  clearly qualified result. Missing facts, stale sources, incomplete
+  coverage, and unknown applicability are explicit. Requests outside scope
+  or without a defensible limited assessment are rejected; an empty catalog
+  match never implies that no requirements exist.
+22. Original artifacts and their versions are retained under an explicitly
+  approved policy that supports provenance and review reproducibility.
+  Retention duration, deletion rules, legal/operational holds, and cost
+  limits must be decided before implementation; no duration is presumed.
+23. The background execution design is approved against the documented
+  Render hosting model, no-Docker constraint, budget, service limits, and
+  operational ownership. No worker, queue, scheduler, or additional paid
+  service is presumed approved.
+24. Automated tests prove all eight Phase 4D.7 directions, including
+  operator grant/revocation controls, reviewer separation and audited
+  exception, restart/retry recovery, manual-candidate review, stale-source
+  restriction, partial-assessment qualification/rejection, retention
+  provenance, server-owned catalog filtering, and tenant isolation.
+25. API and UI states do not imply government approval, import or export
+  clearance, or exhaustive coverage unless evidence supports the specific
+  statement and the separate publication gate has been authorized.
+
+### Decisions still requiring product-owner approval
+
+- The planning direction is agreed. Qualified review is still required for
+  exact product specification and CN/TARIC classification, applicable
+  measures, entry route/BCP, plant-health requirements, and shipment facts.
+  No state-specific Kano/Jigawa legal applicability is established.
+- Who provisions/revokes designated staff grants and how the process is
+ audited. Organization roles never confer global catalog permissions.
+- Distinct permissions for source management, Stage A verification, and
+ Stage B pilot-applicability approval; control and audit of the agreed
+ small-team exception.
+- Exact text formats and whether PDF is a launch blocker; any PDF parser,
+ dependency, limits, and page-provenance approach require review.
+- Durable job/attempt, retry/restart-recovery, and resource-limit details;
+ durable background execution is the recorded direction, while its
+ Render-compatible mechanism remains undecided.
+- Artifact storage/retention, freshness thresholds, source-change
+ re-review/withdrawal policy, and detailed exporter wording/state semantics.
+- Organization-specific/buyer-specific schema/API/UI is deferred from this
+ pilot; any later extension requires separate scope and tenant-isolation
+ approval.
+- Whether shipment assessment snapshots require durable applicability
+ persistence after an implementation-level audit.
+- Final applicability persistence strategy and any schema changes after an
+ implementation-level audit of the existing tables.
+
 ## R-1..R-10: Future Phases — Partially Scoped
 
 Phases 1–10 (see `ROADMAP.md`) have no approved detailed functional
@@ -869,7 +1075,9 @@ Phase 10.2 (`R-10.2` above), Phase 10.4 (`R-10.4` above),
 Phase 10.5 (`R-10.5` above), Phase 10.6 (`R-10.6` above),
 Phase 10.7A (`R-10.7A` above), Phase 10.7B (`R-10.7B` above),
 Phase 10.8 (`R-10.8` above), Phase 10.9 (`R-10.9` above),
-and Phase 10.10 (`R-10.10` above).
+Phase 10.10 (`R-10.10` above), and Phase 10.12 (`R-10.12` above).
+R-4D remains a proposal and is not included among approved functional
+requirements.
 Requirements for each remaining phase will be added here
 when defined and approved. In particular, no regulatory requirements and
 no detailed product functionality beyond the sections above have been

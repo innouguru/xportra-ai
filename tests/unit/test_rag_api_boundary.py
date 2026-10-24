@@ -711,10 +711,11 @@ class RAGFailureMappingTests(unittest.TestCase):
                 headers=HEADER_A,
                 json={"information_need": "need"},
             )
-        self.assertEqual(response.status_code, 502)
-        self.assertEqual(
-            response.json()["error"]["code"], "vector_store_error"
-        )
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body["status"], "insufficient_evidence")
+        self.assertTrue(body["is_empty"])
+        self.assertIn("refine", body["answer_text"].lower())
 
     def test_llm_provider_failure_is_not_a_success(self):
         llm = FakeLLMClient(

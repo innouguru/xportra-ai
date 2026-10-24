@@ -50,7 +50,7 @@ function renderPage() {
             <Routes>
               <Route path="/start" element={<NewShipmentPage />} />
               <Route path="/dashboard" element={<div>Dashboard</div>} />
-              <Route path="/workspace" element={<div>Workspace</div>} />
+              <Route path="/shipments/:caseId" element={<div>Workspace</div>} />
               <Route path="/session" element={<div>Session</div>} />
             </Routes>
           </ThemeProvider>
@@ -247,6 +247,41 @@ describe("NewShipmentPage", () => {
     expect(list!.querySelector("option[value='Cashew nuts']")).not.toBeNull();
     // Free text stays free: no classification claims anywhere.
     expect(screen.getByRole("main").textContent).not.toMatch(/classified|AI suggests/i);
+  });
+
+  it("does not enter the workspace when a session ends while creation is pending", async () => {
+    let resolveFetch!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+          }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await fillRequired(user);
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(/creating your shipment/i);
+
+    // Sign out through the shell while the request is still in flight.
+    // Every sign-out control ends the session and returns the user to
+    // the public sign-in route.
+    await user.click(screen.getByRole("button", { name: "Account" }));
+    await user.click(screen.getByRole("menuitem", { name: "Sign out" }));
+
+    resolveFetch(
+      new Response(JSON.stringify({ workflow: RECORD, summary: {} }), { status: 201 }),
+    );
+
+    // The signed-out user lands on the sign-in surface and never the
+    // workspace, even though creation completed in the background.
+    await waitFor(() => expect(screen.getByText("Session")).toBeInTheDocument());
+    expect(screen.queryByText("Workspace")).toBeNull();
+    // The server-created shipment stays recoverable on this device.
+    await waitFor(() => expect(listShipments()).toHaveLength(1));
   });
 });
 

@@ -212,21 +212,32 @@ class ServiceFactory:
 
 
 class GlobalStaffPermissionTests(TestCase):
-    def test_grant_manage_is_the_only_permission(self):
-        from xportra.application.global_staff import _GLOBAL_STAFF_PERMISSIONS
+    def test_global_staff_permissions(self):
+        from xportra.application.global_staff import (
+            GRANT_MANAGE,
+            STAGE_A_VERIFY,
+            STAGE_B_APPROVE,
+            _GLOBAL_STAFF_PERMISSIONS,
+        )
 
-        self.assertEqual(_GLOBAL_STAFF_PERMISSIONS, frozenset({GRANT_MANAGE}))
+        self.assertEqual(
+            _GLOBAL_STAFF_PERMISSIONS,
+            frozenset({GRANT_MANAGE, STAGE_A_VERIFY, STAGE_B_APPROVE}),
+        )
         self.assertEqual(GRANT_MANAGE, "grant_manage")
+        self.assertEqual(STAGE_A_VERIFY, "stage_a_verify")
+        self.assertEqual(STAGE_B_APPROVE, "stage_b_approve")
 
     def test_invalid_permission_is_rejected(self):
         factory = ServiceFactory(active={ACTOR, TARGET})
         service = factory.service()
         with self.assertRaises(ApplicationValidationError):
             service._require_valid_permission("source_admin")
-        with self.assertRaises(ApplicationValidationError):
-            service._require_valid_permission("stage_a_verify")
-        with self.assertRaises(ApplicationValidationError):
+        # stage_b_approve was approved by migration 028; it must be
+        # accepted as a defined permission (not an invalid one).
+        self.assertIsNone(
             service._require_valid_permission("stage_b_approve")
+        )
         with self.assertRaises(ApplicationValidationError):
             service._require_valid_permission("anything_else")
 

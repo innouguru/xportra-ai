@@ -5,10 +5,11 @@
 > through Phase 10.5, cross-checked against phase
 > documents, completed task records, and
 > `CURRENT_STATE.md` verification. A phase is marked
-> complete only where those sources agree. No future
-> phase is scoped: the next phase may start only when
-> its scope is defined in `REQUIREMENTS.md` and
-> scheduled via `tasks/`.
+> complete only where those sources agree. No additional
+> implementation phase is approved. Regulatory Knowledge
+> Administration (Phase 4D) has planning approval only; no
+> implementation may start until each task is separately authorized
+> and its technical and legal gates are satisfied.
 
 - [x] **Phase 0 — Agent Harness & Project Foundation** (complete)
 - [x] **Phase 1 — Core Domain & Database** (complete per
@@ -118,3 +119,38 @@ No implementation subtask beyond the above is
 started. Detailed scope for any future work will
 be recorded in `REQUIREMENTS.md` and decomposed
 into task files under `tasks/` when approved.
+
+## Proposed Work — Not Approved or Scheduled
+
+- [ ] **Regulatory Knowledge Administration (Phase 4D) — proposal only.**
+  Proposed scope and architecture are recorded in
+  `docs/phases/phase-4d-regulatory-knowledge-administration.md`,
+  proposed requirements in `REQUIREMENTS.md` R-4D, and proposed
+  boundaries in ADR-0017. The product owner has agreed with proceeding
+  toward a raw/unprocessed, food-use Nigerian sesame pilot for consignments
+  intended for Dutch import and customs clearance. Kano/Jigawa are operational
+  sourcing regions; staff-upload-only intake and two-stage review are agreed
+  planning directions. Exact product specification/classification,
+  shipment entry/BCP facts, qualified legal review, and architecture approval
+  remain pending; see
+  `docs/phases/phase-4d-4-pilot-scope-and-implementation-readiness.md`.
+  Phase 4D.7 consolidates eight product-owner directions in ADR-0017,
+  including operator-managed global grants, two-stage review, durable
+  background ingestion, source re-review, qualified incomplete/partial
+  assessment, original artifact retention, and manual recovery after
+  extraction failure. The proposed runtime result model is
+  `regulatory_requirement_applicability` after additive canonical linkage
+  and scope versioning; `requirement_applicability` remains separate for its
+  tenant workflow, and Stage B governance approval is not an evaluator
+  result. Durable background processing is the agreed direction; its
+  dispatch/execution mechanism under hosting/budget/no-Docker constraints,
+  retention/deletion, schema, API compatibility, and state semantics remain
+  unresolved.
+  ADR-0017 is accepted as the basis for implementation planning only
+  (2026-10-20). The eight Phase 4D.7 directions remain governing planning
+  requirements; technical decisions and qualified legal/pilot-scope gates
+  remain open. Implementation and exporter-facing publication are not
+  authorized. Phase 4D.10 planning is complete; the active task is the
+  separate-authorization gate in
+  `tasks/active/phase-4d-task-1-authorization.md`. No implementation task is
+  authorized and no Phase 4D implementation phase is complete.

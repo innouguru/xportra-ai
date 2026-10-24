@@ -11,13 +11,13 @@ import {
   EmptyState,
   ErrorNotice,
   Field,
-  Identifier,
   LoadingState,
   StatusBadge,
   TerminalNotice,
 } from "../../components/StatusBits";
 import { readinessTone } from "../../lib/evidence";
-import { isTerminalState } from "../../lib/workflow";
+import { isTerminalState, shipmentStatus } from "../../lib/workflow";
+import { readinessLabel } from "../../lib/findings";
 import { AskXportraButton } from "../conversation/AskXportraButton";
 
 /**
@@ -99,12 +99,11 @@ export function AnalysisPage() {
   return (
     <div>
       <header className="page-intro">
-        <p className="page-kicker">Compliance analysis</p>
+        <p className="page-kicker">Shipment analysis</p>
         <p className="lede">
-          Running analysis weighs the supplied evidence against the case
-          views below and records a new round with its findings. The
-          deterministic assessment stays authoritative — analysis organizes
-          what is known, missing, uncertain, and contradictory for review.
+          Review the shipment information and evidence already supplied, then choose when to
+          record a new analysis round. Xportra organizes what is known, missing, uncertain, and
+          conflicting; it does not grant regulatory approval or shipment clearance.
         </p>
       </header>
       {closed ? (
@@ -137,13 +136,11 @@ export function AnalysisPage() {
         </div>
       ) : null}
       <section aria-label="Analysis readiness">
-        <h2>Analysis readiness</h2>
+        <h2>Information coverage</h2>
         <p className="muted">
-          Analysis runs against the case views below using the
-          shipment&apos;s current workflow state (
-          <strong>{record.state}</strong>, round {record.rounds.length + 1}).
-          Coverage is informational — the backend alone
-          decides whether a run may proceed.
+          Current shipment status: <strong>{shipmentStatus(record.state, record.supplied_evidence_ids.length).label}</strong>.
+          A new run will be saved as round {record.rounds.length + 1}. Coverage is an information
+          summary; the server decides whether a run can proceed.
         </p>
         <div className="action-row">
           <button
@@ -152,7 +149,7 @@ export function AnalysisPage() {
             disabled={busy}
             onClick={checkCoverage}
           >
-            {pending === "coverage" ? "Checking…" : "Check evidence coverage"}
+            {pending === "coverage" ? "Checking…" : "Check information coverage"}
           </button>
           <AskXportraButton
             seed={{
@@ -167,61 +164,33 @@ export function AnalysisPage() {
         {coverage ? (
           <dl className="field-grid">
             <Field label="Coverage">
-              <StatusBadge value={coverage.readiness_state} tone={readinessTone(coverage.readiness_state)} />
+              <StatusBadge value={readinessLabel(coverage.readiness_state)} tone={readinessTone(coverage.readiness_state)} />
             </Field>
-            <Field label="Known / required">
-              {coverage.known_information} / {coverage.required_information}
-            </Field>
-            <Field label="Missing items">{coverage.missing_information_count}</Field>
+            <Field label="Information recorded">{coverage.known_information}</Field>
+            <Field label="Information considered">{coverage.required_information}</Field>
+            <Field label="Information gaps">{coverage.missing_information_count}</Field>
           </dl>
         ) : null}
       </section>
-      <section aria-label="Analysis rounds">
-        <h2>Recorded analysis rounds</h2>
+      <section aria-label="Analysis history">
+        <h2>Analysis history</h2>
         <p className="muted">
-          Each completed run appends a round and leaves earlier rounds untouched. Rounds are
-          identified by the backend in recorded order; the workflow stores no timestamps, so none
-          are shown.
+          Each completed run creates a numbered record. Earlier rounds remain available. The
+          workflow does not provide timestamps.
         </p>
         {record.rounds.length === 0 ? (
-          <p className="muted">No round is recorded yet. A run appends round 1.</p>
+          <p className="muted">No analysis has been recorded yet. The next run will be round 1.</p>
         ) : (
           <>
-            <p className="lede">
-              Reviewing round {record.rounds.length}
-              {latestRound ? (
-                <>
-                  {" "}
-                  — latest report <Identifier value={latestRound.report_id} short={36} />
-                </>
-              ) : null}
-              . A recorded round describes process progress only; it is not a compliance result.
-            </p>
-            <table className="data-table">
-              <caption className="muted">Rounds in recorded order</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Round</th>
-                  <th scope="col">Report</th>
-                  <th scope="col">Findings analysed</th>
-                  <th scope="col">Decision traces</th>
-                </tr>
-              </thead>
-              <tbody>
-                {record.rounds.map((round) => (
-                  <tr key={round.round_index}>
-                    <td className="numeric">{round.round_index}</td>
-                    <td>
-                      <Link to={`../report/${encodeURIComponent(round.report_id)}`}>
-                        <Identifier value={round.report_id} short={36} />
-                      </Link>
-                    </td>
-                    <td className="numeric">{round.analysis_ids.length}</td>
-                    <td className="numeric">{round.trace_ids.length}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ol className="reference-list">
+              {record.rounds.map((round) => (
+                <li key={round.round_index}>
+                  <strong>Round {round.round_index}</strong>{" "}
+                  {round === latestRound ? <span className="muted">(latest)</span> : null}{" "}
+                  <Link to={`../report/${encodeURIComponent(round.report_id)}`}>Open stored report</Link>
+                </li>
+              ))}
+            </ol>
           </>
         )}
       </section>
@@ -247,7 +216,7 @@ export function AnalysisPage() {
               />
               {error ? <ErrorNotice error={error} /> : null}
               {pending === "analysis" ? (
-                <LoadingState text="Running analysis — retrieval and reasoning take a while. Do not close this page." />
+                <LoadingState text="Recording this analysis round. Keep this page open while it finishes." />
               ) : (
                 <button type="submit" className="primary-button" disabled={busy}>
                   {isFirstRun ? "Run analysis" : "Re-run analysis"}

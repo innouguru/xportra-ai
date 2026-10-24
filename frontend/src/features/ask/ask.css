@@ -1,0 +1,11 @@
+.xb-ask { max-width: 720px; margin: 0 auto; padding: 2rem 1rem; }
+.xb-ask-header { margin-bottom: 2rem; }
+.xb-ask-form { display: flex; flex-direction: column; gap: 1rem; }
+.xb-ask-label { font-weight: 600; }
+.xb-ask-form textarea { width: 100%; padding: 1rem; border-radius: 0.5rem; border: 1px solid #ccc; resize: vertical; font-family: inherit; }
+.xb-ask-form button { align-self: flex-start; }
+.xb-ask-result { margin-top: 2rem; padding-top: 1.5rem; border-top: 1px solid #ddd; }
+.xb-ask-answer { white-space: pre-wrap; line-height: 1.6; }
+.xb-ask-citations { margin-top: 1rem; }
+.xb-ask-citations li { margin-bottom: 0.5rem; font-size: 0.9rem; color: #555; }
+.xb-ask-empty, .xb-ask-error { color: #b35900; font-weight: 500; }

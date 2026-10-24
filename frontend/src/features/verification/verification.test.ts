@@ -62,7 +62,7 @@ describe("verification verdicts", () => {
     expect(findFindingForRequirement(report([finding("satisfied", "r9")]), "r1")).toBeNull();
     const verdict = unverifiedVerdict();
     expect(verdict.state).toBe("unknown");
-    expect(verdict.explanation).toMatch(/not been analyzed/i);
+    expect(verdict.explanation).toMatch(/no recorded analysis result is available/i);
   });
 
   it("selects the latest finding per requirement", () => {

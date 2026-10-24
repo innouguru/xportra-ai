@@ -32,21 +32,21 @@ export function verdictForAssessment(assessment: string): VerificationVerdict {
         state: "satisfied",
         label: "Satisfied",
         tone: "success",
-        explanation: "This document satisfies the requirement.",
+        explanation: "The latest recorded analysis marked this requirement as addressed.",
       };
     case "not_satisfied":
       return {
         state: "not-satisfied",
         label: "Not satisfied",
         tone: "warning",
-        explanation: "This document does not provide all the evidence needed for this requirement.",
+        explanation: "The latest recorded analysis found that more information is needed.",
       };
     default:
       return {
         state: "unknown",
         label: "Unknown",
         tone: "neutral",
-        explanation: "Xportra could not determine whether this document satisfies the requirement.",
+        explanation: "The latest recorded analysis could not determine whether this requirement is addressed.",
       };
   }
 }
@@ -58,7 +58,7 @@ export function unverifiedVerdict(): VerificationVerdict {
     label: "Unknown",
     tone: "neutral",
     explanation:
-      "This requirement has not been analyzed with this document yet. Run analysis to record a finding.",
+      "No recorded analysis result is available for this requirement yet. Run analysis to record a finding.",
   };
 }
 

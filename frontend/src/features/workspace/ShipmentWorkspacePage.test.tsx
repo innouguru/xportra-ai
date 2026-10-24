@@ -161,7 +161,7 @@ describe("workspace rendering", () => {
       screen.getByRole("heading", { name: "Cocoa · Lagos → Rotterdam", level: 1 }),
     ).toBeInTheDocument();
     expect(screen.getByText("Shipment")).toBeInTheDocument();
-    expect(screen.getByText("Xportra needs a document from you.")).toBeInTheDocument();
+    expect(screen.getByText(/Xportra needs a document from you/)).toBeInTheDocument();
     expect(screen.getByText("Xportra’s briefing")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Upload document" })).toHaveAttribute(
       "href",
@@ -170,13 +170,11 @@ describe("workspace rendering", () => {
     expect(screen.getByRole("button", { name: "Your shipments" })).toBeInTheDocument();
   });
 
-  it("renders findings as attention plus ledger with progress", () => {
+  it("renders findings once in the shipment ledger with a compact summary", () => {
     seed([seedEntry("review_required")]);
     renderWorkspace("/shipments/case-1", analysisReport("case-1", ["satisfied", "not_satisfied"]));
-    expect(screen.getByText("One requirement needs your attention.")).toBeInTheDocument();
-    const attention = screen.getByRole("heading", { name: /What needs attention/ });
-    expect(attention.textContent).toContain("1");
-    const requirements = screen.getByRole("heading", { name: /Requirements/ });
+    expect(screen.getByText(/One requirement needs your attention/)).toBeInTheDocument();
+    const requirements = screen.getByRole("heading", { name: /Requirements and findings/ });
     expect(requirements.textContent).toContain("1 of 2 addressed");
     const scope = within(requirements.closest("section") as HTMLElement);
     expect(
@@ -185,6 +183,7 @@ describe("workspace rendering", () => {
     expect(
       scope.getByRole("button", { name: "Certificate of origin — Needs attention" }),
     ).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Certificate of origin — Needs attention" })).toHaveLength(1);
     // The ledger carries no card chrome and no inline disclosures.
     expect(screen.getByRole("main").querySelector(".xb-card, .xb-req-card")).toBeNull();
     expect(screen.queryByRole("button", { name: "Why is this required?" })).toBeNull();
@@ -193,8 +192,8 @@ describe("workspace rendering", () => {
   it("falls back honestly without findings data", () => {
     seed([seedEntry("additional_evidence_requested", { open_requirements: ["o1", "o2"] })]);
     renderWorkspace("/shipments/case-1");
-    expect(screen.getByText(/2 requirements are flagged/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Review requirements" })).toHaveAttribute(
+    expect(screen.getByText(/2 information items are flagged open/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "requirements page" })).toHaveAttribute(
       "href",
       "/workspace/requirements",
     );
@@ -205,10 +204,11 @@ describe("workspace rendering", () => {
     seed([seedEntry("assessment_package_ready")]);
     renderWorkspace("/shipments/case-1");
     const banner = screen.getByRole("note");
-    expect(banner.textContent).toContain("This shipment is complete and read-only.");
-    expect(banner.textContent).toContain("It’s kept as a compliance record.");
-    expect(screen.getByText("Everything Xportra could check is complete.")).toBeInTheDocument();
-    expect(screen.getByText("Ready")).toBeInTheDocument();
+    expect(banner.textContent).toContain("assessment package is complete");
+    expect(banner.textContent).toContain("does not mean a government authority has approved or cleared");
+    expect(screen.getByText(/Everything Xportra could check is complete/)).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.classList.contains("xb-ws-state__text") ?? false))
+      .toHaveTextContent("Completed");
     expect(screen.queryByRole("button", { name: /upload|run|re-run|finalize/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /upload|run compliance/i })).toBeNull();
   });
@@ -231,13 +231,13 @@ describe("document drawer seam", () => {
     const rows = screen.getAllByRole("button", { name: "Phytosanitary certificate — Needs attention" });
     expect(rows.length).toBeGreaterThan(0);
     fireEvent.click(rows[0]);
-    const dialog = screen.getByRole("dialog", { name: "Requirement: Phytosanitary certificate" });
+    const dialog = screen.getByRole("dialog", { name: "Record details: Phytosanitary certificate" });
     expect(dialog).toHaveAttribute("aria-modal", "true");
     const drawer = within(dialog);
     expect(drawer.getByRole("button", { name: "Back to shipment" })).toBeInTheDocument();
     expect(drawer.getByRole("button", { name: "Upload document" })).toBeInTheDocument();
     fireEvent.click(drawer.getByRole("button", { name: "Back to shipment" }));
-    expect(screen.queryByRole("dialog", { name: "Requirement: Phytosanitary certificate" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Record details: Phytosanitary certificate" })).toBeNull();
   });
 });
 
@@ -335,7 +335,7 @@ describe("durable resume", () => {
     expect(
       await screen.findByRole("heading", { name: "Cocoa · Lagos → Rotterdam", level: 1 }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Xportra needs a document from you.")).toBeInTheDocument();
+    expect(screen.getByText(/Xportra needs a document from you/)).toBeInTheDocument();
   });
 
   it("adopts the server record over a stale cached snapshot", async () => {
@@ -345,7 +345,7 @@ describe("durable resume", () => {
     // The stale cached state resolves first; the server
     // record then wins without user action.
     expect(
-      await screen.findByText("Xportra needs a document from you."),
+      await screen.findByText(/Xportra needs a document from you/),
     ).toBeInTheDocument();
   });
 

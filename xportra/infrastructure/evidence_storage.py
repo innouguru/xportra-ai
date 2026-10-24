@@ -64,6 +64,11 @@ class InMemoryEvidenceObjectStore:
             raise EvidenceStorageError("evidence object write failed")
         self._objects[key] = (bytes(content), content_type.strip().lower())
 
+    def get(self, key: str) -> bytes | None:
+        _require_key(key)
+        stored = self._objects.get(key)
+        return stored[0] if stored is not None else None
+
     def delete(self, key: str) -> None:
         _require_key(key)
         self._objects.pop(key, None)
@@ -184,6 +189,18 @@ class SupabaseEvidenceObjectStore:
         )
         if response.status_code not in (200, 201):
             raise EvidenceStorageError("evidence object write failed")
+
+    def get(self, key: str) -> bytes | None:
+        _require_key(key)
+        response = self._request(
+            "GET",
+            f"/storage/v1/object/{self._settings.bucket}/{key}",
+        )
+        if response.status_code == 404:
+            return None
+        if response.status_code != 200:
+            raise EvidenceStorageError("evidence object read failed")
+        return response.content
 
     def delete(self, key: str) -> None:
         _require_key(key)

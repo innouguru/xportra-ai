@@ -1,4 +1,4 @@
-# ADR-0017 Addendum — Storage Technology Review and Implementation Plan
+# ADR-0018 — Storage Technology Review and Implementation Plan
 
 **Status:** Technology review complete; technology baseline suitable; storage/access policy for regulatory artifacts remains unresolved; PDF parser integration remains open; in-process worker mechanism approved conditionally (Task 3B).
 **Date:** 2026-10-21

@@ -102,9 +102,19 @@ export function describeUnsupportedFile(file: { name: string; size: number; type
 export function processingStateLabel(state: string | null | undefined): string {
   if (state === "uploaded") return "Uploaded";
   if (state === "processing") return "Processing";
-  if (state === "ready") return "Ready";
-  if (state === "failed") return "Failed";
-  return state ?? "Unknown";
+  if (state === "ready") return "Ready to use";
+  if (state === "failed") return "Processing failed";
+  return "Status unavailable";
+}
+
+/** Evidence review state is distinct from file processing and analysis. */
+export function evidenceStatusLabel(state: string | null | undefined): string {
+  if (state === "uploaded") return "Uploaded — not reviewed";
+  if (state === "reviewed") return "Reviewed";
+  if (state === "accepted") return "Accepted as evidence";
+  if (state === "rejected") return "Not accepted for use";
+  if (state === "archived") return "Archived";
+  return "Review status unavailable";
 }
 
 /** Processing tones aid scanning; only `failed` draws attention. */

@@ -7,7 +7,6 @@ import { EmptyState, LoadingState } from "../../primitives/feedback";
 import { ErrorNotice } from "../../components/StatusBits";
 import { BackButton, PageHeader } from "../../primitives/layout";
 import { RequirementLedgerRow } from "../../primitives/shipment";
-import { StatusIndicator } from "../../primitives/status";
 import { AuthenticatedShell } from "../../shell/AuthenticatedShell";
 import { fetchShipmentList, DISCOVERY_PAGE_SIZE } from "../../api/shipments";
 import { startWorkflow } from "../../api/workflows";
@@ -32,33 +31,6 @@ import "./workspace.css";
  * scores, no charts, no invented data.
  */
 
-function synthesisFor(
-  kind: string,
-  addressed: number,
-  total: number,
-  suppliedCount: number,
-): string {
-  if (kind === "findings") {
-    const requirements =
-      total === 1 ? "1 requirement recorded" : `${total} requirements recorded`;
-    const done =
-      addressed === total
-        ? "all addressed"
-        : `${addressed} of ${total} addressed`;
-    const documents =
-      suppliedCount === 0
-        ? "no documents supplied yet"
-        : suppliedCount === 1
-          ? "1 document supplied"
-          : `${suppliedCount} documents supplied`;
-    return `This shipment has ${requirements}, ${done}, with ${documents}.`;
-  }
-  if (kind === "open-count") {
-    return "What applies here is still being established.";
-  }
-  return "No requirements identified yet. What applies here is still being established.";
-}
-
 function LedgerList({
   items,
   onOpen,
@@ -82,6 +54,7 @@ function LedgerList({
               statusLabel: item.statusLabel,
               tone: item.tone,
               explanation: item.explanation,
+              sources: item.sources,
             })
           }
         />
@@ -221,11 +194,6 @@ export function ShipmentWorkspacePage() {
     { label: model.title },
   ];
 
-  const attentionItems =
-    model.requirements.kind === "findings"
-      ? model.requirements.items.filter((item) => item.tone === "warning" || item.tone === "danger")
-      : [];
-
   const meta: string[] = [];
   if (entry) {
     const quantity = entry.profile.quantity.trim();
@@ -239,19 +207,16 @@ export function ShipmentWorkspacePage() {
     }
   }
 
-  const synthesis =
-    model.requirements.kind === "findings" && model.progress
-      ? synthesisFor("findings", model.progress.addressed, model.progress.total, model.suppliedCount)
-      : model.requirements.kind === "open-count"
-        ? synthesisFor("open-count", 0, 0, model.suppliedCount)
-        : synthesisFor("none", 0, 0, model.suppliedCount);
+  const synthesis = model.suppliedCount === 1
+    ? "1 document supplied to this workflow."
+    : `${model.suppliedCount} documents supplied to this workflow.`;
 
   return (
     <AuthenticatedShell crumbs={crumbs}>
       {model.readOnly ? (
         <p className="xb-hist-banner" role="note">
-          This shipment is <strong>complete</strong> and read-only. It&rsquo;s kept as a
-          compliance record.
+          The Xportra assessment package is <strong>complete</strong> and read-only. This does not
+          mean a government authority has approved or cleared the shipment.
         </p>
       ) : null}
       <BackButton label="Your shipments" onBack={() => navigate("/shipments")} />
@@ -267,7 +232,9 @@ export function ShipmentWorkspacePage() {
           aria-hidden="true"
         />
         <div>
-          <p className="xb-ws-state__text">{model.briefing}</p>
+          <p className="xb-ws-state__text">
+            {model.statusLabel} <span aria-hidden="true">—</span> {model.briefing}
+          </p>
           {model.briefingDetail ? (
             <p className="xb-ws-state__sub">{model.briefingDetail}</p>
           ) : null}
@@ -293,19 +260,9 @@ export function ShipmentWorkspacePage() {
         ) : null}
       </section>
 
-      {attentionItems.length > 0 ? (
-        <section aria-labelledby="xb-ws-attention">
-          <h2 className="xb-ws-section-title" id="xb-ws-attention">
-            What needs attention{" "}
-            <span className="xb-ws-section-title__count">{attentionItems.length}</span>
-          </h2>
-          <LedgerList items={attentionItems} onOpen={setDrawer} />
-        </section>
-      ) : null}
-
       <section aria-labelledby="xb-ws-requirements">
         <h2 className="xb-ws-section-title" id="xb-ws-requirements">
-          Requirements{" "}
+          {model.requirements.kind === "findings" ? "Requirements and findings" : "Requirements"}{" "}
           {model.requirements.kind === "findings" && model.progress ? (
             <span className="xb-ws-section-title__count">
               {model.progress.addressed} of {model.progress.total} addressed
@@ -317,23 +274,21 @@ export function ShipmentWorkspacePage() {
         ) : null}
         {model.requirements.kind === "open-count" ? (
           <p className="xb-ws-muted">
-            {model.requirements.count} requirement{model.requirements.count === 1 ? " is" : "s are"} flagged
-            open on this shipment.{" "}
-            <Link to="/workspace/requirements">Review requirements</Link> to establish what
-            applies before analysis runs.
+            {model.requirements.count} information item{model.requirements.count === 1 ? " is" : "s are"} flagged
+            open, but details are not available in this shipment view.{" "}
+            <Link to="/workspace/evidence">View shipment documents</Link> or inspect the existing
+            records on the <Link to="/workspace/requirements">requirements page</Link>.
           </p>
         ) : null}
         {model.requirements.kind === "none" ? (
           <p className="xb-ws-muted">
-            No requirements identified yet.{" "}
-            <Link to="/workspace/requirements">Establish requirements</Link> to begin.
+            No requirement records are available to show here. You can still upload shipment
+            documents; Xportra is not presenting a complete export checklist.{" "}
+            <Link to="/workspace/evidence">View shipment documents</Link>.
           </p>
         ) : null}
       </section>
 
-      <p className="xb-ws-status-line">
-        <StatusIndicator tone={model.statusTone} label={model.statusLabel} />
-      </p>
       {drawer ? (
         <DocumentDrawer requirement={drawer} onClose={() => setDrawer(null)} />
       ) : null}

@@ -31,11 +31,13 @@ from xportra.persistence.repositories import (
 )
 
 GRANT_MANAGE = "grant_manage"
+STAGE_A_VERIFY = "stage_a_verify"
+STAGE_B_APPROVE = "stage_b_approve"
 
 #: Explicitly defined global staff permissions. Initially only
 #: ``grant_manage`` is approved; every other name is rejected at the
 #: service and database level (least privilege, controlled expansion).
-_GLOBAL_STAFF_PERMISSIONS = frozenset({GRANT_MANAGE})
+_GLOBAL_STAFF_PERMISSIONS = frozenset({GRANT_MANAGE, STAGE_A_VERIFY, STAGE_B_APPROVE})
 
 
 class AlreadyBootstrappedError(ApplicationError):
@@ -281,5 +283,7 @@ class GlobalStaffGrantService:
 __all__ = [
     "AlreadyBootstrappedError",
     "GRANT_MANAGE",
+    "STAGE_A_VERIFY",
+    "STAGE_B_APPROVE",
     "GlobalStaffGrantService",
 ]

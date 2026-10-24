@@ -1,6 +1,6 @@
 import { describe, expect, it, afterEach, vi } from "vitest";
 import { useEffect } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
@@ -75,8 +75,8 @@ afterEach(() => {
 
 const NO_CASES: Array<Record<string, unknown>> = [];
 
-function renderWithReport(report: AnalysisReport | null) {
-  sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(RECORD));
+function renderWithReport(report: AnalysisReport | null, record: WorkflowRecord = RECORD) {
+  sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(record));
   function Seed() {
     const { setAnalysis } = useAnalysis();
     useEffect(() => {
@@ -111,22 +111,11 @@ describe("FindingsPage", () => {
 
   it("summarizes counts without scoring or verdicts", () => {
     renderWithReport(REPORT);
-    expect(screen.getByText("Findings review — 2 requirements reviewed")).toBeInTheDocument();
-    // Badges are the only verdict-like UI elements: every badge
-    // must carry a verbatim backend value, never an invented one.
+    expect(screen.getByRole("heading", { name: "Your analysis results" })).toBeInTheDocument();
+    // Primary status labels are plain-language mappings, never raw enums.
     const allowed = new Set([
-      "applicable",
-      "not_applicable",
-      "unknown",
-      "satisfied",
-      "not_satisfied",
-      "supported",
-      "insufficient",
-      "missing",
-      "none",
-      "present",
-      "determined",
-      "uncertain",
+      "Still checking",
+      "Addressed in this analysis",
     ]);
     for (const badge of document.querySelectorAll(".badge")) {
       expect(allowed.has(badge.textContent?.trim() ?? "")).toBe(true);
@@ -143,16 +132,114 @@ describe("FindingsPage", () => {
     expect(document.body.textContent).toContain("NG-SON");
   });
 
-  it("keeps unknown and contradiction honest", () => {
+  it("keeps uncertainty and contradiction honest", () => {
     renderWithReport(REPORT);
-    expect(screen.getAllByText("unknown").length).toBeGreaterThan(0);
-    expect(screen.getByText("present")).toBeInTheDocument();
+    expect(screen.getAllByText("Still checking").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Conflicting evidence recorded").length).toBeGreaterThan(0);
     expect(screen.getByText(/shown as recorded, not resolved/i)).toBeInTheDocument();
-    // The only "non-compliance" wording present is the explicit
-    // anti-collapse qualifier, never a verdict.
-    expect(screen.getByText(/not a finding of non-compliance/i)).toBeInTheDocument();
+    expect(screen.getByText(/government decision, or approval to export/i)).toBeInTheDocument();
     const text = document.body.textContent?.toLowerCase() ?? "";
     expect(text).not.toMatch(/\bfailed\b/);
+  });
+
+  it("counts overlapping rollups once and prioritizes the next evidence action", () => {
+    renderWithReport(REPORT);
+    expect(screen.getByText("Distinct requirements in those groups").parentElement).toHaveTextContent("1");
+    const next = within(screen.getByRole("region", { name: "Next shipment step" }));
+    expect(next.getByRole("link", { name: "Review shipment evidence" })).toHaveAttribute("href", "/evidence");
+    const otherActions = screen.getByText("Other shipment actions").closest("details");
+    expect(otherActions).not.toHaveAttribute("open");
+    expect(within(otherActions as HTMLElement).getByRole("link", { name: "Request additional evidence" })).toHaveAttribute(
+      "href",
+      "/additional-evidence",
+    );
+  });
+
+  it("offers the final review as the next step when the latest report has no information gaps", () => {
+    const completeReport = {
+      ...REPORT,
+      requirements_with_missing_information: [],
+      uncertain_requirement_ids: [],
+      requirements_with_conflicting_evidence: [],
+      conflicting_evidence_count: 0,
+      findings: [
+        finding({
+          assessment: "satisfied",
+          uncertainty: "determined",
+          evidence_sufficiency: "supported",
+          contradiction_state: "none",
+          missing_information: [],
+          conflicting_evidence: [],
+        }),
+      ],
+    };
+    renderWithReport(completeReport);
+    const next = within(screen.getByRole("region", { name: "Next shipment step" }));
+    expect(next.getByRole("link", { name: "Continue to final review" })).toHaveAttribute("href", "/final-review");
+  });
+
+  it("prioritizes evidence review for uncertainty or conflict even without missing-information rollups", () => {
+    const uncertainReport = {
+      ...REPORT,
+      requirements_with_missing_information: [],
+      uncertain_requirement_ids: [],
+      requirements_with_conflicting_evidence: [],
+      conflicting_evidence_count: 0,
+      findings: [
+        finding({
+          assessment: "unknown",
+          missing_information: [],
+          uncertainty: "uncertain",
+          contradiction_state: "present",
+          conflicting_evidence: [{ evidence_id: "ev-2", status: "rejected" }],
+        }),
+      ],
+    };
+    renderWithReport(uncertainReport);
+    const next = within(screen.getByRole("region", { name: "Next shipment step" }));
+    expect(next.getByRole("link", { name: "Review shipment evidence" })).toHaveAttribute("href", "/evidence");
+  });
+
+  it("keeps undetermined support and conflict states on an evidence-review path", () => {
+    const unresolvedReport = {
+      ...REPORT,
+      requirements_with_missing_information: [],
+      uncertain_requirement_ids: [],
+      requirements_with_conflicting_evidence: [],
+      conflicting_evidence_count: 0,
+      findings: [
+        finding({
+          assessment: "satisfied",
+          uncertainty: "unknown",
+          contradiction_state: "unknown",
+          evidence_sufficiency: "unknown",
+          missing_information: [],
+          conflicting_evidence: [],
+        }),
+      ],
+    };
+    renderWithReport(unresolvedReport);
+    const next = within(screen.getByRole("region", { name: "Next shipment step" }));
+    expect(next.getByRole("link", { name: "Review shipment evidence" })).toHaveAttribute("href", "/evidence");
+  });
+
+  it("does not treat an empty findings list as proof of compliance or clearance", () => {
+    renderWithReport({
+      ...REPORT,
+      findings: [],
+      requirements_with_missing_information: [],
+      uncertain_requirement_ids: [],
+      requirements_with_conflicting_evidence: [],
+      conflicting_evidence_count: 0,
+    });
+    expect(screen.getByRole("note")).toHaveTextContent(/does not establish compliance/i);
+    expect(screen.getByRole("note")).toHaveTextContent(/cleared for export/i);
+  });
+
+  it("keeps a finalized shipment read-only and directs to its package", () => {
+    renderWithReport(REPORT, { ...RECORD, state: "assessment_package_ready" });
+    const next = within(screen.getByRole("region", { name: "Next shipment step" }));
+    expect(next.getByRole("link", { name: "View assessment package" })).toHaveAttribute("href", "/package");
   });
 
   it("filters findings by recorded group without inventing categories", async () => {
@@ -227,7 +314,7 @@ describe("FindingsPage persisted-report rehydration", () => {
     renderReloaded();
     await waitFor(() => {
       expect(
-        screen.getByText("Findings review — 2 requirements reviewed"),
+        screen.getByRole("heading", { name: "Your analysis results" }),
       ).toBeInTheDocument();
     });
     const urls = spy.mock.calls.map((call) => {

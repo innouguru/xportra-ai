@@ -1,7 +1,7 @@
 """HTTP request and response schemas for the API boundary."""
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt
@@ -697,3 +697,416 @@ class OrganizationRegistrationResponse(BaseModel):
     user_id: UUID
     role: str
     membership_status: str
+
+
+#: Regulatory source intake schemas (Phase 4D.10 Task 3).
+#: Requests carry only metadata and base64-encoded artifact bytes;
+#: global-staff identity comes from the authenticated context.
+#: Responses carry identifiers and lifecycle state only — never
+#: storage keys, file bytes, or infrastructure internals.
+
+MAX_ARTIFACT_BASE64_CHARACTERS = 20_000_000
+
+ACCEPTED_ARTIFACT_CONTENT_TYPES = frozenset({
+    "text/plain", "text/markdown", "application/json",
+})
+
+VALID_SOURCE_STATUSES = frozenset({
+    "draft", "active", "superseded", "withdrawn", "archived",
+})
+
+
+class RegulatorySourceCreateRequest(APIRequest):
+    """Register a regulatory source. source_url is metadata only."""
+
+    authority_id: UUID
+    jurisdiction: str = Field(min_length=1)
+    title: str = Field(min_length=1)
+    version: str | None = Field(default=None, max_length=100)
+    status: str = Field(default="draft")
+    effective_date: date | None = None
+    publication_date: date | None = None
+    source_url: str | None = Field(default=None, max_length=2048)
+
+
+class RegulatorySourceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    authority_id: UUID
+    jurisdiction: str
+    title: str
+    version: str | None
+    status: str
+    effective_date: date | None
+    publication_date: date | None
+    source_url: str | None
+    retrieval_timestamp: datetime | None
+    supersedes_source_id: UUID | None
+    superseded_by_source_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegulatorySupersessionRequest(APIRequest):
+    """Record that this source supersedes another source.
+
+    ``supersedes_source_id`` identifies the source being superseded.
+    ``rationale`` documents why the supersession is being recorded.
+    """
+
+    supersedes_source_id: UUID
+    rationale: str = Field(min_length=1)
+
+
+class RegulatorySupersessionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_id: UUID
+    supersedes_source_id: UUID | None
+    superseded_by_source_id: UUID | None
+    status: str
+    updated_at: datetime
+
+
+class RegulatoryArtifactUploadRequest(APIRequest):
+    """Upload an original regulatory artifact (JSON transport, base64 bytes)."""
+
+    content_base64: str = Field(
+        min_length=1, max_length=MAX_ARTIFACT_BASE64_CHARACTERS
+    )
+    content_type: str = Field(min_length=1, max_length=255)
+    source_version: str | None = Field(default=None, max_length=100)
+
+
+class RegulatoryArtifactResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_id: UUID
+    content_hash: str
+    content_length: int
+    content_type: str
+    acquisition_channel: str
+    acquired_at: datetime
+    status: str
+    source_version: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegulatoryIngestionJobResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    artifact_id: UUID
+    source_id: UUID
+    status: str
+    attempt_number: int
+    started_at: datetime | None
+    completed_at: datetime | None
+    error_details: str | None
+    parser_version: str
+    actor_user_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegulatoryArtifactListResponse(BaseModel):
+    items: list[RegulatoryArtifactResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class RegulatoryIngestionJobListResponse(BaseModel):
+    items: list[RegulatoryIngestionJobResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class RegulatorySourceListResponse(BaseModel):
+    items: list[RegulatorySourceResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class RegulatoryGovernanceFlagResponse(BaseModel):
+    """One governance review flag, displayed verbatim.
+
+    Pending flags are surfaced with their recorded rationale;
+    completion and dismissal remain governed exclusively by the
+    backend governance rules — never from this view.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    requirement_id: UUID | None
+    trigger_source_id: UUID | None
+    trigger_type: str
+    status: str
+    actor_user_id: UUID | None
+    rationale: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegulatoryGovernanceFlagListResponse(BaseModel):
+    items: list[RegulatoryGovernanceFlagResponse]
+    total: int
+
+
+#: Regulatory candidate extraction schemas (Phase 4D.10 Task 4).
+#: Candidates are unreviewed until Stage A verification and Stage B
+#: applicability approval. Extraction records outcome and provenance
+#; it does not publish or approve requirements.
+
+EXTRACTION_OUTCOMES = frozenset({"succeeded", "partial", "failed", "manual"})
+
+
+class RegulatoryExtractRequest(APIRequest):
+    """Trigger candidate extraction for an ingestion job."""
+
+    job_id: UUID
+
+
+class RegulatoryExtractResponse(BaseModel):
+    """Extraction result: outcome, candidate count, and job status.
+
+    Never presents candidates as approved or applicable requirements.
+    """
+
+    outcome: str
+    candidate_count: int
+    candidates: list[dict[str, Any]] = Field(default_factory=list)
+    job_id: UUID
+    job_status: str
+    duplicate: bool = False
+    normalization_id: UUID | None = None
+    error: str | None = None
+
+
+class RegulatoryManualCandidateRequest(APIRequest):
+    """Manually enter a candidate requirement (recovery path).
+
+    Requires reviewer attribution. Manual candidates pass the same Stage A
+    and Stage B gates as extracted candidates; manual entry cannot make
+    failed or partial extraction appear successful.
+    """
+
+    artifact_id: UUID
+    requirement_text: str = Field(min_length=1)
+    requirement_type: str = Field(default="unknown")
+    source_location: dict[str, Any] | None = Field(default_factory=dict)
+    position: int = Field(default=0, ge=0)
+    justification: str | None = Field(default=None, max_length=2000)
+
+
+class RegulatoryManualCandidateResponse(BaseModel):
+    """Manually entered candidate requirement with reviewer attribution."""
+
+    id: UUID
+    source_id: UUID
+    artifact_id: UUID
+    requirement_text: str
+    requirement_type: str
+    source_location: dict[str, Any]
+    position: int
+    status: str
+    extraction_outcome: str
+    manual_entry: bool
+    reviewer_user_id: UUID | None
+    reviewed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegulatoryCandidateResponse(BaseModel):
+    """One candidate requirement (unreviewed, not approved)."""
+
+    id: UUID
+    source_id: UUID
+    artifact_id: UUID
+    normalized_document_id: UUID | None
+    requirement_text: str
+    requirement_type: str
+    source_location: dict[str, Any]
+    position: int
+    actor: str | None
+    status: str
+    extraction_outcome: str
+    parser_version: str | None
+    manual_entry: bool
+    reviewer_user_id: UUID | None
+    reviewed_at: datetime | None
+    ingestion_job_id: UUID | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RegulatoryEligibleRequirementResponse(BaseModel):
+    """An eligible regulatory requirement ready for exporter-facing publication.
+
+    Only requirements passing Stage A verification, Stage B approval,
+    current source, no pending governance flags, and successful
+    extraction are included. Provenance references are preserved
+    but raw content and internal scores are never exposed.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    requirement_text: str
+    requirement_type: str
+    stage_a_status: str
+    stage_b_status: str
+    stage_b_pilot_scope: str | None
+    citation_reference: dict[str, Any]
+    source_reference: dict[str, Any]
+    source_location: dict[str, Any] | None = None
+
+
+class RegulatoryEligibleRequirementsResponse(BaseModel):
+    items: list[RegulatoryEligibleRequirementResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+class RegulatoryCandidateListResponse(BaseModel):
+    items: list[RegulatoryCandidateResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+#: Regulatory Stage A review schemas (Phase 4D.10 Task 5).
+#: Stage A verifies source traceability and requirement wording only.
+#: It does NOT approve pilot applicability (Stage B) or publish
+#: requirements for exporter-facing use.
+
+STAGE_A_STATUSES = frozenset({"verified", "rejected", "clarification_required"})
+
+
+class RegulatoryStageAReviewRequest(APIRequest):
+    """Submit a Stage A review decision for a candidate requirement.
+
+    Requires the ``STAGE_A_VERIFY`` global staff permission.
+    ``stage_a_status`` must be one of: verified, rejected,
+    clarification_required. Rationale is mandatory.
+    """
+
+    stage_a_status: str
+    rationale: str = Field(min_length=1)
+
+
+class RegulatoryStageAReviewResponse(BaseModel):
+    """Stage A review decision: current state plus audit reference.
+
+    Never presents the candidate as approved or applicable — Stage A
+    verification is distinct from Stage B applicability approval.
+    """
+
+    id: UUID
+    requirement_id: UUID
+    stage_a_status: str
+    stage_a_reviewer_user_id: UUID | None
+    stage_a_reviewed_at: datetime | None
+    stage_a_rationale: str | None
+    audit_id: UUID
+    audit_created_at: datetime
+
+
+class RegulatoryStageAReviewHistoryResponse(BaseModel):
+    """One append-only Stage A review decision from the audit history."""
+
+    id: UUID
+    requirement_id: UUID
+    stage_a_status: str
+    reviewer_user_id: UUID
+    reviewed_at: datetime
+    rationale: str
+    source_id: UUID | None
+    created_at: datetime
+
+
+class RegulatoryStageAReviewHistoryListResponse(BaseModel):
+    items: list[RegulatoryStageAReviewHistoryResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+#: Regulatory Stage B review schemas (Phase 4D.10 Task 6).
+#: Stage B determines pilot-applicability approval only.
+#: It does NOT publish requirements or mark them exporter-ready.
+
+STAGE_B_STATUSES = frozenset({"approved", "rejected", "clarification_required"})
+
+
+class RegulatoryStageBReviewRequest(APIRequest):
+    """Submit a Stage B pilot-applicability approval decision.
+
+    Requires the ``STAGE_B_APPROVE`` global staff permission.
+    The candidate must have passed Stage A verification.
+    ``stage_b_status`` must be one of: approved, rejected,
+    clarification_required. Rationale and pilot scope are mandatory.
+    Same-person Stage A/Stage B review is not permitted (fail-closed).
+    """
+
+    stage_b_status: str
+    rationale: str = Field(min_length=1)
+    pilot_scope: str = Field(min_length=1)
+    evidence_references: list[dict[str, Any]] | None = Field(default_factory=list)
+    same_person_exception: bool = Field(default=False)
+    exception_authorizer_user_id: UUID | None = None
+    exception_authorization_ref: str | None = None
+    exception_justification: str | None = None
+
+
+class RegulatoryStageBReviewResponse(BaseModel):
+    """Stage B pilot-applicability approval decision: current state plus
+    audit reference.
+
+    Never presents the candidate as published or exporter-ready — Stage B
+    approval is distinct from publication and exporter-facing assessment.
+    """
+
+    id: UUID
+    requirement_id: UUID
+    stage_b_status: str
+    stage_b_reviewer_user_id: UUID | None
+    stage_b_reviewed_at: datetime | None
+    stage_b_rationale: str | None
+    stage_b_pilot_scope: str | None
+    audit_id: UUID
+    audit_created_at: datetime
+
+
+class RegulatoryStageBReviewHistoryResponse(BaseModel):
+    """One append-only Stage B review decision from the audit history."""
+
+    id: UUID
+    requirement_id: UUID
+    stage_b_status: str
+    reviewer_user_id: UUID
+    reviewed_at: datetime
+    rationale: str
+    pilot_scope: str
+    evidence_references: list[dict[str, Any]]
+    same_person_exception: bool
+    exception_authorizer_user_id: UUID | None
+    exception_authorization_ref: str | None
+    exception_justification: str | None
+    created_at: datetime
+
+
+class RegulatoryStageBReviewHistoryListResponse(BaseModel):
+    items: list[RegulatoryStageBReviewHistoryResponse]
+    limit: int
+    offset: int
+    total: int

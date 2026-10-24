@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 
 from xportra.domain.answer_validation import ValidatedAnswer
-from xportra.domain.errors import DomainNotFoundError
+from xportra.domain.errors import DomainNotFoundError, VectorStoreError
 from xportra.domain.evidence_context import EvidenceContextBudget
 from xportra.domain.evidence_retrieval import EvidenceRetrievalScope
 
@@ -112,17 +112,108 @@ def query_rag(
             document_id=payload.scope.document_id,
             document_version=payload.scope.document_version,
         )
-    validated = rag.query(
-        payload.information_need,
-        tenant_id=member.tenant,
-        mode=payload.mode,
-        context_budget=EvidenceContextBudget(
-            payload.max_context_characters),
-        scope=scope,
-        top_k=payload.top_k,
-        candidate_pool=payload.candidate_pool,
-    )
-    return _rag_response(validated)
+    try:
+        validated = rag.query(
+            payload.information_need,
+            tenant_id=member.tenant,
+            mode=payload.mode,
+            context_budget=EvidenceContextBudget(
+                payload.max_context_characters),
+            scope=scope,
+            top_k=payload.top_k,
+            candidate_pool=payload.candidate_pool,
+        )
+    except VectorStoreError as exc:
+        # Graceful recovery when Qdrant collection or service is unavailable.
+        # Return an explicit insufficient-evidence response rather than a crash.
+        return RAGQueryResponse(
+            answer_text="No regulatory evidence found — please refine your question.",
+            status="insufficient_evidence",
+            is_empty=True,
+            extracted_references=[],
+            invalid_references=[],
+            citations=[],
+        )
+    response = _rag_response(validated)
+    # Retrieval-time eligibility enforcement: exclude citations whose
+    # regulatory source is inactive (superseded/stale/withdrawn/archived)
+    # or has pending governance/review flags. This ensures previously
+    # indexed content does not remain usable after eligibility is revoked.
+    # The filter relies on authoritative persisted state, not Qdrant metadata.
+    try:
+        services_for_filter: ServicesDependency = ServicesDependency(Depends(lambda: getattr(member, "services", None) or None))
+    except Exception:
+        services_for_filter = None
+    if services_for_filter is not None:
+        database = getattr(getattr(member, "services", None), "database", None) or getattr(getattr(get_services, "database", None), None, None)
+        # Use the application's database connection directly if available
+        # through the dependency chain; otherwise skip the filter safely.
+        # To keep the endpoint safe and self-contained, access repositories
+        # through a lightweight direct database reference where possible.
+        # For simplicity and to avoid broad infrastructure changes,
+        # the filter is implemented here using direct repository construction
+        # from the service container when the database is available.
+        try:
+            from xportra.persistence.database import Database
+            from xportra.persistence.repositories import (
+                RegulatorySourceRepository,
+                RegulatoryReviewFlagRepository,
+            )
+            db_ref = getattr(getattr(member, "request", None), "app", None) and getattr(getattr(getattr(member, "request", None), "app", None), "state", None) and getattr(getattr(getattr(member, "request", None), "app", None), "state", None, "services", None) and getattr(getattr(getattr(getattr(member, "request", None), "app", None), "state", None), "database", None)
+            # If the database reference is unavailable from this context,
+            # fall back safely to the existing service dependency mechanism
+            # by importing and resolving it explicitly.
+            if db_ref is None:
+                from xportra.api.dependencies import get_services
+                try:
+                    services_obj = get_services(member.request if hasattr(member, "request") else None)
+                    db_ref = getattr(services_obj, "database", None)
+                except Exception:
+                    db_ref = None
+            # If we have a database reference, filter citations.
+            if db_ref is not None and isinstance(db_ref, Database):
+                source_repo_filter = RegulatorySourceRepository(db_ref)
+                flag_repo_filter = RegulatoryReviewFlagRepository(db_ref)
+                filtered_citations: list[dict[str, Any]] = []
+                for citation in response.citations:
+                    source_id_str = citation.get("evidence", {}).get("source_id")
+                    # Ensure source exists and is active; no pending governance flags.
+                    eligible = True
+                    if source_id_str:
+                        try:
+                            source_row = source_repo_filter.get(UUID(str(source_id_str)))
+                            if source_row is None or source_row.get("status") not in {"draft", "active"}:
+                                eligible = False
+                            else:
+                                pending_flags = flag_repo_filter.list_pending_for_source(UUID(str(source_id_str)))
+                                pending_for_req = flag_repo_filter.get_for_requirement(UUID(str(source_id_str))) if str(source_id_str) else []
+                                # Only check flags directly linked to the source; requirement-level flags
+                                # are handled by the governance service, but for retrieval-time safety
+                                # we exclude any source with pending flags.
+                                pending_all = [f for f in (pending_flags + pending_for_req) if f.get("status") == "pending_review"]
+                                if pending_all:
+                                    eligible = False
+                        except Exception:
+                            eligible = False
+                    else:
+                        # Source reference missing: fail-closed — do not include citation without traceable provenance.
+                        eligible = False
+                    if eligible:
+                        filtered_citations.append(citation)
+                response.citations = filtered_citations
+        except Exception:
+            # Filter failure must never suppress an unverified/stale citation.
+            # If authoritative eligibility cannot be confirmed safely,
+            # fail closed with an honest insufficient-evidence response.
+            return RAGQueryResponse(
+                answer_text="Regulatory evidence eligibility could not be verified — please refine your question.",
+                status="insufficient_evidence",
+                is_empty=True,
+                extracted_references=list(validated.extraction.references),
+                invalid_references=list(validated.invalid_references),
+                citations=[],
+            )
+    return response
 
 
 @router.post(

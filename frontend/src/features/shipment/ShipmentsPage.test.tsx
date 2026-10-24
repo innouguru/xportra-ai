@@ -123,7 +123,7 @@ describe("ShipmentsPage archive", () => {
     expect(await screen.findByRole("heading", { name: "Your shipments", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "You don’t have any shipments yet." })).toBeInTheDocument();
     const actions = screen.getAllByRole("link", { name: "New shipment" });
-    expect(actions.length).toBeGreaterThan(0);
+    expect(actions).toHaveLength(1);
     for (const action of actions) {
       expect(action).toHaveAttribute("href", "/start");
     }
@@ -179,11 +179,11 @@ describe("ShipmentsPage archive", () => {
     expect(screen.getByRole("status")).toHaveTextContent("2 shipments");
   });
 
-  it("opens active shipments into the workspace mechanism", async () => {
+  it("opens active shipments at the canonical workspace route", async () => {
     serve([seedEntry("case-1", "Cocoa", "Rotterdam", "created")]);
     const user = userEvent.setup();
     renderPage();
-    await user.click(await screen.findByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Open shipment" }));
     expect(await screen.findByText("Workspace stub")).toBeInTheDocument();
   });
 
@@ -201,8 +201,9 @@ describe("ShipmentsPage archive", () => {
     serve([seedEntry("case-1", "Cocoa", "Rotterdam", "created")]);
     const user = userEvent.setup();
     renderPage();
+    expect(await screen.findByText(/only removes a shipment from this device’s list/i)).toBeInTheDocument();
     await user.click(
-      await screen.findByRole("button", { name: "Forget Cocoa · Lagos → Rotterdam" }),
+      await screen.findByRole("button", { name: /Hide Cocoa · Lagos → Rotterdam from this device/ }),
     );
     expect(
       screen.getByRole("heading", { name: "You don’t have any shipments yet." }),

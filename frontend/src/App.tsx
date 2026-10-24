@@ -1,8 +1,8 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider } from "./app/AuthContext";
 import type { AuthCredentials } from "./api/client";
 import { RequireAuth } from "./app/RequireAuth";
-import { WorkflowProvider } from "./app/WorkflowContext";
+import { WorkflowProvider, useWorkflow } from "./app/WorkflowContext";
 import { WorkflowSessionSync } from "./app/WorkflowSessionSync";
 import { AnalysisProvider } from "./app/AnalysisContext";
 import { AssessmentProvider } from "./app/AssessmentContext";
@@ -33,6 +33,19 @@ import { PackagePage } from "./features/assessment/PackagePage";
 import { ReportPage } from "./features/assessment/ReportPage";
 import { HistoryPage } from "./features/assessment/HistoryPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
+import { RegulationAdminPage } from "./features/regulatory/RegulationAdminPage";
+import { AskPage } from "./features/ask/AskPage";
+
+function LegacyWorkspaceRoute() {
+  const { record } = useWorkflow();
+  const location = useLocation();
+  // Only the unqualified route has an unambiguous canonical target.
+  // Nested legacy routes remain mounted below for compatibility.
+  if (location.pathname === "/workspace" && record?.case_id) {
+    return <Navigate to={`/shipments/${encodeURIComponent(record.case_id)}`} replace />;
+  }
+  return <WorkspacePage />;
+}
 
 /**
  * Application routes (approved redesign
@@ -51,8 +64,10 @@ import { SettingsPage } from "./features/settings/SettingsPage";
  * - `/start` — new shipment (human profile; identifiers generated).
  * - `/settings` — utility surface (session, theme, honest unavailable states).
  * - `/dashboard`, `/shipments`, `/shipments/:caseId`,
- *   `/shipments/:caseId/report`, `/workspace` — authenticated
- *   workspace, gated by `RequireAuth` (unauthenticated visitors
+ *   `/shipments/:caseId/report` — canonical shipment workspace;
+ *   nested `/workspace/*` paths remain compatibility screens. The
+ *   unqualified `/workspace` redirects when a saved case is available.
+ *   Workspace routes are gated by `RequireAuth` (unauthenticated visitors
  *   return to `/session`, never to external destinations).
  */
 export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> }) {
@@ -77,6 +92,16 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
                 element={
                   <RequireAuth>
                     <DashboardPage />
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/regulatory"
+                element={
+                  <RequireAuth>
+                    <AuthenticatedShell crumbs={[{ label: "Regulatory administration" }]}>
+                      <RegulationAdminPage />
+                    </AuthenticatedShell>
                   </RequireAuth>
                 }
               />
@@ -110,7 +135,7 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
                 path="/workspace"
                 element={
                   <RequireAuth>
-                    <WorkspacePage />
+                    <LegacyWorkspaceRoute />
                   </RequireAuth>
                 }
               >
@@ -130,6 +155,7 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
                 <Route path="report/:reportId" element={<ReportPage />} />
                 <Route path="history" element={<HistoryPage />} />
               </Route>
+              <Route path="/ask" element={<RequireAuth><AskPage /></RequireAuth>} />
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </AssessmentProvider>

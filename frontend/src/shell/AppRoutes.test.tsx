@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { App } from "../App";
 
 const STALE_RECORD = {
@@ -13,6 +13,10 @@ const STALE_RECORD = {
   supplied_evidence_ids: [],
   open_requirements: [],
 };
+
+function CurrentRoute() {
+  return <output aria-label="Current route">{useLocation().pathname}</output>;
+}
 
 /**
  * Phase 10.8B route smoke tests, extended by Phase 10.10.
@@ -40,6 +44,7 @@ function renderAt(path: string, authInitial?: { token: string }) {
   render(
     <MemoryRouter initialEntries={[path]}>
       <App authInitial={authInitial} />
+      <CurrentRoute />
     </MemoryRouter>,
   );
 }
@@ -132,23 +137,34 @@ describe("authenticated routes", () => {
     expect(screen.queryByRole("complementary", { name: "Application" })).toBeNull();
   });
 
-  it("keeps workflow state and workspace navigation for an authenticated session", async () => {
+  it("redirects the unqualified legacy workspace route to the canonical shipment", async () => {
     sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
     renderAt("/workspace", { token: "test-token" });
-    expect(screen.getByRole("navigation", { name: "Primary" })).toHaveTextContent("Documents");
-    await waitFor(() =>
-      expect(sessionStorage.getItem("xportra.workflow-record.v1")).not.toBeNull(),
+    expect(await screen.findByRole("heading", { name: "Shipment workspace" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Current route")).toHaveTextContent(
+      `/shipments/${STALE_RECORD.case_id}`,
     );
+    expect(screen.getByRole("navigation", { name: "Primary" })).toHaveTextContent("View Shipments");
+    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
+    expect(sessionStorage.getItem("xportra.workflow-record.v1")).not.toBeNull();
+  });
+
+  it("preserves nested legacy workflow routes as compatibility screens", () => {
+    sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
+    renderAt("/workspace/info", { token: "test-token" });
+    expect(screen.getByRole("navigation", { name: "Shipment sections" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Shipment identity" })).toBeInTheDocument();
   });
 
   it("ends the session on sign-out and clears session-scoped workspace state", async () => {
     sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
     renderAt("/workspace", { token: "test-token" });
-    expect(screen.getByRole("navigation", { name: "Primary" })).toHaveTextContent("Documents");
-    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(screen.getByRole("navigation", { name: "Primary" })).toHaveTextContent("View Shipments");
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
     // Returned to the public sign-in surface, no workspace navigation.
     expect(await screen.findByText("Connect to your workspace")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Documents" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "View Shipments" })).toBeNull();
     // The coordination boundary clears the session-scoped record.
     await waitFor(() =>
       expect(sessionStorage.getItem("xportra.workflow-record.v1")).toBeNull(),

@@ -1,23 +1,28 @@
 import { Link } from "react-router-dom";
 import type { AnalysisFinding } from "../types/api";
-import { applicabilityTone } from "../lib/workflow";
-import { contradictionTone } from "../lib/evidence";
-import { assessmentTone, stateQualifier, uncertaintyTone } from "../lib/findings";
-import { Collapsible, Field, Identifier, StatusBadge } from "./StatusBits";
+import {
+  applicabilityLabel,
+  assessmentLabel,
+  assessmentTone,
+  contradictionLabel,
+  stateQualifier,
+  sufficiencyLabel,
+  uncertaintyLabel,
+} from "../lib/findings";
+import { Field, Identifier, StatusBadge } from "./StatusBits";
 
 /**
- * One analysis finding, structured exactly like the
- * backend DTO: requirement, applicability, assessment,
- * explanation, evidence, sufficiency, missing
- * information, sources, uncertainty. Contradictions are
- * displayed, never resolved. No scores, no verdicts,
- * no numeric confidence exists anywhere here.
+ * One recorded finding. The primary view emphasizes its
+ * meaning and next useful information; backend detail and
+ * identifiers remain available on disclosure. Contradictions
+ * are displayed, never resolved.
  */
 export function FindingCard({
   finding,
   index,
   total,
   askAction,
+  presentation = "workflow",
 }: {
   finding: AnalysisFinding;
   /** Zero-based position in the report; renders "Finding N of M" when both are given. */
@@ -25,52 +30,37 @@ export function FindingCard({
   total?: number;
   /** Optional contextual entry point (e.g. Ask Xportra); rendered verbatim. */
   askAction?: React.ReactNode;
+  /** Historical reports keep the same finding detail without exposing record identifiers. */
+  presentation?: "workflow" | "historical";
 }) {
   const assessmentNote = stateQualifier("assessment", finding.assessment);
   const sufficiencyNote = stateQualifier("sufficiency", finding.evidence_sufficiency);
+  const showIdentifiers = presentation === "workflow";
 
   return (
-    <article className="finding-card" aria-label={`Finding for ${finding.requirement_id}`}>
+    <article className="finding-card" aria-label={`Finding: ${finding.requirement_text}`}>
       {index !== undefined && total !== undefined ? (
         <p className="finding-count">
           Finding {index + 1} of {total}
         </p>
       ) : null}
-      <p className="finding-kicker">Requirement</p>
+      <p className="finding-kicker">Shipment finding</p>
       <h3 className="finding-requirement">{finding.requirement_text}</h3>
-      <dl className="field-grid finding-meta">
-        <Field label="Requirement ID">
-          <Identifier value={finding.requirement_id} short={36} />
-        </Field>
-        <Field label="Applicability">
-          <StatusBadge value={finding.applicability} tone={applicabilityTone(finding.applicability)} />
-        </Field>
-        <Field label="Assessment">
-          <StatusBadge value={finding.assessment} tone={assessmentTone(finding.assessment)} />
-          {assessmentNote ? <span className="muted"> — {assessmentNote}</span> : null}
-        </Field>
-        <Field label="Evidence sufficiency">
-          <StatusBadge value={finding.evidence_sufficiency} tone="neutral" />
-          {sufficiencyNote ? <span className="muted"> — {sufficiencyNote}</span> : null}
-        </Field>
-        <Field label="Contradiction">
-          <StatusBadge
-            value={finding.contradiction_state}
-            tone={contradictionTone(finding.contradiction_state)}
-          />
-        </Field>
-        <Field label="Uncertainty">
-          <StatusBadge value={finding.uncertainty} tone={uncertaintyTone(finding.uncertainty)} />
-        </Field>
-      </dl>
+      <p className="finding-assessment">
+        <StatusBadge value={assessmentLabel(finding.assessment)} tone={assessmentTone(finding.assessment)} />
+        {assessmentNote ? <span className="muted"> {assessmentNote}</span> : null}
+      </p>
+      <p className="muted finding-limit">
+        This is a recorded Xportra analysis result, not government approval or shipment clearance.
+      </p>
       <section className="finding-section" aria-label="Explanation">
-        <h4>Explanation</h4>
+        <h4>What the analysis recorded</h4>
         <p>{finding.explanation}</p>
         {finding.uncertainty_explanation ? <p className="muted">{finding.uncertainty_explanation}</p> : null}
         {finding.sufficiency_explanation ? <p className="muted">{finding.sufficiency_explanation}</p> : null}
       </section>
       <section className="finding-section" aria-label="Evidence">
-        <h4>Evidence</h4>
+        <h4>Evidence references</h4>
         {finding.supporting_evidence.length === 0 && finding.conflicting_evidence.length === 0 ? (
           <p className="muted">
             No evidence references recorded for this finding.{" "}
@@ -84,7 +74,7 @@ export function FindingCard({
                 <ul className="reference-list">
                   {finding.supporting_evidence.map((item, index) => (
                     <li key={`supporting-${index}`}>
-                      <EvidenceReferenceView reference={item} />
+                      <EvidenceReferenceView reference={item} showIdentifiers={showIdentifiers} />
                     </li>
                   ))}
                 </ul>
@@ -92,11 +82,11 @@ export function FindingCard({
             ) : null}
             {finding.conflicting_evidence.length > 0 ? (
               <>
-                <h5>Conflicting — shown as recorded, not resolved</h5>
+            <h5>Conflicting evidence — shown as recorded, not resolved</h5>
                 <ul className="reference-list">
                   {finding.conflicting_evidence.map((item, index) => (
                     <li key={`conflicting-${index}`}>
-                      <EvidenceReferenceView reference={item} />
+                      <EvidenceReferenceView reference={item} showIdentifiers={showIdentifiers} />
                     </li>
                   ))}
                 </ul>
@@ -115,52 +105,109 @@ export function FindingCard({
           </ul>
         </section>
       ) : null}
-      {askAction ? <p className="ledger-actions">{askAction}</p> : null}
-      <Collapsible title={`Sources and provenance (${finding.sources.length})`}>
-        {finding.sources.length === 0 ? (
-          <p className="muted">No sources recorded.</p>
+      <details className="finding-details" open={presentation === "historical"}>
+        <summary>Analysis details and source records</summary>
+        <dl className="field-grid finding-meta">
+          {showIdentifiers ? (
+            <Field label="Requirement ID">
+              <Identifier value={finding.requirement_id} short={36} />
+            </Field>
+          ) : null}
+          <Field label="Applicability">{applicabilityLabel(finding.applicability)}</Field>
+          <Field label="Evidence support">{sufficiencyLabel(finding.evidence_sufficiency)}</Field>
+          <Field label="Conflicting evidence">{contradictionLabel(finding.contradiction_state)}</Field>
+          <Field label="Certainty">{uncertaintyLabel(finding.uncertainty)}</Field>
+          <Field label="Recorded assessment">
+            <StatusBadge value={assessmentLabel(finding.assessment)} tone={assessmentTone(finding.assessment)} />
+            {sufficiencyNote ? <span className="muted"> — {sufficiencyNote}</span> : null}
+          </Field>
+        </dl>
+        <h4>Sources and provenance</h4>
+        {finding.sources.length === 0 && finding.knowledge_references.length === 0 ? (
+          <p className="muted">No source references were recorded.</p>
         ) : (
           <ul className="reference-list">
-              {finding.sources.map((source, index) => (
-                <li key={`source-${index}`}>
-                <code className="identifier">{JSON.stringify(source)}</code>
+            {[...finding.sources, ...finding.knowledge_references].map((source, index) => (
+              <li key={`source-${index}`}>
+                <SourceReference source={source} showIdentifiers={showIdentifiers} />
               </li>
             ))}
           </ul>
         )}
-        {finding.knowledge_references.length > 0 ? (
-          <>
-            <h5>Knowledge references</h5>
-            <ul className="reference-list">
-              {finding.knowledge_references.map((reference, index) => (
-                <li key={`knowledge-${index}`}>
-                  <code className="identifier">{JSON.stringify(reference)}</code>
-                </li>
-              ))}
-            </ul>
-          </>
-        ) : null}
-      </Collapsible>
+      </details>
+      {askAction ? <p className="ledger-actions">{askAction}</p> : null}
     </article>
   );
 }
 
-function EvidenceReferenceView({ reference }: { reference: Record<string, unknown> }) {
-  const entries = Object.entries(reference);
+function SourceReference({
+  source,
+  showIdentifiers,
+}: {
+  source: Record<string, unknown>;
+  showIdentifiers: boolean;
+}) {
+  const label = [
+    source["title"],
+    source["label"],
+    source["kind"],
+    source["source_type"],
+  ]
+    .filter((item): item is string => typeof item === "string" && item.length > 0)
+    .join(" · ")
+    .replace(/_/g, " ");
+  const location = [source["source_location"], source["location"], source["url"], source["source_url"]]
+    .find((item): item is string => typeof item === "string" && item.length > 0);
+  const identifier = showIdentifiers
+    ? [source["identifier"], source["source_id"]].find(
+        (item): item is string => typeof item === "string" && item.length > 0,
+      )
+    : undefined;
+  const description = label || (identifier ? "Recorded source" : "Source reference recorded");
+  return (
+    <span>
+      {description}
+      {location ? <> — {location}</> : null}
+      {identifier ? <> — <Identifier value={identifier} /></> : null}
+    </span>
+  );
+}
+
+function EvidenceReferenceView({
+  reference,
+  showIdentifiers,
+}: {
+  reference: Record<string, unknown>;
+  showIdentifiers: boolean;
+}) {
+  const entries: Array<{ label: string; value: string; identifier?: boolean }> = [];
+  for (const [key, label] of [
+    ["evidence_type", "Document type"],
+    ["reference", "Document reference"],
+    ["status", "Recorded evidence status"],
+  ]) {
+    const value = reference[key];
+    if (typeof value === "string" && value.length > 0) {
+      entries.push({ label, value });
+    }
+  }
+  const evidenceId =
+    showIdentifiers && typeof reference["evidence_id"] === "string"
+      ? reference["evidence_id"]
+      : null;
+  if (evidenceId) {
+    entries.push({ label: "Evidence record", value: evidenceId, identifier: true });
+  }
   if (entries.length === 0) {
-    return <span className="muted">Empty reference</span>;
+    return <span className="muted">Evidence reference recorded without display details.</span>;
   }
   return (
     <dl className="field-grid">
-      {entries.map(([key, value]) => (
-        <div className="field" key={key}>
-          <dt>{key.replace(/_/g, " ")}</dt>
+      {entries.map((entry) => (
+        <div className="field" key={entry.label}>
+          <dt>{entry.label}</dt>
           <dd>
-            {typeof value === "string" && value.length > 60 ? (
-              <Identifier value={value} />
-            ) : (
-              <span>{String(value ?? "")}</span>
-            )}
+            {entry.identifier ? <Identifier value={entry.value} /> : entry.value}
           </dd>
         </div>
       ))}

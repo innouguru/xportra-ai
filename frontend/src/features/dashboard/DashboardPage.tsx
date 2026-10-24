@@ -85,11 +85,11 @@ export function DashboardPage() {
     <AuthenticatedShell crumbs={[{ label: "Dashboard" }]}>
       <PageHeader
         title="Your shipments"
-        actions={
+        actions={load.status === "ready" && load.model.entries.length === 0 ? undefined : (
           <Link className="primary-button" to="/start">
             New shipment
           </Link>
-        }
+        )}
       />
       {load.status === "loading" ? <LoadingState text="Loading your shipments…" /> : null}
       {load.status === "error" ? (
@@ -109,6 +109,12 @@ export function DashboardPage() {
             </Link>
           }
         />
+      ) : null}
+      {load.status === "ready" && load.model.entries.some((item) => item.complete) ? (
+        <p className="xb-ws-muted" role="note">
+          Completed means the Xportra assessment package is complete. It does not mean a government
+          authority has approved or cleared the shipment.
+        </p>
       ) : null}
       {load.status === "ready" && load.model.attention.length > 0 ? (
         <section aria-labelledby="dashboard-attention" className="xb-attention-block">
@@ -144,7 +150,8 @@ export function DashboardPage() {
                 key={item.entry.caseId}
                 name={rowName(item)}
                 route={rowRoute(item)}
-                state={item.attention ?? item.statusLabel}
+                state={item.statusLabel}
+                detail={item.attention}
                 tone={item.tone}
                 href={item.action.destination}
                 onSelect={() => open(item)}

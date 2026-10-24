@@ -76,8 +76,9 @@ describe("AssessmentPage", () => {
       "true",
     );
     expect(
-      screen.getByRole("heading", { name: "Analysis readiness" }),
+      screen.getByRole("heading", { name: "Information coverage" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run analysis" })).toBeInTheDocument();
   });
 
   it("moves between stages without losing backend state", async () => {
@@ -116,8 +117,9 @@ describe("AssessmentPage", () => {
     ).toBeInTheDocument();
     await user.click(screen.getByRole("tab", { name: "Run analysis" }));
     expect(
-      screen.getByRole("heading", { name: "Analysis readiness" }),
+      screen.getByRole("heading", { name: "Information coverage" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run analysis" })).toBeInTheDocument();
   });
 
   it("opens on the package stage for a finalized workflow", () => {

@@ -1,0 +1,4 @@
+BEGIN;
+DROP TRIGGER IF EXISTS regulatory_artifact_deletion_intent_set_updated_at ON xportra.regulatory_artifact_deletion_intent;
+DROP TABLE IF EXISTS xportra.regulatory_artifact_deletion_intent;
+COMMIT;

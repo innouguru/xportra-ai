@@ -131,3 +131,26 @@ export const WORKFLOW_TERMINAL_STATES = ["assessment_package_ready"] as const;
 export function isTerminalState(state: string): boolean {
   return (WORKFLOW_TERMINAL_STATES as readonly string[]).includes(state);
 }
+
+/** Shipment-facing status, distinct from document and evidence status. */
+export function shipmentStatus(state: string | null, suppliedEvidenceCount = 0): {
+  label: "Not started" | "In progress" | "Needs your attention" | "Completed";
+  tone: "success" | "warning" | "info" | "neutral";
+} {
+  if (state === null || state === "created") {
+    return { label: "Not started", tone: "neutral" };
+  }
+  if (isTerminalState(state)) {
+    return { label: "Completed", tone: "success" };
+  }
+  if (
+    state === "additional_evidence_requested" ||
+    state === "analysis_available" ||
+    state === "review_required" ||
+    state === "reanalysis_required" ||
+    (state === "evidence_pending" && suppliedEvidenceCount === 0)
+  ) {
+    return { label: "Needs your attention", tone: "warning" };
+  }
+  return { label: "In progress", tone: "info" };
+}

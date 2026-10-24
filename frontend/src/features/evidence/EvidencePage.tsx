@@ -22,6 +22,7 @@ import {
   SUPPORTED_UPLOAD_TEXT,
   UPLOAD_ACCEPT,
   describeUnsupportedFile,
+  evidenceStatusLabel,
   formatFileSize,
   processingStateLabel,
   processingStateNote,
@@ -56,6 +57,7 @@ export function EvidencePage() {
   const auth = useAuth();
   const { record, setRecord } = useWorkflow();
   const [uploads, setUploads] = useState<EvidenceUploadResult[]>([]);
+  const [retryFiles, setRetryFiles] = useState<Record<string, File>>({});
   const [suppliedDetails, setSuppliedDetails] = useState<
     Record<string, EvidenceRecord | null>
   >({});
@@ -156,22 +158,87 @@ export function EvidencePage() {
         file: selectedFile,
         workflow: record,
       });
-      setUploads((current) => [result, ...current]);
+      setUploads((current) => [result, ...current.filter((item) => item.evidence_id !== result.evidence_id)]);
+      if (result.processing_status !== "ready") {
+        setRetryFiles((current) => ({ ...current, [result.evidence_id]: selectedFile }));
+      } else {
+        setRetryFiles((current) => {
+          const next = { ...current };
+          delete next[result.evidence_id];
+          return next;
+        });
+      }
       setSelectedFile(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
       setUploadNotice(
         result.processing_status === "ready"
-          ? `“${result.original_filename ?? result.document_title ?? "Document"}” is ready as evidence. This does not mean any requirement is satisfied.`
+          ? `“${result.original_filename ?? result.document_title ?? "Document"}” is ready to use. It has not been supplied to the shipment or assessed yet.`
           : result.processing_status === "failed"
-            ? `“${result.original_filename ?? result.document_title ?? "Document"}” was received but processing failed, so it cannot be used as evidence.`
+            ? `“${result.original_filename ?? result.document_title ?? "Document"}” was received, but processing failed. It was not supplied; retry processing below or choose another file.`
             : `“${result.original_filename ?? result.document_title ?? "Document"}” was received and is still processing.`,
       );
     } catch (err) {
       setError(err);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const retryProcessing = async (evidenceId: string) => {
+    const file = retryFiles[evidenceId];
+    if (locked || !file) {
+      return;
+    }
+    setError(null);
+    setUploading(true);
+    try {
+      const result = await uploadEvidenceFile(auth, { file, workflow: record });
+      setUploads((current) => [result, ...current.filter((item) => item.evidence_id !== result.evidence_id)]);
+      if (result.processing_status === "ready") {
+        setRetryFiles((current) => {
+          const next = { ...current };
+          delete next[evidenceId];
+          return next;
+        });
+      }
+      setUploadNotice(
+        result.processing_status === "ready"
+          ? `“${result.original_filename ?? result.document_title ?? "Document"}” is ready to use. It has not been supplied to the shipment or assessed yet.`
+          : `“${result.original_filename ?? result.document_title ?? "Document"}” is still not ready to use. You can retry processing again or choose another file.`,
+      );
+    } catch (err) {
+      setError(err);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const refreshProcessing = async (evidenceId: string) => {
+    if (busy) {
+      return;
+    }
+    setError(null);
+    setPending(`refresh-${evidenceId}`);
+    try {
+      const latest = await fetchEvidence(auth, evidenceId);
+      setUploads((current) => current.map((item) =>
+        item.evidence_id === evidenceId
+          ? { ...item, status: latest.status, processing_status: latest.processing_status ?? null }
+          : item,
+      ));
+      if (latest.processing_status === "ready") {
+        setRetryFiles((current) => {
+          const next = { ...current };
+          delete next[evidenceId];
+          return next;
+        });
+      }
+    } catch (err) {
+      setError(err);
+    } finally {
+      setPending(null);
     }
   };
 
@@ -247,7 +314,7 @@ export function EvidencePage() {
                     {docType ? <Field label="Type">{docType}</Field> : null}
                     {reviewStatus ? (
                       <Field label="Evidence status">
-                        <StatusBadge value={reviewStatus} tone="neutral" />
+                      <StatusBadge value={evidenceStatusLabel(reviewStatus)} tone="neutral" />
                       </Field>
                     ) : null}
                     {processing ? (
@@ -486,7 +553,7 @@ export function EvidencePage() {
                   </Field>
                   {item.status ? (
                     <Field label="Evidence status">
-                      <StatusBadge value={item.status} tone="neutral" />
+                      <StatusBadge value={evidenceStatusLabel(item.status)} tone="neutral" />
                     </Field>
                   ) : null}
                   <Field label="Requirement association">
@@ -513,23 +580,52 @@ export function EvidencePage() {
                     {supplied.has(item.evidence_id) ? (
                       <span>Supplied to this workflow</span>
                     ) : (
+                      <span>
+                        <span>Not supplied </span>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={locked || item.processing_status !== "ready"}
+                          title={
+                            item.processing_status === "failed"
+                              ? "Processing failed; retry processing before supplying"
+                              : item.processing_status !== "ready"
+                                ? "Wait until the document is ready to use"
+                                : undefined
+                          }
+                          onClick={() => void supply(item.evidence_id)}
+                        >
+                          {pending === `supply-${item.evidence_id}`
+                            ? "Supplying…"
+                            : "Supply to this shipment"}
+                        </button>
+                      </span>
+                    )}
+                  </Field>
+                  {(item.processing_status === "uploaded" || item.processing_status === "processing") ? (
+                    <Field label="Processing action">
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        disabled={busy}
+                        onClick={() => void refreshProcessing(item.evidence_id)}
+                      >
+                        {pending === `refresh-${item.evidence_id}` ? "Checking…" : "Refresh processing status"}
+                      </button>
+                    </Field>
+                  ) : null}
+                  {item.processing_status === "failed" && retryFiles[item.evidence_id] ? (
+                    <Field label="Processing action">
                       <button
                         type="button"
                         className="secondary-button"
-                        disabled={locked || item.processing_status === "failed"}
-                        title={
-                          item.processing_status === "failed"
-                            ? "Failed documents cannot be supplied"
-                            : undefined
-                        }
-                        onClick={() => void supply(item.evidence_id)}
+                        disabled={busy || closed}
+                        onClick={() => void retryProcessing(item.evidence_id)}
                       >
-                        {pending === `supply-${item.evidence_id}`
-                          ? "Supplying…"
-                          : "Supply to workflow"}
+                        {uploading ? "Retrying processing…" : "Retry processing"}
                       </button>
-                    )}
-                  </Field>
+                    </Field>
+                  ) : null}
                   <Field label="Document">
                     <button
                       type="button"

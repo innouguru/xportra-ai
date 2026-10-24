@@ -12,6 +12,8 @@ import {
   LoadingState,
 } from "../../components/StatusBits";
 import { isUuidLike } from "../../lib/conversation";
+import { countRequirementsNeedingAttention } from "../../lib/findings";
+import { isTerminalState } from "../../lib/workflow";
 import { AskXportraButton } from "../conversation/AskXportraButton";
 
 /**
@@ -85,13 +87,34 @@ export function FindingsPage() {
     );
   }
 
-  const attentionCount =
-    report.requirements_with_missing_information.length +
-    report.uncertain_requirement_ids.length;
+  const attentionCount = countRequirementsNeedingAttention(report);
   const round = record.rounds.find((item) => item.report_id === report.report_id);
   const latestRound = record.rounds.length > 0 ? record.rounds[record.rounds.length - 1] : null;
   const reviewingNewRound =
     round !== undefined && latestRound !== null && round.round_index === latestRound.round_index;
+  const needsEvidenceReview =
+    report.requirements_with_missing_information.length > 0 ||
+    report.uncertain_requirement_ids.length > 0 ||
+    report.requirements_with_conflicting_evidence.length > 0 ||
+    report.conflicting_evidence_count > 0 ||
+    report.findings.some(
+      (finding) =>
+        finding.assessment === "unknown" ||
+        finding.uncertainty === "uncertain" ||
+        finding.uncertainty === "unknown" ||
+        finding.contradiction_state === "present" ||
+        finding.contradiction_state === "unknown" ||
+        ["missing", "insufficient", "unknown"].includes(finding.evidence_sufficiency) ||
+        finding.missing_information.length > 0 ||
+        finding.conflicting_evidence.length > 0,
+    );
+  const nextAction = isTerminalState(record.state)
+    ? { label: "View assessment package", destination: "../package" }
+    : record.state === "reanalysis_required"
+      ? { label: "Review changes and run analysis", destination: "../analysis" }
+      : record.state === "additional_evidence_requested" || needsEvidenceReview
+        ? { label: "Review shipment evidence", destination: "../evidence" }
+        : { label: "Continue to final review", destination: "../final-review" };
 
   const missing = new Set(report.requirements_with_missing_information);
   const uncertain = new Set(report.uncertain_requirement_ids);
@@ -144,42 +167,45 @@ export function FindingsPage() {
   return (
     <div>
       <header className="page-intro">
-        <p className="page-kicker">Analysis findings</p>
+        <p className="page-kicker">Shipment assessment</p>
       </header>
       <section aria-label="Report overview">
-        <h2>
-          Findings review — {report.findings.length}{" "}
-          {report.findings.length === 1 ? "requirement" : "requirements"} reviewed
-        </h2>
+        <h2>Your analysis results</h2>
+        <p className="muted">
+          {round ? `Round ${round.round_index} recorded ${report.findings.length} finding${report.findings.length === 1 ? "" : "s"}.` : `${report.findings.length} finding${report.findings.length === 1 ? "" : "s"} recorded.`}
+          {reviewingNewRound && round && round.round_index > 1
+            ? ` This is the latest round; earlier rounds remain in Analysis history.`
+            : ""}
+        </p>
         <dl className="field-grid">
-          <Field label="Report">
-            <Identifier value={report.report_id} short={36} />
+          <Field label="Findings recorded">{report.findings.length}</Field>
+          <Field label="Requirements with missing information">
+            {report.requirements_with_missing_information.length}
           </Field>
-          <Field label="Analysis round">
-            {round ? (
-              <>
-                Round {round.round_index} of {record.rounds.length} recorded
-              </>
-            ) : (
-              <span className="muted">Not recorded on the client-held workflow record.</span>
-            )}
-          </Field>
-          <Field label="Requirements needing attention">{attentionCount}</Field>
-          <Field label="With supporting evidence">
-            {report.findings.length - report.requirements_with_missing_information.length}
-          </Field>
+          <Field label="Requirements with uncertainty">{report.uncertain_requirement_ids.length}</Field>
+          <Field label="Distinct requirements in those groups">{attentionCount}</Field>
           <Field label="Conflicting evidence items">{report.conflicting_evidence_count}</Field>
         </dl>
-        {reviewingNewRound && round && round.round_index > 1 ? (
-          <p className="form-hint" role="status">
-            You are reviewing the latest analysis round (round {round.round_index}). Earlier
-            rounds stay recorded and remain readable from the Analysis screen.
+        <p className="muted">
+          These are counts from Xportra&apos;s recorded analysis. They are not a compliance score,
+          government decision, or approval to export.
+        </p>
+        {report.findings.length === 0 ? (
+          <p className="muted" role="note">
+            No findings were recorded in this analysis. That does not establish compliance or
+            confirm that the shipment is cleared for export.
           </p>
         ) : null}
-        <p className="muted">
-          Counts describe the report as received. They are not a
-          compliance score and this screen renders no verdict.
-        </p>
+        <details className="finding-details">
+          <summary>Report details</summary>
+          <dl className="field-grid">
+            <Field label="Report ID"><Identifier value={report.report_id} short={36} /></Field>
+            <Field label="Shipment case"><Identifier value={report.case_id} short={36} /></Field>
+            <Field label="Analysis round">
+              {round ? `Round ${round.round_index} of ${record.rounds.length}` : "Not recorded on the current workflow"}
+            </Field>
+          </dl>
+        </details>
       </section>
       <div className="filter-chips" role="group" aria-label="Filter findings">
         {groups.map((option) => (
@@ -195,12 +221,10 @@ export function FindingsPage() {
         ))}
       </div>
       <p className="form-hint">
-        Groups reflect the stored report: recorded missing information,
-        recorded uncertainty, recorded conflicting references, and undecided
-        assessments. Selecting a group filters this list only.
+        Filters use categories recorded in the report. Selecting one narrows this list only.
       </p>
       {visible.length === 0 ? (
-        <p className="muted">No findings in this group.</p>
+        <p className="muted">No findings match this filter. Choose “All findings” to see the full report.</p>
       ) : null}
       {visible.map((finding) => (
         <FindingCard
@@ -224,26 +248,21 @@ export function FindingsPage() {
           }
         />
       ))}
-      <div className="action-row">
-        <Link
-          className="secondary-button"
-          to={`../report/${encodeURIComponent(report.report_id)}`}
-        >
-          Open stored report
-        </Link>
-        <Link className="secondary-button" to="../evidence">
-          Supply additional evidence
-        </Link>
-        <Link className="secondary-button" to="../additional-evidence">
-          Request additional evidence
-        </Link>
-        <Link className="secondary-button" to="../analysis">
-          Re-run analysis
-        </Link>
-        <Link className="secondary-button" to="../final-review">
-          Continue to final review
-        </Link>
-      </div>
+      <section className="finding-next-step" aria-label="Next shipment step">
+        <h2>Next step</h2>
+        <p className="muted">Continue based on this shipment&apos;s current workflow state.</p>
+        <Link className="primary-button" to={nextAction.destination}>{nextAction.label}</Link>
+      </section>
+      <details className="finding-details">
+        <summary>Other shipment actions</summary>
+        <nav className="action-row" aria-label="Other shipment actions">
+          <Link className="secondary-button" to={`../report/${encodeURIComponent(report.report_id)}`}>Open stored report</Link>
+          <Link className="secondary-button" to="../evidence">Review shipment evidence</Link>
+          <Link className="secondary-button" to="../additional-evidence">Request additional evidence</Link>
+          <Link className="secondary-button" to="../analysis">Open analysis history</Link>
+          <Link className="secondary-button" to="../final-review">Continue to final review</Link>
+        </nav>
+      </details>
     </div>
   );
 }

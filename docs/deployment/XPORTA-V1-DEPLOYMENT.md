@@ -142,9 +142,18 @@ Notes and caveats:
   processing columns to `compliance_evidence`; 010/012/
   013 create the analysis, workflow, and shipment
   tables; 014 adds nullable organization profile fields
-  to `tenants` for self-service registration. No migration
-  deletes production data; every file has a matching
-  `.down.sql` rollback.
+   to `tenants` for self-service registration. No migration
+   deletes production data; every file in this 001–014 list
+   has a matching `.down.sql` rollback.
+- Down-migration coverage is incomplete beyond this list
+  (recorded 2026-10-24): repository migrations 015–020 and
+  029 include `.down.sql` rollbacks, but **021–028 have no
+  down migrations**, so rollback for that range is currently
+  incomplete. No down migrations were invented merely to
+  make the naming pattern uniform. Undoing 021–028 therefore
+  requires forward-fix or backup/restore until reversible
+  migrations are separately designed and authorized; do not
+  assume these files are reversible.
 - Never edit an applied migration in place; future
   schema work means a new numbered migration plus ADR.
 
@@ -554,6 +563,18 @@ Qdrant reachable, correct, and EMPTY.
 - `xportra_app` least-privilege DB role: DOCUMENTED (`docs/deployment/bootstrap-authorization-db-role.md`); NOT PROVISIONED; `.env` uses `postgres` superuser.
 - Migration 028 (`global_staff_grants` + audit): VERIFIED (migration 015-017 applied locally; tests pass; authorization mechanism complete; no live bootstrap/grant executed).
 - Migration 015-028: VERIFIED in repository; 029: UNVERIFIED provenance.
+- Migration rollback coverage (2026-10-24): INCOMPLETE for **021–028** —
+  no `.down.sql` files exist for `021_regulatory_candidate_extraction`,
+  `022_regulatory_requirements_source_id`, `023_regulatory_stage_a_review`,
+  `024_regulatory_stage_a_reviews`, `025_regulatory_stage_a_grant_permission`,
+  `026_regulatory_stage_b_review`, `027_regulatory_stage_b_reviews`, and
+  `028_regulatory_stage_b_grant_permission`. Migrations 001–020 and 029
+  include down migrations. Rollback of 021–028 is therefore currently
+  incomplete and would require forward-fix or backup/restore; no
+  down migrations were added for pattern uniformity, and reversible
+  migrations for 021–028 would require separate design and authorization.
+  This limitation does not alter migration 029's UNVERIFIED provenance
+  status above.
 - Health endpoint (`GET /health`): VERIFIED by inspection/code; safe for platform probes.
 - Backend startup validation (`runtime.py`, `app.py`): VERIFIED (`APP_ENV`, `APP_DEBUG`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_JWT_SECRET`, CORS); production docs disabled; security headers present.
 - Frontend production build: VERIFIED (`npm run build` succeeds; existing chunk-size advisory preserved).

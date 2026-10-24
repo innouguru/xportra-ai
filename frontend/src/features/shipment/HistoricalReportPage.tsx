@@ -6,13 +6,11 @@ import { fetchEvidence, fetchEvidenceDownload } from "../../api/evidence";
 import { useAuth } from "../../app/AuthContext";
 import { EmptyState, ErrorState, LoadingState } from "../../primitives/feedback";
 import { BackButton, PageHeader } from "../../primitives/layout";
-import { RequirementLedgerRow } from "../../primitives/shipment";
-import { StatusIndicator } from "../../primitives/status";
 import { AuthenticatedShell } from "../../shell/AuthenticatedShell";
 import { listShipments, shipmentDisplayName, type ShipmentEntry } from "../../lib/shipments";
 import { isTerminalState } from "../../lib/workflow";
 import type { AnalysisReport, EvidenceRecord } from "../../types/api";
-import { requirementVocabulary } from "../workspace/workspace";
+import { FindingCard } from "../../components/FindingCard";
 
 /**
  * Historical compliance report (approved redesign
@@ -32,39 +30,6 @@ import { requirementVocabulary } from "../workspace/workspace";
  * instead. There is no PDF boundary, so no
  * Download PDF control.
  */
-
-interface SourceView {
-  key: string;
-  title: string;
-  detail: string | null;
-}
-
-/** Only safe human-readable string fields; shapes vary, so cherry-pick. */
-function sourceViews(sources: Array<Record<string, unknown>>): SourceView[] {
-  const seen = new Set<string>();
-  const views: SourceView[] = [];
-  sources.forEach((source, index) => {
-    const title =
-      (typeof source["title"] === "string" && source["title"]) ||
-      (typeof source["identifier"] === "string" && source["identifier"]) ||
-      (typeof source["source_id"] === "string" && source["source_id"]) ||
-      null;
-    const detail =
-      (typeof source["url"] === "string" && source["url"]) ||
-      (typeof source["source_url"] === "string" && source["source_url"]) ||
-      (typeof source["location"] === "string" && source["location"]) ||
-      (typeof source["source_location"] === "string" && source["source_location"]) ||
-      null;
-    if (title || detail) {
-      const key = `${title ?? ""}||${detail ?? ""}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        views.push({ key: `${index}-${key}`, title: title ?? "Recorded source", detail });
-      }
-    }
-  });
-  return views;
-}
 
 type ReportLoad =
   | { status: "loading" }
@@ -225,7 +190,16 @@ export function HistoricalReportPage() {
   const report = load.status === "ready" ? load.report : null;
   const findings = report?.findings ?? [];
   const addressed = findings.filter((finding) => finding.assessment === "satisfied").length;
-  const sources = sourceViews(findings.flatMap((finding) => finding.sources));
+  const findingsSummary =
+    load.status === "loading"
+      ? "Reading the stored analysis findings."
+      : load.status === "error"
+        ? "The stored findings could not be read. Try again to view the report."
+        : report
+          ? findings.length > 0
+            ? `${addressed} of ${findings.length} findings addressed in the recorded analysis. This record cannot be changed, reopened, or re-finalized.`
+            : "No findings were recorded in this report. That does not establish compliance or confirm that the shipment is cleared for export."
+          : "No stored analysis report is available for this shipment. The package being complete does not establish compliance or government clearance.";
   const profile = entry.profile;
   const detailRows = [
     { label: "Product", value: profile.product.trim() || null },
@@ -247,8 +221,8 @@ export function HistoricalReportPage() {
   return (
     <AuthenticatedShell crumbs={crumbs}>
       <p className="xb-hist-banner" role="note">
-        This shipment is <strong>complete</strong> and read-only. It&rsquo;s kept as a
-        compliance record.
+        The Xportra assessment package is <strong>complete</strong> and read-only. This does not
+        mean a government authority has approved or cleared the shipment.
       </p>
       <BackButton label="Back to Your shipments" onBack={() => navigate("/shipments")} />
       <div className="xb-ws-identity">
@@ -256,19 +230,12 @@ export function HistoricalReportPage() {
         <h1 className="xb-ws-title">{title}</h1>
         {meta.length > 0 ? <p className="xb-ws-meta">{meta.join(" · ")}</p> : null}
       </div>
-      <p className="xb-ws-status-line">
-        <StatusIndicator tone="success" label="Completed" />
-      </p>
       <div className="xb-ws-layout">
         <div className="xb-ws-main">
           <section aria-label="Final result">
             <div className="xb-ws-briefing">
               <p className="xb-ws-briefing__message">Assessment finalized.</p>
-              <p className="xb-ws-briefing__detail">
-                {findings.length > 0
-                  ? `${addressed} of ${findings.length} requirements addressed. This record cannot be changed, reopened, or re-finalized.`
-                  : "No recorded findings for this shipment. This record cannot be changed, reopened, or re-finalized."}
-              </p>
+              <p className="xb-ws-briefing__detail">{findingsSummary}</p>
             </div>
           </section>
           {load.status === "loading" ? <LoadingState text="Reading the stored report…" /> : null}
@@ -279,28 +246,32 @@ export function HistoricalReportPage() {
               onRetry={() => setAttempt((count) => count + 1)}
             />
           ) : null}
-          {load.status === "ready" && findings.length > 0 ? (
+          {load.status === "ready" && report ? (
             <section aria-labelledby="xb-hist-requirements">
               <h2 className="xb-ws-section-title" id="xb-hist-requirements">
-                Requirements{" "}
-                <span className="xb-ws-section-title__count">
-                  {addressed} of {findings.length} satisfied
-                </span>
+                Findings
+                {findings.length > 0 ? (
+                  <span className="xb-ws-section-title__count">
+                    {addressed} of {findings.length} addressed in this analysis
+                  </span>
+                ) : null}
               </h2>
-              <ul className="xb-ledger">
-                {findings.map((finding) => {
-                  const words = requirementVocabulary(finding.assessment);
-                  return (
-                    <RequirementLedgerRow
-                      key={finding.analysis_id || finding.requirement_id}
-                      name={finding.requirement_text || "Requirement"}
-                      why={finding.explanation.trim() || undefined}
-                      state={words.label}
-                      tone={words.tone}
-                    />
-                  );
-                })}
-              </ul>
+              {findings.length > 0 ? (
+                findings.map((finding, index) => (
+                  <FindingCard
+                    key={finding.analysis_id || `${finding.requirement_id}-${index}`}
+                    finding={finding}
+                    index={index}
+                    total={findings.length}
+                    presentation="historical"
+                  />
+                ))
+              ) : (
+                <p className="xb-ws-muted" role="note">
+                  No findings were recorded in this report. This does not prove compliance or
+                  government approval.
+                </p>
+              )}
             </section>
           ) : null}
           <section aria-labelledby="xb-hist-evidence">
@@ -332,23 +303,6 @@ export function HistoricalReportPage() {
               </ul>
             )}
           </section>
-          {sources.length > 0 ? (
-            <section aria-labelledby="xb-hist-sources">
-              <h2 className="xb-ws-section-title" id="xb-hist-sources">
-                Regulatory sources
-              </h2>
-              <ul className="xb-ws-missing">
-                {sources.map((source) => (
-                  <li key={source.key}>
-                    {source.title}
-                    {source.detail ? (
-                      <span className="xb-ws-muted"> · {source.detail}</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
           <section aria-labelledby="xb-hist-completion">
             <h2 className="xb-ws-section-title" id="xb-hist-completion">
               Completion record

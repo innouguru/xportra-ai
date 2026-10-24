@@ -116,11 +116,12 @@ describe("attention and recent sections", () => {
     const attention = await screen.findByRole("heading", { name: "Needs your attention" });
     const recent = screen.getByRole("heading", { name: "Recent shipments" });
     expect(attention.compareDocumentPosition(recent) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText(/Incomplete — continue where you left off/)).toBeInTheDocument();
+    expect(screen.getByText(/Shipment details are incomplete — continue where you left off/)).toBeInTheDocument();
+    expect(screen.getByRole("note")).toHaveTextContent(/does not mean a government authority has approved or cleared/);
     const block = attention.closest("section");
     expect(block).not.toBeNull();
     expect(within(block as HTMLElement).getByText("Cocoa")).toBeInTheDocument();
-    expect(within(block as HTMLElement).getByRole("button", { name: "Continue" })).toBeInTheDocument();
+    expect(within(block as HTMLElement).getByRole("button", { name: "Open shipment" })).toBeInTheDocument();
     const main = screen.getByRole("main");
     for (const technical of ["evidence_pending", "review_required", "applicability_determined"]) {
       expect(main.textContent).not.toContain(technical);
@@ -168,7 +169,7 @@ describe("empty, loading, and error states", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Start one to see what it needs.")).toBeInTheDocument();
     const actions = screen.getAllByRole("link", { name: "New shipment" });
-    expect(actions).toHaveLength(2);
+    expect(actions).toHaveLength(1);
     for (const action of actions) {
       expect(action).toHaveAttribute("href", "/start");
     }

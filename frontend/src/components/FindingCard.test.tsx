@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { FindingCard } from "./FindingCard";
 import type { AnalysisFinding } from "../types/api";
@@ -37,23 +37,29 @@ function renderCard(finding: AnalysisFinding, position?: { index: number; total:
 }
 
 describe("FindingCard", () => {
-  it("renders every backend section verbatim", () => {
+  it("leads with the finding meaning and keeps technical states behind details", () => {
     renderCard(finding());
     expect(screen.getByText("File form X before export.")).toBeInTheDocument();
+    expect(screen.getAllByText("Still checking")).toHaveLength(2);
+    expect(screen.getByText(/not government approval or shipment clearance/i)).toBeInTheDocument();
     expect(screen.getByText("The evidence does not yet establish the filing.")).toBeInTheDocument();
     expect(screen.getByText("Certificate copy missing.")).toBeInTheDocument();
     expect(screen.getByText("Wording is ambiguous.")).toBeInTheDocument();
     expect(screen.getByText("One of two expected items present.")).toBeInTheDocument();
-    expect(screen.getByText("applicable")).toBeInTheDocument();
-    expect(screen.getByText("unknown")).toBeInTheDocument();
-    expect(screen.getByText("insufficient")).toBeInTheDocument();
-    expect(screen.getByText("present")).toBeInTheDocument();
+    expect(screen.queryByText("applicable")).toBeNull();
+    fireEvent.click(screen.getByText("Analysis details and source records"));
+    expect(screen.getByText("Applies to this shipment")).toBeInTheDocument();
+    expect(screen.getByText("More evidence may be needed")).toBeInTheDocument();
+    expect(screen.getByText("Conflicting evidence recorded")).toBeInTheDocument();
+    expect(screen.getByText("Some uncertainty remains")).toBeInTheDocument();
+    expect(screen.getByText("NG-SON")).toBeInTheDocument();
   });
 
   it("preserves contradictions instead of resolving them", () => {
     renderCard(finding());
     expect(screen.getByText(/shown as recorded, not resolved/i)).toBeInTheDocument();
-    expect(screen.getByText("present")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Analysis details and source records"));
+    expect(screen.getByText("Conflicting evidence recorded")).toBeInTheDocument();
   });
 
   it("renders no score, verdict, confidence, or failure language", () => {
@@ -76,12 +82,13 @@ describe("FindingCard", () => {
       }),
     );
     expect(screen.getByText(/no evidence references recorded/i)).toBeInTheDocument();
-    expect(screen.getByText(/no sources recorded/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Analysis details and source records"));
+    expect(screen.getByText(/no source references were recorded/i)).toBeInTheDocument();
   });
 
   it("structures the finding as a case record with labeled sections", () => {
     const { container } = renderCard(finding());
-    expect(screen.getByText("Requirement")).toBeInTheDocument();
+    expect(screen.getByText("Shipment finding")).toBeInTheDocument();
     const article = container.querySelector("article.finding-card");
     expect(article).not.toBeNull();
     const sections = Array.from(

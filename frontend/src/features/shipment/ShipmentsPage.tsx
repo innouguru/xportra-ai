@@ -136,11 +136,11 @@ export function ShipmentsPage() {
     <div>
       <PageHeader
         title="Your shipments"
-        actions={
+        actions={load.status === "ready" && entries.length === 0 ? undefined : (
           <Link className="primary-button" to="/start">
             New shipment
           </Link>
-        }
+        )}
       />
       {load.status === "loading" ? <LoadingState text="Loading your shipments…" /> : null}
       {load.status === "error" ? (
@@ -163,6 +163,10 @@ export function ShipmentsPage() {
       ) : null}
       {load.status === "ready" && entries.length > 0 ? (
         <>
+          <p className="xb-ws-muted" role="note">
+            “Hide from this device” only removes a shipment from this device&rsquo;s list. It stays
+            saved to your organization.
+          </p>
           <form
             className="xb-archive-toolbar"
             role="search"
@@ -217,6 +221,12 @@ export function ShipmentsPage() {
           ) : (
             groups.map((group) => (
               <section key={group.key} aria-labelledby={`archive-group-${group.key}`}>
+                {group.key === "completed" ? (
+                  <p className="xb-ws-muted" role="note">
+                    Completed means the Xportra assessment package is complete. It does not mean a
+                    government authority has approved or cleared the shipment.
+                  </p>
+                ) : null}
                 <h2 className="xb-archive-group-label" id={`archive-group-${group.key}`}>
                   {group.label}
                 </h2>
@@ -226,15 +236,16 @@ export function ShipmentsPage() {
                       key={item.entry.caseId}
                       name={rowName(item)}
                       route={rowRoute(item)}
-                      state={item.attention ?? item.statusLabel}
+                      state={item.statusLabel}
+                      detail={item.attention}
                       tone={item.tone}
                       href={item.action.destination}
                       actionLabel={item.action.label}
                       onSelect={() => open(item)}
                       dimmed={item.complete}
                       secondaryAction={{
-                        label: "Forget",
-                        ariaLabel: `Forget ${item.title}`,
+                        label: "Hide from this device",
+                        ariaLabel: `Hide ${item.title} from this device; shipment data is not deleted`,
                         onSelect: () => remove(item),
                       }}
                     />

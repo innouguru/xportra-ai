@@ -148,6 +148,28 @@ describe("workspace briefing", () => {
 });
 
 describe("workspace actions", () => {
+  it("shows only provenance returned with the finding", () => {
+    const item = finding("unknown");
+    item.sources = [{ kind: "catalogue", identifier: "source-7" }];
+    item.knowledge_references = [
+      { label: "Export guide", source_location: "chapter 3" },
+      { source_id: "reference-9" },
+      {},
+    ];
+    const model = describeWorkspace(
+      record("review_required"),
+      entry("review_required"),
+      { ...report("case-1", []), findings: [item] },
+    );
+    expect(model.requirements.kind).toBe("findings");
+    if (model.requirements.kind !== "findings") throw new Error("expected findings");
+    expect(model.requirements.items[0].sources).toEqual([
+      { label: "catalogue", reference: "source-7" },
+      { label: "Export guide", reference: "chapter 3" },
+      { label: "Knowledge source", reference: "reference-9" },
+    ]);
+  });
+
   it("routes the single primary action through existing destinations", () => {
     const cases: Array<[string, string]> = [
       ["created", "/workspace/info"],
@@ -174,7 +196,7 @@ describe("workspace actions", () => {
     expect(bare.readOnly).toBe(true);
     expect(bare.ready).toBe(true);
     expect(bare.primaryAction).toBeNull();
-    expect(bare.statusLabel).toBe("Ready");
+    expect(bare.statusLabel).toBe("Completed");
 
     const withRounds = describeWorkspace(
       record("assessment_package_ready", {
