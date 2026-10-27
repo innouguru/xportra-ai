@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ApiError } from "../../api/client";
-import { registerOrganization } from "../../api/organizations";
+import { readOnboardingState, saveOnboardingState } from "../../app/onboarding";
 import {
   clearPendingRegistration,
   readPendingRegistration,
-  toRegistrationInput,
 } from "../../app/pendingRegistration";
 import { getSupabaseClient, safeReturnPath } from "../../app/supabaseClient";
 import { AppShell } from "../../components/AppShell";
@@ -72,48 +70,65 @@ export function AuthCallbackPage() {
         }
         const pending = readPendingRegistration();
         const sessionEmail = data.session.user?.email ?? null;
-        if (pending === null) {
-          if (params.get("flow") === "registration") {
-            setState({ kind: "failed", reason: "missing-profile" });
-            return;
-          }
-          navigate(next, { replace: true });
+        const onboardingState = readOnboardingState();
+        // Treat null onboarding state as complete when there's no
+        // pending profile — this covers existing users and normal
+        // magic-link sign-in without a new-registration flow.
+        const onboardingIncomplete =
+          onboardingState !== null ? !onboardingState.completed : false;
+
+        // If the registration flow has no pending profile, the user
+        // started registration but did not cache their profile; show
+        // the recoverable error instead of redirecting to password setup.
+        if (pending === null && params.get("flow") === "registration") {
+          setState({ kind: "failed", reason: "missing-profile" });
           return;
         }
-        if (
-          sessionEmail !== null &&
-          sessionEmail.toLowerCase() !== pending.email.toLowerCase()
-        ) {
-          // Stale cache from a different account: never finalize it.
-          clearPendingRegistration();
-          setState({ kind: "failed", reason: "invalid" });
-          return;
-        }
-        registerOrganization(
-          { token: data.session.access_token, devTenantId: null },
-          toRegistrationInput(pending),
-        )
-          .then(() => {
-            if (cancelled) {
-              return;
-            }
+
+        // New registrations that require password setup must complete
+        // onboarding at /setup-password before accessing the workspace.
+        // Organization finalization is deferred to /setup-password so it
+        // runs only after the user has successfully set a password.
+        if (pending !== null || onboardingIncomplete) {
+          // If there's a stale profile from a different account, clean
+          // it up before redirecting so /setup-password does not
+          // attempt finalization for the wrong identity.
+          if (
+            pending !== null &&
+            sessionEmail !== null &&
+            sessionEmail.toLowerCase() !== pending.email.toLowerCase()
+          ) {
             clearPendingRegistration();
-            navigate("/dashboard", { replace: true });
-          })
-          .catch((caught: unknown) => {
-            if (cancelled) {
-              return;
-            }
-            if (
-              caught instanceof ApiError &&
-              caught.code === "organization_already_registered"
-            ) {
-              clearPendingRegistration();
-              navigate("/dashboard", { replace: true });
-              return;
-            }
-            setState({ kind: "failed", reason: "registration" });
-          });
+            saveOnboardingState({
+              completed: false,
+              email: sessionEmail,
+              pendingRegistration: false,
+            });
+          } else if (pending !== null) {
+            saveOnboardingState({
+              completed: false,
+              email: sessionEmail ?? pending.email,
+              pendingRegistration: true,
+            });
+          } else {
+            saveOnboardingState({
+              completed: false,
+              email: sessionEmail,
+              pendingRegistration: false,
+            });
+          }
+          navigate(`/setup-password?next=${encodeURIComponent(next)}`, { replace: true });
+          return;
+        }
+
+        // Onboarding is complete and no pending profile: navigate
+        // directly as before.
+        if (params.get("flow") === "registration") {
+          setState({ kind: "failed", reason: "missing-profile" });
+          return;
+        }
+        navigate(next, { replace: true });
+        return;
       })
       .catch(() => {
         if (!cancelled) {

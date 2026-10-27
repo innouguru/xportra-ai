@@ -11,6 +11,7 @@ import { SessionPage } from "./features/shipment/SessionPage";
 import { AuthCallbackPage } from "./features/auth/AuthCallbackPage";
 import { RegisterPage } from "./features/auth/RegisterPage";
 import { ResetPasswordPage } from "./features/auth/ResetPasswordPage";
+import { SetupPasswordPage } from "./features/auth/SetupPasswordPage";
 import { NewShipmentPage } from "./features/shipment/NewShipmentPage";
 import { WorkspacePage } from "./features/shipment/WorkspacePage";
 import { WorkspaceOverview } from "./features/shipment/WorkspaceOverview";
@@ -83,6 +84,7 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
               <Route path="/signin" element={<Navigate to="/session" replace />} />
               <Route path="/auth/callback" element={<AuthCallbackPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/setup-password" element={<SetupPasswordPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/signup" element={<Navigate to="/register" replace />} />
               <Route path="/start" element={<RequireAuth><NewShipmentPage /></RequireAuth>} />

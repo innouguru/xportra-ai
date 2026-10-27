@@ -9,7 +9,7 @@ import { AuthCallbackPage } from "./AuthCallbackPage";
 vi.mock("../../api/organizations", () => ({
   registerOrganization: vi.fn().mockResolvedValue({ tenant_id: "tenant-1" }),
 }));
-import { registerOrganization } from "../../api/organizations";
+
 
 vi.mock("../../app/supabaseClient", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../app/supabaseClient")>();
@@ -45,6 +45,7 @@ function renderAt(path: string) {
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
             <Route path="/session" element={<div>Session screen</div>} />
             <Route path="/start" element={<div>Start screen</div>} />
+            <Route path="/setup-password" element={<div>Create your password</div>} />
             <Route path="/dashboard" element={<div>Dashboard screen</div>} />
           </Routes>
         </WorkflowProvider>
@@ -138,7 +139,7 @@ describe("AuthCallbackPage", () => {
     expect(screen.queryByText("Start screen")).toBeNull();
   });
 
-  it("recovers the same-tab profile, provisions with the callback token, and clears it on success", async () => {
+  it("recovers the same-tab profile and redirects new registrations to password creation", async () => {
     const pending = {
       email: "owner@example.com",
       organizationName: "Rift Valley Produce",
@@ -160,11 +161,11 @@ describe("AuthCallbackPage", () => {
     });
     mockGetClient.mockReturnValue(client as never);
     renderAt("/auth/callback?code=valid-code&flow=registration");
-    expect(await screen.findByText("Dashboard screen")).toBeInTheDocument();
-    expect(registerOrganization).toHaveBeenCalledWith(
-      { token: "fresh-token", devTenantId: null },
-      expect.objectContaining({ organization_name: "Rift Valley Produce" }),
-    );
-    expect(window.sessionStorage.getItem("xportra.pending-registration.v1")).toBeNull();
+    // New registrations with a pending profile are directed to the
+    // dedicated password-creation screen; organization finalization
+    // runs only after the user has set a password.
+    expect(await screen.findByText("Create your password")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("xportra.pending-registration.v1")).not.toBeNull();
+    expect(window.sessionStorage.getItem("xportra.onboarding-state.v1")).not.toBeNull();
   });
 });
