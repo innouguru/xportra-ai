@@ -1,11 +1,15 @@
 /**
  * Onboarding state tracking (signup password-setup enforcement).
  *
- * Uses sessionStorage so the state survives page refreshes within
- * the same browser session but requires a valid session for protected
- * routes. This balances recoverability with security: clearing
- * browser data or opening a new tab forces re-authentication, which
- * is appropriate for a new-account onboarding gate.
+ * Uses localStorage so the state is available across browser tabs.
+ * When an email confirmation link opens in a new tab, that tab needs
+ * to read the onboarding state written by the signup tab — sessionStorage
+ * would not survive the cross-tab navigation. localStorage is shared
+ * across all tabs from the same origin.
+ *
+ * A valid Supabase session is still required for protected routes, and
+ * password setup must succeed via Supabase Auth before onboarding is
+ * marked complete — localStorage alone never bypasses those checks.
  */
 
 const STORAGE_KEY = "xportra.onboarding-state.v1";
@@ -18,7 +22,7 @@ export interface OnboardingState {
 
 function sessionStorageOrNull(): Storage | null {
   try {
-    return window.sessionStorage;
+    return window.localStorage;
   } catch {
     return null;
   }

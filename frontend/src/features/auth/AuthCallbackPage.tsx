@@ -77,22 +77,49 @@ export function AuthCallbackPage() {
         const onboardingIncomplete =
           onboardingState !== null ? !onboardingState.completed : false;
 
-        // If the registration flow has no pending profile, the user
-        // started registration but did not cache their profile; show
-        // the recoverable error instead of redirecting to password setup.
-        if (pending === null && params.get("flow") === "registration") {
-          setState({ kind: "failed", reason: "missing-profile" });
+        // Any registration flow (flow=registration) means the user
+        // confirmed their email via PKCE and needs password setup
+        // before accessing the workspace, regardless of whether the
+        // confirmation tab has access to the signup tab's cached state
+        // (localStorage now shares it across tabs, but the redirect
+        // must still work even if state is unavailable).
+        if (params.get("flow") === "registration") {
+          if (
+            pending !== null &&
+            sessionEmail !== null &&
+            sessionEmail.toLowerCase() !== pending.email.toLowerCase()
+          ) {
+            // Stale cache from a different account: never finalize it.
+            clearPendingRegistration();
+            saveOnboardingState({
+              completed: false,
+              email: sessionEmail,
+              pendingRegistration: false,
+            });
+          } else if (pending !== null) {
+            saveOnboardingState({
+              completed: false,
+              email: sessionEmail ?? pending.email,
+              pendingRegistration: true,
+            });
+          } else {
+            // New-tab confirmation without cached profile: record
+            // incomplete onboarding so protected routes redirect to
+            // /setup-password. The org profile may be unavailable in
+            // this tab; /setup-password handles that gracefully.
+            saveOnboardingState({
+              completed: false,
+              email: sessionEmail,
+              pendingRegistration: false,
+            });
+          }
+          navigate(`/setup-password?next=${encodeURIComponent(next)}`, { replace: true });
           return;
         }
 
-        // New registrations that require password setup must complete
-        // onboarding at /setup-password before accessing the workspace.
-        // Organization finalization is deferred to /setup-password so it
-        // runs only after the user has successfully set a password.
+        // Non-registration flows: only redirect to onboarding if
+        // there's explicit evidence it's needed.
         if (pending !== null || onboardingIncomplete) {
-          // If there's a stale profile from a different account, clean
-          // it up before redirecting so /setup-password does not
-          // attempt finalization for the wrong identity.
           if (
             pending !== null &&
             sessionEmail !== null &&
@@ -123,10 +150,6 @@ export function AuthCallbackPage() {
 
         // Onboarding is complete and no pending profile: navigate
         // directly as before.
-        if (params.get("flow") === "registration") {
-          setState({ kind: "failed", reason: "missing-profile" });
-          return;
-        }
         navigate(next, { replace: true });
         return;
       })

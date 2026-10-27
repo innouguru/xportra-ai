@@ -57,7 +57,7 @@ function renderAt(path: string) {
 afterEach(() => {
   vi.clearAllMocks();
   mockGetClient.mockReturnValue(null);
-  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 describe("AuthCallbackPage", () => {
@@ -118,7 +118,7 @@ describe("AuthCallbackPage", () => {
     expect(alert).toHaveTextContent(/not configured/i);
   });
 
-  it("does not treat registration authentication as completed registration when its profile is missing", async () => {
+  it("redirects new registration confirmation (no cached profile) to password setup", async () => {
     const { client, auth } = mockClient();
     auth.exchangeCodeForSession.mockResolvedValue({
       data: {
@@ -130,13 +130,12 @@ describe("AuthCallbackPage", () => {
       error: null,
     });
     mockGetClient.mockReturnValue(client as never);
+    // Simulate new-tab confirmation: no pending profile in storage.
     renderAt("/auth/callback?code=valid-code&flow=registration");
-    expect(await screen.findByRole("alert")).toHaveTextContent(/details could not be recovered/i);
-    expect(screen.getByRole("link", { name: /restart registration/i })).toHaveAttribute(
-      "href",
-      "/register",
-    );
-    expect(screen.queryByText("Start screen")).toBeNull();
+    // New registrations with no cached profile are still directed to
+    // password creation — PKCE confirmation establishes the session.
+    expect(await screen.findByText("Create your password")).toBeInTheDocument();
+    expect(window.localStorage.getItem("xportra.onboarding-state.v1")).not.toBeNull();
   });
 
   it("recovers the same-tab profile and redirects new registrations to password creation", async () => {
@@ -165,7 +164,7 @@ describe("AuthCallbackPage", () => {
     // dedicated password-creation screen; organization finalization
     // runs only after the user has set a password.
     expect(await screen.findByText("Create your password")).toBeInTheDocument();
-    expect(window.sessionStorage.getItem("xportra.pending-registration.v1")).not.toBeNull();
-    expect(window.sessionStorage.getItem("xportra.onboarding-state.v1")).not.toBeNull();
+    expect(window.localStorage.getItem("xportra.pending-registration.v1")).not.toBeNull();
+    expect(window.localStorage.getItem("xportra.onboarding-state.v1")).not.toBeNull();
   });
 });

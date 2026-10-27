@@ -7,15 +7,18 @@ import type {
  * Pending organization registration (Phase 10.11).
  *
  * When a visitor registers, the organization profile they typed is
- * held briefly in `sessionStorage` until the magic-link email is
- * opened and the PKCE callback establishes a session. The callback
- * then posts the profile to `POST /organizations` with the fresh
- * bearer token, so the backend always derives identity from the
- * verified session — never from this client-side cache.
+ * held briefly until the magic-link email is opened and the PKCE
+ * callback establishes a session. The callback then posts the profile
+ * to `POST /organizations` with the fresh bearer token, so the backend
+ * always derives identity from the verified session — never from this
+ * client-side cache.
+ *
+ * Storage uses `localStorage` so the profile is available to the
+ * confirmation tab when the email link opens in a separate browser
+ * tab. `sessionStorage` would not survive the cross-tab navigation.
  *
  * Scope and safety:
- * - Session-scoped and same-tab only; cleared once finalized or on
- *   any invalid/absent shape.
+ * - Origin-scoped; cleared once finalized or on any invalid/absent shape.
  * - Holds organization profile fields plus the sign-up email only —
  *   no tokens, no tenant id, no user id, no role, no secrets.
  * - Every read re-validates the stored shape and returns `null` on
@@ -44,7 +47,7 @@ export interface PendingRegistration {
 
 function sessionStorageOrNull(): Storage | null {
   try {
-    return window.sessionStorage;
+    return window.localStorage;
   } catch {
     return null;
   }
