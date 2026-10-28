@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, within, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { AuthProvider, useAuth } from "../app/AuthContext";
+import { IdentityProvider } from "../app/IdentityContext";
 import { ThemeProvider } from "../theme/theme";
 import { AuthenticatedShell } from "./AuthenticatedShell";
+import type { Identity } from "../types/api";
 
 function stubMatchMedia(matches: boolean) {
   window.matchMedia = ((query: string) => ({
@@ -18,16 +20,57 @@ function stubMatchMedia(matches: boolean) {
   })) as unknown as typeof window.matchMedia;
 }
 
-function renderShell(path = "/dashboard", token: string | null = "test-token") {
+const DEFAULT_IDENTITY: Identity = {
+  user_id: "11111111-1111-1111-1111-111111111111",
+  display_name: "Jane Exporter",
+  email: "jane@example.test",
+  organization_id: "22222222-2222-2222-2222-222222222222",
+  organization_name: "Acme Exporters Ltd",
+  role: "owner",
+};
+
+function stubFetchIdentity(identity: Identity) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      new Response(JSON.stringify(identity), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ),
+  );
+}
+
+function stubFetchReject() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }),
+  );
+}
+
+function renderShell(
+  path = "/dashboard",
+  token: string | null = "test-token",
+  identity: Identity | null = DEFAULT_IDENTITY,
+) {
   stubMatchMedia(false);
+  if (identity !== null) {
+    stubFetchIdentity(identity);
+  } else {
+    stubFetchReject();
+  }
   return render(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider initial={token ? { token } : {}}>
-        <ThemeProvider>
-          <AuthenticatedShell crumbs={[{ label: "Shell test" }]}>
-            <p>Page body</p>
-          </AuthenticatedShell>
-        </ThemeProvider>
+        <IdentityProvider>
+          <ThemeProvider>
+            <AuthenticatedShell crumbs={[{ label: "Shell test" }]}>
+              <p>Page body</p>
+            </AuthenticatedShell>
+          </ThemeProvider>
+        </IdentityProvider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -42,11 +85,13 @@ function authProbe() {
   render(
     <MemoryRouter>
       <AuthProvider initial={{ token: "test-token" }}>
-        <ThemeProvider>
-          <AuthenticatedShell crumbs={[{ label: "Shell test" }]}>
-            <Probe />
-          </AuthenticatedShell>
-        </ThemeProvider>
+        <IdentityProvider>
+          <ThemeProvider>
+            <AuthenticatedShell crumbs={[{ label: "Shell test" }]}>
+              <Probe />
+            </AuthenticatedShell>
+          </ThemeProvider>
+        </IdentityProvider>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -57,6 +102,7 @@ afterEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   delete document.documentElement.dataset.theme;
+  vi.unstubAllGlobals();
 });
 
 describe("authenticated shell navigation", () => {
@@ -100,7 +146,6 @@ describe("sidebar collapse", () => {
     fireEvent.click(toggle);
 
     expect(sidebar.className).toMatch(/xb-sidebar--collapsed/);
-    // Labels stay accessible names when collapsed.
     expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View Shipments" })).toBeInTheDocument();
     expect(window.localStorage.getItem("xportra.shell.sidebar.v1")).toBe("collapsed");
@@ -114,11 +159,13 @@ describe("sidebar collapse", () => {
     render(
       <MemoryRouter initialEntries={["/dashboard"]}>
         <AuthProvider initial={{ token: "test-token" }}>
-          <ThemeProvider>
-            <AuthenticatedShell crumbs={[{ label: "Shell test" }]}>
-              <p>Page body</p>
-            </AuthenticatedShell>
-          </ThemeProvider>
+          <IdentityProvider>
+            <ThemeProvider>
+              <AuthenticatedShell crumbs={[{ label: "Shell test" }]}>
+                <p>Page body</p>
+              </AuthenticatedShell>
+            </ThemeProvider>
+          </IdentityProvider>
         </AuthProvider>
       </MemoryRouter>,
     );
@@ -142,6 +189,39 @@ describe("brand behavior", () => {
   });
 });
 
+describe("account identity", () => {
+  it("shows the organization name in the sidebar brand area", async () => {
+    renderShell();
+    await waitFor(() =>
+      expect(screen.getByText("Acme Exporters Ltd")).toBeInTheDocument(),
+    );
+    const org = screen.getByText("Acme Exporters Ltd");
+    expect(org).toHaveClass("xb-sidebar__org");
+  });
+
+  it("shows Organization unavailable in the sidebar when there is no membership", async () => {
+    const noOrg: Identity = { ...DEFAULT_IDENTITY, organization_name: null, organization_id: null, role: null };
+    renderShell("/dashboard", "test-token", noOrg);
+    await waitFor(() =>
+      expect(screen.getByText("Organization unavailable")).toBeInTheDocument(),
+    );
+  });
+
+  it("does not show organization text when the sidebar is collapsed", async () => {
+    stubMatchMedia(true);
+    renderShell("/dashboard", "test-token", DEFAULT_IDENTITY);
+    await waitFor(() =>
+      expect(screen.getByText("Acme Exporters Ltd")).toBeInTheDocument(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    const org = screen.getByText("Acme Exporters Ltd");
+    expect(org).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Application" }).className).toMatch(
+      /xb-sidebar--collapsed/,
+    );
+  });
+});
+
 describe("account menu", () => {
   function openMenu() {
     renderShell();
@@ -149,16 +229,47 @@ describe("account menu", () => {
     return screen.getByRole("menu", { name: "Account" });
   }
 
-  it("exposes Profile, Organization, Settings, and Sign out", () => {
+  it("shows the signed-in name, email, and organization", async () => {
     const menu = openMenu();
-    expect(within(menu).getByRole("menuitem", { name: /Profile/ })).toBeInTheDocument();
-    expect(within(menu).getByRole("menuitem", { name: /Organization/ })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(menu).getByText("Jane Exporter")).toBeInTheDocument(),
+    );
+    expect(within(menu).getByText("jane@example.test")).toBeInTheDocument();
+    expect(within(menu).getByText("Acme Exporters Ltd")).toBeInTheDocument();
+  });
+
+  it("shows Settings and Sign out", () => {
+    const menu = openMenu();
     expect(within(menu).getByRole("menuitem", { name: "Settings" })).toHaveAttribute("href", "/settings");
     expect(within(menu).getByRole("menuitem", { name: "Sign out" })).toBeInTheDocument();
   });
 
-  it("signs out through the existing auth boundary", () => {
+  it("shows Organization unavailable when no membership is resolved", async () => {
+    const noOrg: Identity = { ...DEFAULT_IDENTITY, organization_name: null, organization_id: null, role: null };
+    renderShell("/dashboard", "test-token", noOrg);
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    const menu = screen.getByRole("menu", { name: "Account" });
+    await waitFor(() =>
+      expect(within(menu).getByText("Organization unavailable")).toBeInTheDocument(),
+    );
+  });
+
+  it("shows a loading state while identity is being resolved", async () => {
+    // Fetch never resolves: identity stays loading.
+    stubFetchReject();
+    renderShell("/dashboard", "test-token", null);
+    fireEvent.click(screen.getByRole("button", { name: "Account" }));
+    const menu = screen.getByRole("menu", { name: "Account" });
+    await waitFor(() =>
+      expect(within(menu).getByText(/Loading account/i)).toBeInTheDocument(),
+    );
+  });
+
+  it("signs out through the existing auth boundary", async () => {
     const menu = openMenu();
+    await waitFor(() =>
+      expect(within(menu).getByText("Jane Exporter")).toBeInTheDocument(),
+    );
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Sign out" }));
     expect(screen.queryByRole("menu", { name: "Account" })).toBeNull();
     // Session cleared: reopening the menu now offers Sign in.

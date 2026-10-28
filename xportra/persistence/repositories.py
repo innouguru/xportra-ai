@@ -186,7 +186,8 @@ class UserTenantMembershipRepository:
         return _fetch_all(
             self._database,
             """
-            SELECT m.id, m.tenant_id, m.role, m.status
+            SELECT m.id, m.tenant_id, m.role, m.status,
+                   t.legal_name AS tenant_legal_name
             FROM xportra.user_tenant_memberships AS m
             JOIN xportra.tenants AS t ON t.id = m.tenant_id
             WHERE m.user_id = %s AND m.status = 'active' AND t.status = 'active'

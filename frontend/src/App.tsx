@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { AuthProvider } from "./app/AuthContext";
+import { IdentityProvider } from "./app/IdentityContext";
 import type { AuthCredentials } from "./api/client";
 import { RequireAuth } from "./app/RequireAuth";
 import { WorkflowProvider, useWorkflow } from "./app/WorkflowContext";
@@ -74,10 +75,11 @@ function LegacyWorkspaceRoute() {
 export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> }) {
   return (
     <AuthProvider initial={authInitial}>
-      <WorkflowProvider>
-        <AnalysisProvider>
-          <AssessmentProvider>
-            <WorkflowSessionSync />
+      <IdentityProvider>
+        <WorkflowProvider>
+          <AnalysisProvider>
+            <AssessmentProvider>
+              <WorkflowSessionSync />
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/session" element={<SessionPage />} />
@@ -163,6 +165,7 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
           </AssessmentProvider>
         </AnalysisProvider>
       </WorkflowProvider>
+      </IdentityProvider>
     </AuthProvider>
   );
 }

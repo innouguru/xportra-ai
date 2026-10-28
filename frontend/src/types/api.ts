@@ -372,3 +372,20 @@ export interface OrganizationRegistrationResult {
   role: string;
   membership_status: string;
 }
+
+/**
+ * The authenticated account's identity as returned by ``GET /me``.
+ *
+ * The display name and email come from the provisioned application user
+ * record (``xportra.users``); the organization name comes from the
+ * user's active tenant membership (``xportra.tenants.legal_name``).
+ * Both are resolved server-side so the client never forges identity.
+ */
+export interface Identity {
+  user_id: string;
+  display_name: string;
+  email: string | null;
+  organization_id: string | null;
+  organization_name: string | null;
+  role: string | null;
+}

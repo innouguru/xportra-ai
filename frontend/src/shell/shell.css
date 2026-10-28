@@ -278,6 +278,61 @@ button.xb-menu__item {
   color: var(--xb-text-muted);
 }
 
+/* Persistent organization identity in the sidebar brand area. */
+.xb-sidebar__org {
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  color: var(--xb-text-primary);
+  padding: var(--xb-space-xs) var(--xb-space-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xb-sidebar__org--unavailable {
+  color: var(--xb-text-muted);
+  font-weight: var(--xb-weight-regular);
+}
+
+.xb-sidebar--collapsed .xb-sidebar__org {
+  display: none;
+}
+
+/* Account menu identity block. */
+.xb-menu__identity {
+  display: flex;
+  flex-direction: column;
+  gap: var(--xb-space-2xs);
+  padding: var(--xb-space-xs) var(--xb-space-sm);
+  border-bottom: var(--xb-border-width) solid var(--xb-border);
+  margin-bottom: var(--xb-space-xs);
+}
+
+.xb-menu__identity__name {
+  font-size: var(--xb-text-small);
+  font-weight: var(--xb-weight-medium);
+  color: var(--xb-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xb-menu__identity__email {
+  font-size: var(--xb-text-meta);
+  color: var(--xb-text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.xb-menu__identity__org {
+  font-size: var(--xb-text-meta);
+  color: var(--xb-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .xb-popover p {
   font-size: var(--xb-text-small);
   color: var(--xb-text-secondary);

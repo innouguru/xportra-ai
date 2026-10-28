@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { useAuth } from "../app/AuthContext";
+import { useIdentity } from "../app/IdentityContext";
 import { useSignOut } from "../app/useSignOut";
 import { BrandMark } from "../components/BrandMark";
 import { Breadcrumbs, WorkspaceContainer } from "../primitives/layout";
@@ -143,6 +144,7 @@ function NotificationEntry() {
 function AccountMenu({ onNavigate }: { onNavigate?: () => void }) {
   const auth = useAuth();
   const endSession = useSignOut();
+  const { identity, status, error } = useIdentity();
   const [open, setOpen] = useState(false);
   const [signOutError, setSignOutError] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -228,16 +230,37 @@ function AccountMenu({ onNavigate }: { onNavigate?: () => void }) {
           <li role="none" className="xb-menu__header" aria-hidden="true">
             Account
           </li>
-          <li role="none">
-            <span role="menuitem" aria-disabled="true" className="xb-menu__item xb-menu__item--disabled" data-menuitem tabIndex={-1}>
-              Profile <span className="xb-menu__soon">Soon</span>
-            </span>
-          </li>
-          <li role="none">
-            <span role="menuitem" aria-disabled="true" className="xb-menu__item xb-menu__item--disabled" data-menuitem tabIndex={-1}>
-              Organization <span className="xb-menu__soon">Soon</span>
-            </span>
-          </li>
+          {status === "loading" ? (
+            <li role="none">
+              <span role="menuitem" aria-disabled="true" className="xb-menu__item xb-menu__item--disabled" data-menuitem tabIndex={-1}>
+                Loading account…
+              </span>
+            </li>
+          ) : status === "error" ? (
+            <li role="none">
+              <span role="menuitem" aria-disabled="true" className="xb-menu__item xb-menu__item--disabled" data-menuitem tabIndex={-1}>
+                {error ?? "We couldn't load your account details."}
+              </span>
+            </li>
+          ) : identity ? (
+            <li role="none" className="xb-menu__identity">
+              <div className="xb-menu__identity__name">
+                {identity.display_name || identity.email || "Account"}
+              </div>
+              {identity.email ? (
+                <div className="xb-menu__identity__email">{identity.email}</div>
+              ) : null}
+              <div className="xb-menu__identity__org">
+                {identity.organization_name || "Organization unavailable"}
+              </div>
+            </li>
+          ) : (
+            <li role="none">
+              <span role="menuitem" aria-disabled="true" className="xb-menu__item xb-menu__item--disabled" data-menuitem tabIndex={-1}>
+                Account unavailable
+              </span>
+            </li>
+          )}
           <li role="none">
             <Link role="menuitem" className="xb-menu__item" data-menuitem to="/settings" onClick={() => { setOpen(false); onNavigate?.(); }}>
               Settings
@@ -272,10 +295,23 @@ function SidebarBody({
   showCollapse: boolean;
   onNavigate?: () => void;
 }) {
+  const { identity, status } = useIdentity();
+  const organization = identity?.organization_name ?? null;
   return (
     <>
       <div className="xb-sidebar__brand">
         <BrandMark newTab compact={collapsed} />
+        {status === "ready" || status === "error" ? (
+          organization ? (
+            <div className="xb-sidebar__org" title={organization}>
+              {organization}
+            </div>
+          ) : (
+            <div className="xb-sidebar__org xb-sidebar__org--unavailable">
+              Organization unavailable
+            </div>
+          )
+        ) : null}
       </div>
       <nav className="xb-sidebar__nav" aria-label="Primary">
         {NAV_ITEMS.map((item) => (
@@ -366,7 +402,12 @@ function MobileDrawer({ onClose }: { onClose: () => void }) {
             {icon(CLOSE_ICON)}
           </button>
         </div>
-        <SidebarBody collapsed={false} onToggleCollapse={onClose} showCollapse={false} onNavigate={onClose} />
+        <SidebarBody
+          collapsed={false}
+          onToggleCollapse={onClose}
+          showCollapse={false}
+          onNavigate={onClose}
+        />
       </aside>
     </>
   );
@@ -415,7 +456,11 @@ export function AuthenticatedShell({
         }
         aria-label="Application"
       >
-        <SidebarBody collapsed={collapsed} onToggleCollapse={toggleCollapse} showCollapse />
+        <SidebarBody
+          collapsed={collapsed}
+          onToggleCollapse={toggleCollapse}
+          showCollapse
+        />
       </aside>
       {drawerOpen ? <MobileDrawer onClose={() => setDrawerOpen(false)} /> : null}
       <div className="xb-app-main">

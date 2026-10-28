@@ -699,6 +699,18 @@ class OrganizationRegistrationResponse(BaseModel):
     membership_status: str
 
 
+#: Current-account identity returned by ``GET /me`` for the authenticated
+#: shell. Only the fields the UI needs to display who is signed in and
+#: which organization they are working under.
+class IdentityResponse(BaseModel):
+    user_id: UUID
+    display_name: str
+    email: str | None = None
+    organization_id: UUID | None = None
+    organization_name: str | None = None
+    role: str | None = None
+
+
 #: Regulatory source intake schemas (Phase 4D.10 Task 3).
 #: Requests carry only metadata and base64-encoded artifact bytes;
 #: global-staff identity comes from the authenticated context.
