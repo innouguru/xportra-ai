@@ -3975,4 +3975,128 @@ Migration 015 remains unverified against production; `DATABASE_URL` points
 
 **8. Workstream C decision:** Accepted with conditions above; smallest remaining UI step: add source/jobs navigation polish + review determinations on real data after authorized staff identity exists. No Workstream D started.
 
-\n## Phase 4D.15 Workstream E Verification (2026-10-22)\nVerdict PASS WITH CONDITIONS. No new defects; 364 focused tests passed; known failures documented (stage A fixture, ingestion audit, order-dependency, 029 provenance unverified); no code/test/file changes; no live smoke/deployment; xportra_app DB role remains prerequisite; Workstream F deferred.\n
+\n## Phase 4D.15 Workstream E Verification (2026-10-22)\nVerdict PASS WITH CONDITIONS. No new defects; 364 focused tests passed; known failures documented (stage A fixture, ingestion audit, order-dependency, 029 provenance unverified); no code/test/file changes; no live smoke/deployment; xportra_app DB role remains prerequisite; Workstream F deferred.
+
+---
+
+## Phase 4D — Hosted Migration Execution + Initial Operator Authorization Verification (2026-10-24)
+
+**Verdict:** BLOCKED (fail-closed). Hosted migration execution PASSED and was independently verified. Initial operator authorization and bootstrap were NOT executed: required operational prerequisites remain unestablished, and creating the authorization record now would fabricate evidence linkage and actor attribution. No `global_staff_authorizations` row, no `global_staff_grants` row, and no `global_staff_audit` row was created; zero writes were made to authorization state.
+
+**1. Hosted migration execution (completed, verified):**
+- Applied 12 pending migrations in order against the live database: 016, 017, 019, 020, 021, 022, 023, 024, 025, 026, 027, 028 — all succeeded (runner exit 0).
+- Already applied before this session (verified via migration-state inspection): 015, 018.
+- Excluded by design: **029** — provenance UNVERIFIED (ADR-0019 / ADR-0020 reconstruction note); NOT applied; `regulatory_review_flags` table confirmed absent.
+- Independent post-execution verification (read-only, repeated): PostgreSQL 17.6; schema `xportra` = 36 tables; `regulatory_requirements` = 27 columns; `global_staff_grants.permission` CHECK = exactly `grant_manage`, `stage_a_verify`, `stage_b_approve`; `global_staff_audit.authorization_ref` present (migration 017); audit immutability triggers intact; core row counts unchanged (users 2, tenants 2, shipments 2, compliance_workflows 2, authorities 6); authorization tables all 0 rows.
+
+**2. Identity resolution (read-only, masked; no identifiers recorded):**
+- The documented initial-operator identity matched exactly 1 active `xportra.users` row carrying `supabase_uid`. Independent `auth.users` cross-check: 1 confirmed account, `auth_uid == users.supabase_uid` TRUE, exactly 1 users row keyed by that uid → mapping chain (`supabase_uid` → `users.id`) verified end-to-end; active `owner` tenant membership.
+- Second live user row: the `local-developer@xportra.local` development seed identity created by `xportra/dev/bootstrap.py`, active, without `supabase_uid` → development seed, not a person; cannot authenticate.
+
+**3. Prerequisite assessment (`tasks/blocked/bootstrap-authorization-policy.md` §7/§8 + evidence procedure + db-role doc + authorization template):**
+Satisfied for the minimal release: approved single-operator exception with recorded justification (scope `grant_manage`); self-bootstrap denial preserved; provisional 24-month audit retention approved (finalization required only before broadening); grant/revocation authority and audit-storage contract implemented and verified (atomic grant+audit, append-only trigger, single-use authorization consumption).
+
+BLOCKERS — all must be resolved by the product owner / authorized operator before any authorization record is created or bootstrap executed:
+1. **Evidence store and verification channel not established** — organization-controlled evidence store location/access mechanism unspecified; trusted out-of-band verification method (specific channel) unspecified; `authorization_ref` not generated. Evidence-procedure status: "proposed but NOT configured; must be established before any authorization record is created."
+2. **Database connection identity not finalized** — `xportra_app` not provisioned (role absent, verified); no documented `postgres` justification. Newly recorded live properties: `current_user=postgres`, `rolsuper=false` but `rolcreaterole=rolcreatedb=rolbypassrls=rolreplication=true`, member of `supabase_privileged_role`, `service_role`, `pg_read_all_data` (privileged identity; documentation wording "superuser" is imprecise for hosted Supabase; explicit risk acknowledgment/decision still required per policy §7/§8).
+3. **Exception authority only partially defined** — authorization template records "not fully defined by design"; manual-recovery exception rules and exception-audit procedure undefined; Stage A/B same-person exception approved for planning only.
+4. **No legitimate distinct bootstrap actor/verifier identity** — `GlobalStaffGrantService.bootstrap` denies `actor == target` (`_deny_self_managed`, `xportra/application/global_staff.py:190`); `authorizer_user_id`/`verifier_user_id` FKs require real active user rows; only 2 active users exist (target + development seed) → executing now would require false attribution, which is prohibited.
+5. (Partial) Second-operator provision: deferral and minimal-release mitigation documented; future-broadening provision plan not stated (policy §8).
+
+**4. Verification performed (this task):**
+- Read-only identity/role/state inspection scripts in the pre-approved temp directory (DSN loaded programmatically from `.env` inside the scripts; never printed; no `.env` content in any output).
+- Focused unit tests: `.venv\Scripts\python.exe -m pytest tests/unit/test_global_staff.py tests/unit/test_dev_bootstrap.py -q` → **34 passed**.
+- Bootstrap contract re-verified in code (`xportra/application/global_staff.py:170-246`): fail-closed on missing/mismatched/non-approved authorization, single-use atomic consumption, advisory-lock serialization, atomic grant+audit, `authorization_ref` retained in the audit event; no application path creates authorization rows (out-of-band provisioning by design).
+
+**5. Safety:** no `.env` output; no DB writes; no migration re-run; no authorization record; no grant; no role/privilege change; no git stage/commit/push/reset; migration 029 still untracked and not applied; all prior tracked and untracked work preserved.
+
+**6. Next required actions (operational, outside agent authority):** establish the evidence store and specify the verification channel → finalize DB connection identity (provision `xportra_app` per `docs/deployment/bootstrap-authorization-db-role.md` OR document an explicit privileged-role justification using the live properties recorded above) → fully define exception authority (incl. manual recovery) → provision/identify a second legitimate active user for actor/verifier attribution → generate `authorization_ref`, insert the approved authorization record out-of-band, execute `GlobalStaffGrantService.bootstrap` with actor ≠ target, then verify audit-linkage (`global_staff_audit.authorization_ref`) and the documented bootstrap acceptance checks.\n
+
+---
+
+## Account Identity Display (frontend + backend, implemented and verified)
+
+**Verdict:** PASS. Authenticated users can now see who is signed in and which organization they are working under, consistently across the shared authenticated layout (`AuthenticatedShell`) — dashboard, shipments, settings, and all `AuthenticatedShell`-framed pages.
+
+**Sources of each identity field:**
+- **Person's display name:** `xportra.users.display_name` (provisioned at organization registration via `OrganizationRegistrationService`, from `contact_name` falling back to the organization name). Never fabricated from an email.
+- **Authenticated email:** `xportra.users.email` (authoritative application record), falling back to the Supabase JWT `email` claim only when the DB email is absent.
+- **Organization/company name:** `xportra.tenants.legal_name` resolved through the authenticated user's active `user_tenant_memberships` membership (tenant `status='active'`, membership `status='active'`). Never inferred from email domain; never hardcoded; no arbitrary organization selected when the user has multiple active memberships (organization is `null` until an explicit tenant selection is made).
+
+**Backend changes:**
+- `xportra/persistence/repositories.py` — `UserTenantMembershipRepository.list_active_for_user` now also returns `tenants.legal_name AS tenant_legal_name` (read-only, no schema change).
+- `xportra/api/schemas.py` — new `IdentityResponse` (user_id, display_name, email, organization_id, organization_name, role).
+- `xportra/api/identity.py` (new) — `GET /me`, authenticated only, resolves the user exclusively from the verified Supabase JWT subject (`users.supabase_uid` → `users.id`), returns only identity fields, enforces tenant isolation (memberships scoped to the authenticated user; no cross-tenant data; no arbitrary org selection).
+- `xportra/api/app.py` — wires `identity_router`.
+- Tests: `tests/unit/test_identity_api.py` (9 tests pass).
+
+**Frontend changes:**
+- `frontend/src/types/api.ts` — `Identity` type.
+- `frontend/src/api/identity.ts` (new) — `fetchIdentity` over `/me`.
+- `frontend/src/app/IdentityContext.tsx` (new) — `IdentityProvider` / `useIdentity`; loading/error/idle states; clears on sign out so no stale identity is shown for a different account.
+- `frontend/src/App.tsx` — mounts `IdentityProvider` inside `AuthProvider`.
+- `frontend/src/shell/AuthenticatedShell.tsx` — active organization name in the sidebar brand header ("Organization unavailable" when none); account menu shows name, email, organization, Settings, and Sign out (existing `useSignOut`), with loading/error/empty states; keyboard accessible, works desktop + mobile.
+- `frontend/src/shell/shell.css` — token-styled identity display with ellipsis for long names/emails.
+- Tests: updated `AuthenticatedShell.test.tsx` (24 pass); full frontend suite `npx vitest run` — 570 passed / 1 failed (pre-existing RegisterPage timing flake, unrelated to identity — RegisterPage is a public route that never touches identity or `AuthenticatedShell`); `tsc --noEmit` clean; `npm run build` succeeds (existing large-chunk advisory only).
+
+**Tenant isolation:** preserved. Identity is resolved server-side from the trusted JWT subject; only the authenticated user's active memberships are returned; no request-supplied user/tenant id is accepted as proof of access; no RLS or authorization was weakened; no migration added.
+
+**Safety:** no `.env` read/printed; no production writes; no secrets exposed; no git push; unrelated tracked/untracked work preserved.
+
+---
+
+## Initial Global Staff Grant Bootstrap Provisioning (implemented and verified locally)
+
+**Verdict:** PASS WITH CONDITIONS. The operator-facing provisioning path for the initial `grant_manage` global staff grant is implemented and verified locally against `xportra_test` using the dedicated `xportra_app` runtime role. Production bootstrap remains blocked until prerequisites are resolved (see below).
+
+**What was implemented:**
+
+- `xportra/dev/global_staff_bootstrap.py` (new) — operator-facing CLI for invoking `GlobalStaffGrantService.bootstrap()` locally. Follows the existing `xportra/dev/bootstrap.py` pattern: refuses `APP_ENV=production`, requires explicit `--authorization-ref`, `--target-user-id`, `--actor-user-id`, `--justification`, never hardcodes identities, prints only identifiers/status (no secrets), and does not bypass the application service.
+- `tests/integration/test_global_staff_bootstrap_postgresql.py` (new) — 7 focused integration tests run as `xportra_app` against local `xportra_test`:
+  1. Bootstrap consumes authorization, creates grant + audit with `authorization_ref` linkage
+  2. Invalid authorization ref rejected (fail closed)
+  3. Mismatched target rejected
+  4. Already-consumed authorization rejected (single-use consumption)
+  5. Self-bootstrap denied (`actor == target`)
+  6. Audit insert failure rolls back grant mutation (atomic transaction)
+  7. Inactive target rejected
+
+**Test results (all local `xportra_test`, no production):**
+
+- `tests/unit/test_global_staff.py`: **14 passed** (unit, no database)
+- `tests/integration/test_global_staff_bootstrap_postgresql.py`: **7 passed** (as `xportra_app` role)
+
+**How the approved form maps to the authorization schema:**
+
+| Form field | Schema column | Source |
+|---|---|---|
+| Approval reference | `authorization_ref` | `XPA-GSA-INIT-001` (approved form value) |
+| Target user | `target_user_id` | Verified `xportra.users.id` from identity mapping |
+| Permission | `permission` | `grant_manage` (only defined permission) |
+| Authorizer | `authorizer_user_id` | Independent product owner's `xportra.users.id` |
+| Verifier | `verifier_user_id` | Independent verifier's `xportra.users.id` |
+| Justification | `justification` | Documented reason from approved form |
+| Status | `status` | `approved` (set by authorizer, consumed by bootstrap) |
+
+**How validation, consumption, and atomicity are preserved:**
+
+- `bootstrap()` verifies the authorization reference exists, matches target/permission/scope, has `status='approved'`, and is not consumed — before any state change.
+- `consume_in_transaction()` atomically sets `status='consumed'`, `consumed_at`, `consumed_by` within the same transaction as grant creation.
+- `insert_in_transaction()` for grants and audit runs in the same transaction; audit failure rolls back everything.
+- Advisory lock (`pg_advisory_xact_lock`) serializes concurrent bootstrap attempts.
+- Self-bootstrap denied (`_deny_self_managed`).
+- No direct table inserts — all mutations through `GlobalStaffGrantService.bootstrap`.
+
+**Production steps remaining (operator-only, not performed in this task):**
+
+1. Resolve evidence retention mechanism and trusted verification channel (prerequisite 1).
+2. Resolve database role decision: configure `xportra_app` with least-privilege grants OR document explicit justification for `postgres` (prerequisite 2).
+3. Define exception authority (prerequisite 3).
+4. Finalize retention/deletion policy (prerequisite 4).
+5. Provision second operator / grant-manager plan (prerequisite 5).
+6. Independent authorizer inserts authorization record (`global_staff_authorizations`, `status='approved'`, `authorization_ref='XPA-GSA-INIT-001'`) with verified target/actor/verifier IDs.
+7. Independent operator executes `GlobalStaffGrantService.bootstrap()` against production with `actor ≠ target`.
+8. Verify audit linkage (`global_staff_audit.authorization_ref = 'XPA-GSA-INIT-001'`).
+
+**Safety:** no production writes; no authorization record created or consumed; no grant created or revoked; no `.env` secrets read/printed; no migrations applied; no production DATABASE_URL changed; no push/deploy.
+

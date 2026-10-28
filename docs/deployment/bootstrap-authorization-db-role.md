@@ -143,3 +143,56 @@ If the role returns superuser-level privileges (`rolsuper = true`) or privileges
 4. **Retention/deletion policy**: final retention period and deletion controls remain unresolved; automatic deletion disabled.
 5. **Second operator provision**: mitigate single-operator dependency.
 6. **Independent authorization execution**: complete authorization record (`global_staff_authorizations`) with verified `authorization_ref`, justification, independent verification evidence, and audit linkage (`global_staff_audit.authorization_ref`); then execute bootstrap atomically.
+
+## Production bootstrap procedure (after prerequisites resolved)
+
+Once all prerequisites above are resolved and the production runtime role is confirmed, an authorized operator performs the initial `grant_manage` bootstrap as follows. This procedure is **operator-only** and never connects to production from this task.
+
+### Prerequisites (all must be confirmed before starting)
+
+- Migrations 015–017 applied to the production database (`global_staff_grants`, `global_staff_audit`, `global_staff_authorizations` tables present).
+- Authorization record inserted in `xportra.global_staff_authorizations` with:
+  - `status = 'approved'`
+  - `authorization_ref = 'XPA-GSA-INIT-001'` (or the approved reference; never a different value unless the approved form specifies otherwise)
+  - `target_user_id` = verified internal `xportra.users.id` of the target
+  - `permission = 'grant_manage'`
+  - `authorizer_user_id` = independent authorizer's `xportra.users.id`
+  - `verifier_user_id` = independent verifier's `xportra.users.id`
+  - `justification` = documented reason (including single-operator exception justification if applicable)
+  - `approved_at`, `verified_at` timestamps set
+- Target user exists in `xportra.users` with `status = 'active'` and `supabase_uid` mapped to their Supabase Auth identity.
+- Actor (operator) is an active `xportra.users` row, distinct from the target.
+- Evidence retention location established (per prerequisite 1); `authorization_ref` links to retained evidence.
+
+### Execution
+
+Run on the operator machine against the production database:
+
+```bash
+DATABASE_URL=<production-DATABASE_URL> \
+APP_ENV=production \
+python -m xportra.dev.global_staff_bootstrap \
+    --authorization-ref XPA-GSA-INIT-001 \
+    --target-user-id <verified-target-user-uuid> \
+    --actor-user-id <verified-actor-user-uuid> \
+    --justification "<approved justification>"
+```
+
+**Important:** The `bootstrap_global_staff_grant()` function and `main()` refuse to run when `APP_ENV=production`. Production bootstrap must be executed through the same service logic (`GlobalStaffGrantService.bootstrap`) by an authorized operator using a separate operational procedure, not through this CLI. This CLI is local-development and operator-testing only.
+
+### Verification after bootstrap
+
+Confirm (read-only, against production database):
+
+1. `SELECT * FROM xportra.global_staff_grants WHERE permission = 'grant_manage' AND status = 'active'` — exactly one row, `user_id` = target, `granted_by` = actor.
+2. `SELECT * FROM xportra.global_staff_authorizations WHERE authorization_ref = 'XPA-GSA-INIT-001'` — `status = 'consumed'`, `consumed_at` set, `consumed_by` = actor.
+3. `SELECT * FROM xportra.global_staff_audit WHERE event_type = 'bootstrap' AND authorization_ref = 'XPA-GSA-INIT-001'` — one row linking the authorization to the grant event.
+
+### What this procedure does NOT do
+
+- Does not create the authorization record (must exist before execution, created out-of-band by independent authorizer/verifier).
+- Does not create a public API endpoint for bootstrap.
+- Does not bypass `GlobalStaffGrantService.bootstrap` (no direct inserts into `global_staff_grants` or `global_staff_audit`).
+- Does not embed credentials or secrets in source code, arguments, logs, or documentation.
+- Does not apply migrations or change `DATABASE_URL`.
+
