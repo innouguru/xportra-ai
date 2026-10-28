@@ -4169,3 +4169,114 @@ out-of-band; then run the documented production command with
 `--production-confirmation XPA-GSA-INIT-001`; verify the three
 read-only acceptance queries in the deployment doc.
 
+---
+
+## Production Bootstrap Configuration Readiness — xportra_app + TLS (2026-10-28)
+
+**Verdict:** READY WITH CONDITIONS (documentation + test hardening only;
+no functional code changed; nothing committed; no production contact).
+
+Context: the production Supabase connection was successfully tested from
+Windows as `xportra_app` with SSL certificate verification (temporary
+test script deleted; CA certificate stored at `cert/prod-ca-2021.crt`,
+gitignored via an operator `.gitignore` change preserved uncommitted).
+
+**Confirmed how configuration works:** the CLI and the whole application
+read configuration from the process environment only —
+`DatabaseSettings.from_environment` reads exactly one key,
+`DATABASE_URL` (`xportra/persistence/database.py:22-31`); the CLI passes
+`os.environ` (`xportra/dev/global_staff_bootstrap.py` `main()`); no
+dotenv loading exists anywhere in `xportra/` and `python-dotenv` is not
+a dependency. A local `.env` is inert until exported into the process
+environment. The DSN is passed verbatim to libpq via psycopg 3.3.6, so
+TLS is fully configured in the DSN itself: `?sslmode=verify-full` plus
+`sslrootcert=<path>` (URL-encoded) or the standard libpq
+`PGSSLROOTCERT` variable — no CLI flags or code changes required.
+`verify-full` is the only mode verifying both certificate chain and
+hostname.
+
+**Changes made (uncommitted, this task):**
+- `docs/deployment/bootstrap-authorization-db-role.md` — new
+  "Configuration and TLS" section (process-environment-only semantics;
+  SSL via DSN/`PGSSLROOTCERT`; hostname verification via
+  `sslmode=verify-full`) and a rewritten Execution section: dedicated
+  gitignored `.env.production-operator` file (`APP_ENV=production`,
+  production DSN with `sslmode=verify-full`, `PGSSLROOTCERT`), loaded
+  into the PowerShell session only via a non-echoing regex loader —
+  DSN never appears in command history, argv, logs, or chat; explicit
+  warning against inline `DATABASE_URL=... python ...` and against
+  loading a shared dev `.env` without re-asserting production values.
+  The `--production-confirmation` exact-match safeguard is unchanged.
+  Corrected (same day) to the verified Supabase Shared Pooler pattern:
+  project-qualified username `xportra_app.waugynqpuwsazehsjyvj`
+  (qualification must never be stripped), host
+  `aws-0-eu-west-2.pooler.supabase.com:5432/postgres`,
+  `sslmode=verify-full`, password as a `<pooler-password>` placeholder
+  only (never real, never on a command line; URI-encoding note), and
+  Windows absolute-path guidance for `cert/prod-ca-2021.crt`.
+- `xportra/dev/global_staff_bootstrap.py` — docstring only: documents
+  process-environment-only configuration and DSN-based TLS. No
+  functional change.
+- `tests/unit/test_global_staff_bootstrap_cli.py` — 2 new unit tests:
+  SSL parameters in `DATABASE_URL` reach the connection factory
+  verbatim (capturing factory, scripted routes, no real connection);
+  output contains no DSN/SSL/role material.
+- `CURRENT_STATE.md` / `ACTIVE_TASK.md` — state updates.
+
+**Verification this task:** unit 46 passed (44 baseline + 2 new);
+integration `tests/integration/test_global_staff_bootstrap_postgresql.py`
+7/7 passed against local `xportra_test` as `xportra_app`
+(command-scoped DSN). No production connection; no CLI execution
+against any database as a real bootstrap; no authorization/grant/audit
+row created or consumed; no migrations; no `.env` read; no secrets in
+docs or chat; nothing staged or committed; the operator `.gitignore`
+change and all pre-existing untracked files preserved.
+
+**Remaining operator prerequisites** are unchanged from the entry above
+(evidence store, DB-role decision now satisfied for connectivity but
+still requiring the documented justification/retention items, exception
+authority, distinct actor/verifier identities, out-of-band authorization
+insert, then the documented session-loaded execution and the three
+read-only acceptance queries).
+
+## Production Bootstrap Operator Loader Validation (2026-10-28)
+
+**Verdict:** VALIDATED WITH ONE NARROW DOC CORRECTION (documentation
+only; no code changed; nothing staged or committed; dummy values only,
+no production contact).
+
+The documented PowerShell session loader in
+`docs/deployment/bootstrap-authorization-db-role.md` was executed
+against a dummy `.env.production-operator` fixture (temp directory;
+fake password; dummy CA file) and measured against seven checks:
+(1) all three variables (`APP_ENV`, `DATABASE_URL`, `PGSSLROOTCERT`)
+load into the current process — PASS; (2) the loader emits zero output,
+no values/credentials echoed — PASS; (3) a Windows cert path with
+spaces is preserved byte-exact and resolves — PASS; (4) pre-existing
+stale `APP_ENV`/`DATABASE_URL` values **silently survived a partial
+load** with the previous loader — GAP CONFIRMED; (5) missing/malformed
+config now fails safely — PASS after correction; (6) the CLI
+`--production-confirmation` exact-match safeguard is untouched (unit
+suite includes the mismatched-refusal tests) — PASS; (7) no production,
+Supabase, Render, or network side effects (dummy fixture, no CLI run
+against any database) — PASS.
+
+**Correction made (uncommitted, this task):** the loader block was
+hardened in place — (a) pre-load clear of the three managed variables
+so stale development values cannot survive a partial load, (b) missing
+operator file throws before anything else, (c) a post-load verification
+step prints PASS/FAIL per check (check names only, never values) and
+throws before the CLI runs unless: `APP_ENV=production`, `DATABASE_URL`
+set/unquoted, pooler host + `/postgres` database matched, `sslmode=
+verify-full` present, CA named `prod-ca-2021.crt` and file exists.
+Prose updated to match; the `--production-confirmation` safeguard text
+is unchanged.
+
+**Verification this task:** corrected loader harness 18/18 checks
+passed (full load, partial load, missing file, quoted value + bash
+`export` line all fail safely; no secret fragments in any output);
+prior loader harness confirmed the gap it was meant to prove; unit 46
+passed; integration 7/7 passed (local `xportra_test`, command-scoped
+DSN). Nothing staged or committed; all pre-existing uncommitted changes
+and untracked files preserved.
+

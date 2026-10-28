@@ -177,26 +177,139 @@ Once all prerequisites above are resolved and the production runtime role is con
 - Actor (operator) is an active `xportra.users` row, distinct from the target.
 - Evidence retention location established (per prerequisite 1); `authorization_ref` links to retained evidence.
 
+### Configuration and TLS (how the CLI obtains its connection)
+
+The CLI reads configuration from the **process environment only** —
+`DatabaseSettings.from_environment` reads exactly one key,
+`DATABASE_URL`, and no dotenv loading exists anywhere in the codebase
+(`xportra/dev/global_staff_bootstrap.py:213-234`,
+`xportra/persistence/database.py:22-31`). A local `.env` file is inert
+until its values are exported into the process environment.
+
+The DSN is passed verbatim to libpq via psycopg, so TLS is configured
+entirely through the DSN (or standard libpq environment variables) — no
+CLI flags and no code changes are involved:
+
+- Append `?sslmode=verify-full` to the production DSN. `verify-full` is
+  the only mode that verifies both the certificate chain **and** the
+  server hostname; `prefer` and `require` do not verify either.
+- Supply the Supabase CA certificate (`cert/prod-ca-2021.crt`, listed
+  in `.gitignore`) either as `sslrootcert=<path>` inside the DSN
+  (URL-encode a Windows path, e.g. `sslrootcert=C%3A/Users/.../cert/prod-ca-2021.crt`)
+  or — simpler and recommended — via the standard libpq variable
+  `PGSSLROOTCERT` set to the certificate path (absolute path preferred;
+  a relative path resolves against the working directory).
+
+Example operator configuration file (`.env.production-operator` —
+already covered by the gitignored `.env.*` rule at `.gitignore:27`;
+never commit it, never paste its contents into chat, tickets, or logs):
+
+```text
+# .env.production-operator (gitignored) — one KEY=value per line,
+# unquoted, no inline comments after values. Lines starting with #
+# and blank lines are ignored by the session loader below.
+APP_ENV=production
+
+# Supabase Shared Pooler — verified connection pattern (2026-10-28).
+# The username MUST stay project-qualified ("<role>.<project-ref>"):
+# the shared pooler routes on that suffix. Never shorten it to a bare
+# "xportra_app". <pooler-password> is a placeholder — enter the real
+# pooler password only inside this file, never on a command line and
+# never in a commit. If the password contains URI-reserved characters
+# (@ : / ? # %), URL-encode it within the DSN.
+DATABASE_URL=postgresql://xportra_app.waugynqpuwsazehsjyvj:<pooler-password>@aws-0-eu-west-2.pooler.supabase.com:5432/postgres?sslmode=verify-full
+
+# Windows certificate path: prefer the absolute path to the local
+# repository copy (cert/prod-ca-2021.crt, gitignored) so verify-full
+# works regardless of the working directory. Spaces in the path are
+# safe as an environment-variable value. If you instead embed
+# sslrootcert inside the DSN, URL-encode the path, e.g.
+# sslrootcert=C%3A/Users/<you>/Xportra%20AI/cert/prod-ca-2021.crt
+PGSSLROOTCERT=C:\absolute\path\to\Xportra AI\cert\prod-ca-2021.crt
+```
+
 ### Execution
 
-Run on the operator machine against the production database. The CLI
-refuses `APP_ENV=production` unless `--production-confirmation` exactly
+Run on the operator machine against the production database. The
+loader below runs in the current PowerShell session only: it first
+clears `APP_ENV`, `DATABASE_URL`, and `PGSSLROOTCERT` so a stale
+development value can never survive a partial load, assigns the
+operator-file values without echoing them, then verifies the effective
+environment (PASS/FAIL per check — check names only, never values) and
+aborts before the CLI runs if anything is wrong. Nothing is printed or
+written to disk by this step. All identity and justification arguments
+are non-secret; the DSN never appears in the command line, shell
+history, argv, logs, or chat output:
+
+```powershell
+# 1) Clear every variable this loader manages so a stale development
+#    value can never silently survive a partial load.
+Remove-Item Env:APP_ENV, Env:DATABASE_URL, Env:PGSSLROOTCERT -ErrorAction SilentlyContinue
+
+# 2) Load the operator file. KEY=value lines only; this block prints
+#    nothing — values are assigned directly to the process environment.
+if (-not (Test-Path -LiteralPath '.env.production-operator')) {
+  throw 'operator configuration not found: .env.production-operator'
+}
+Get-Content -LiteralPath '.env.production-operator' -ErrorAction Stop | ForEach-Object {
+  if ($_ -match '^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$') {
+    [Environment]::SetEnvironmentVariable($matches[1], $matches[2])
+  }
+}
+
+# 3) Verify the effective environment BEFORE running the CLI. Prints
+#    PASS/FAIL per check (check names only — never values) and throws
+#    on any failure, so a wrong environment or database cannot be used
+#    silently.
+$dsn = [Environment]::GetEnvironmentVariable('DATABASE_URL')
+$checks = [ordered]@{
+  'APP_ENV is production'    = $env:APP_ENV -eq 'production'
+  'DATABASE_URL is set'      = [bool]$dsn
+  'DATABASE_URL unquoted'    = $dsn -and ($dsn -notlike '"*')
+  'pooler host and database' = $dsn -and ($dsn -match '^[^@]*@aws-0-eu-west-2\.pooler\.supabase\.com:5432/postgres')
+  'sslmode is verify-full'   = $dsn -and ($dsn -match '[?&]sslmode=verify-full(&|$)')
+  'CA is prod-ca-2021.crt'   = $env:PGSSLROOTCERT -and ($env:PGSSLROOTCERT -like '*prod-ca-2021.crt')
+  'CA file exists'           = $env:PGSSLROOTCERT -and (Test-Path -LiteralPath ([string]$env:PGSSLROOTCERT))
+}
+$checks.GetEnumerator() | ForEach-Object {
+  '{0} {1}' -f $(if ($_.Value) { 'PASS:' } else { 'FAIL:' }), $_.Key
+}
+if ($checks.Values -contains $false) {
+  throw 'operator configuration verification failed — not running the bootstrap CLI.'
+}
+
+python -m xportra.dev.global_staff_bootstrap `
+    --authorization-ref XPA-GSA-INIT-001 `
+    --production-confirmation XPA-GSA-INIT-001 `
+    --target-user-id <verified-target-user-uuid> `
+    --actor-user-id <verified-actor-user-uuid> `
+    --justification "<approved justification>"
+```
+
+Do **not** inline `DATABASE_URL=... python ...` on the command line:
+inline assignment places credentials in shell history. The session
+loader assigns values with `[Environment]::SetEnvironmentVariable`,
+which does not echo them to the terminal — do not additionally print
+the file (`Get-Content`, `type`, `cat`), redirect it to the screen, or
+paste it into chat, tickets, or logs. The pooler password exists only
+inside the gitignored operator file and the resulting process
+environment; the CLI accepts no password argument and never prints the
+DSN or SSL configuration (its report is asserted by unit test to
+contain no DSN, SSL, or role material). Keep values unquoted and on a
+single line — the loader takes everything after the first `=` verbatim.
+The pre-load clear plus the PASS/FAIL verification make a wrong file
+fail loudly: loading a shared development `.env` — or an operator file
+missing a required key, quoting a value, or pointing at the wrong host
+— stops with a verification error before the CLI runs instead of
+silently targeting the wrong environment or database. Keep the
+dedicated operator file above.
+
+The CLI refuses `APP_ENV=production` unless `--production-confirmation` exactly
 matches the `--authorization-ref` being consumed. That exact-match flag
 is the explicit, one-time production confirmation: the production path
 cannot be enabled accidentally, and every service-level authorization
 check (approved, unconsumed, target/permission match, actor ≠ target,
 atomic grant + authorization consumption + audit) still applies:
-
-```bash
-DATABASE_URL=<production-DATABASE_URL> \
-APP_ENV=production \
-python -m xportra.dev.global_staff_bootstrap \
-    --authorization-ref XPA-GSA-INIT-001 \
-    --production-confirmation XPA-GSA-INIT-001 \
-    --target-user-id <verified-target-user-uuid> \
-    --actor-user-id <verified-actor-user-uuid> \
-    --justification "<approved justification>"
-```
 
 **Important:** never emulate production by setting
 `APP_ENV=development` or `APP_ENV=test` while pointing `DATABASE_URL`

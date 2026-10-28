@@ -101,3 +101,7 @@ $RECYCLE.BIN/
 *.tmp
 *.orig
 node_modules/
+
+# Local Supabase CA certificate used for connectivity testing
+/cert/prod-ca-2021.crt
+

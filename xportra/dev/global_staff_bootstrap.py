@@ -63,6 +63,17 @@ at a production ``DATABASE_URL``; run with ``APP_ENV=production``
 and the explicit confirmation so the guard, attribution, and audit
 trail remain truthful.
 
+Configuration is read from the process environment only
+(``DATABASE_URL``, ``APP_ENV``); this CLI never parses ``.env``
+files. The DSN is passed verbatim to libpq via psycopg, so
+production TLS is configured in the DSN itself
+(``?sslmode=verify-full``) with the Supabase CA certificate
+supplied via ``sslrootcert`` in the DSN or the standard libpq
+``PGSSLROOTCERT`` variable. See
+``docs/deployment/bootstrap-authorization-db-role.md`` for the
+secret-safe operator procedure (session-scoped environment
+loading; never inline the DSN on a command line).
+
 The authorization record itself must be created out-of-band (by an
 independent authorizer and verifier) before this script is run. This
 script consumes the authorization; it does not create it.

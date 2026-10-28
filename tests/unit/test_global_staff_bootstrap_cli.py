@@ -290,5 +290,56 @@ class EntrypointTests(unittest.TestCase):
         self.assertIn("cannot bootstrap", stderr.getvalue())
 
 
+class SslDsnPassthroughTests(unittest.TestCase):
+    """The documented production TLS path: verbatim DSN passthrough.
+
+    The deployment doc tells operators to configure TLS entirely inside
+    ``DATABASE_URL`` (``sslmode=verify-full`` plus ``sslrootcert``, or
+    the libpq ``PGSSLROOTCERT`` variable) because ``Database`` passes
+    the DSN verbatim to psycopg/libpq. These tests pin that behavior
+    with a capturing connection factory — no real connection, no
+    production host, no credentials.
+    """
+
+    SSL_DSN = (
+        "postgresql://xportra_app@db.example.supabase.co:5432/postgres"
+        "?sslmode=verify-full&sslrootcert=C%3A/certs/prod-ca-2021.crt"
+    )
+
+    def _run_with_captured_dsn(self, dsn):
+        captured = {}
+        cursor = ScriptedCursor(success_routes())
+        connection = ScriptedConnection(cursor)
+
+        def factory(conninfo, **_kwargs):
+            captured["conninfo"] = conninfo
+            return connection
+
+        database = Database(DatabaseSettings(dsn), factory)
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            code = main(
+                BASE_ARGS + ["--production-confirmation", AUTH_REF],
+                {"APP_ENV": "production", "DATABASE_URL": dsn},
+                database,
+            )
+        return code, captured, buffer.getvalue()
+
+    def test_ssl_parameters_reach_the_connection_factory_verbatim(self):
+        code, captured, output = self._run_with_captured_dsn(self.SSL_DSN)
+        self.assertEqual(code, 0)
+        self.assertEqual(captured["conninfo"], self.SSL_DSN)
+        self.assertIn("sslmode=verify-full", captured["conninfo"])
+        self.assertIn("sslrootcert=", captured["conninfo"])
+
+    def test_ssl_run_output_contains_no_dsn_or_ssl_material(self):
+        code, _captured, output = self._run_with_captured_dsn(self.SSL_DSN)
+        self.assertEqual(code, 0)
+        self.assertNotIn("postgresql://", output)
+        self.assertNotIn("sslmode", output)
+        self.assertNotIn("sslrootcert", output)
+        self.assertNotIn("xportra_app", output)
+
+
 if __name__ == "__main__":
     unittest.main()
