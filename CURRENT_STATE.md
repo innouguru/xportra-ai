@@ -4100,3 +4100,72 @@ BLOCKERS — all must be resolved by the product owner / authorized operator bef
 
 **Safety:** no production writes; no authorization record created or consumed; no grant created or revoked; no `.env` secrets read/printed; no migrations applied; no production DATABASE_URL changed; no push/deploy.
 
+---
+
+## Initial Global Staff Bootstrap — Production-Readiness Review (2026-10-28)
+
+**Verdict:** READY WITH CONDITIONS. Narrow review of commit `3819589`
+(bootstrap CLI, service, integration tests, deployment doc, migrations
+015–017) against the approved authorization `XPA-GSA-INIT-001`
+(permission `grant_manage`). The owner has confirmed the authorization
+form was approved and verified; the production authorization record and
+grant still do not exist and were not created by this review.
+
+**Confirmed findings (code/docs verified):**
+- `GlobalStaffGrantService.bootstrap` (`xportra/application/global_staff.py:170-246`)
+  correctly enforces: active actor and target users; actor ≠ target
+  (self-bootstrap denied); authorization ref must exist, match
+  target/permission, and be `approved`; single-use consumption
+  (`status='consumed'`, `consumed_at`, `consumed_by`) inside the same
+  transaction as grant insert and audit insert (rollback on any failure);
+  advisory-lock serialization; audit event retains `authorization_ref`
+  (migration 017). Covered by 7/7 passing integration tests
+  (`tests/integration/test_global_staff_bootstrap_postgresql.py`).
+- Authorization schema (migration 016) contains every required field
+  (`target_user_id`, `permission`, `authorizer_user_id`,
+  `verifier_user_id`, `authorization_ref`, `status`) plus
+  `verification_method`/`justification` NOT NULL; the deployment doc's
+  prerequisite list matches the schema.
+- **Gap fixed this task:** the CLI refused `APP_ENV=production`
+  outright, and the deployment doc showed a production command that the
+  CLI would deterministically reject while defining no alternative
+  procedure — no safe production execution path existed. The CLI now
+  accepts a narrowly scoped `--production-confirmation` that must
+  exactly equal `--authorization-ref` when `APP_ENV=production`
+  (checked before any DB connection; exit 2 otherwise). All service
+  checks unchanged; not a general escalation mechanism (still requires
+  an approved, unconsumed, out-of-band authorization record).
+- **Known observations (not blockers):** (a) `authorization_ref`
+  uniqueness is not DB-enforced (no unique index on the ref column);
+  operator must run the read-only uniqueness check now documented in
+  `docs/deployment/bootstrap-authorization-db-role.md` before inserting.
+  (b) The service never evaluates the optional `expires_at` column
+  despite its error message mentioning expiry — do not set `expires_at`
+  on the initial record; enforcement is open follow-up. (c) The older
+  `tests/integration/test_global_staff_postgresql.py` suite requires
+  table-owner privileges (`ALTER TABLE ... DISABLE TRIGGER`) and errors
+  when run as `xportra_app` — pre-existing, unrelated to the CLI.
+- Database-role doc accurately describes the `xportra_app`
+  least-privilege design and minimum production steps; production role
+  configuration remains unchanged.
+
+**Verification this task:** unit
+`tests/unit/test_global_staff_bootstrap_cli.py` (new, 11 tests) +
+`tests/unit/test_global_staff.py` + `tests/unit/test_dev_bootstrap.py`
+→ **44 passed**; integration
+`tests/integration/test_global_staff_bootstrap_postgresql.py` → **7
+passed** against local `xportra_test` as `xportra_app`. No production
+contact; no authorization/grant/audit row created or consumed; no
+migrations; no `.env` read or exposed; no secrets in docs.
+
+**Remaining operator prerequisites before executing the approved
+bootstrap** (unchanged operational items, now with a defined production
+invocation): establish evidence store + verification channel; finalize
+DB connection identity (`xportra_app` or documented privileged-role
+justification); define exception authority; provision/identify the
+distinct actor/verifier user rows required by the authorization schema
+and actor ≠ target rule; insert the approved authorization record
+out-of-band; then run the documented production command with
+`--production-confirmation XPA-GSA-INIT-001`; verify the three
+read-only acceptance queries in the deployment doc.
+

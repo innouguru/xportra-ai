@@ -8,11 +8,13 @@ grant and is never exposed as a public API endpoint.
 
 Safety properties (all enforced, all tested):
 
-- Refuses to run when ``APP_ENV=production`` — before opening any
-  database connection. Production bootstrap requires a separately
-  authorized operator to execute this same procedure against the
-  production database after the production runtime-role decision is
-  resolved.
+- Refuses to run when ``APP_ENV=production`` unless the operator
+  passes ``--production-confirmation`` whose value exactly matches
+  the ``--authorization-ref`` being consumed. The production guard
+  runs before any database connection is opened. This prevents an
+  accidental production run while providing a single, explicit,
+  auditable production path for the approved one-time bootstrap;
+  every service-level authorization check is unchanged.
 - Requires an explicit ``--authorization-ref`` that matches an
   approved, unconsumed authorization record in
   ``xportra.global_staff_authorizations``. Missing, revoked, expired,
@@ -34,7 +36,7 @@ Safety properties (all enforced, all tested):
 - Never inserts into ``xportra.global_staff_grants`` or
   ``xportra.global_staff_audit`` directly.
 
-Usage (development/local only):
+Usage (local/operator, against an isolated database):
 
     DATABASE_URL=postgresql://xportra_app@localhost:5432/xportra_test \
     python -m xportra.dev.global_staff_bootstrap \
@@ -42,6 +44,24 @@ Usage (development/local only):
         --target-user-id <target-user-uuid> \
         --actor-user-id <operator-user-uuid> \
         --justification "initial operator bootstrap"
+
+Production usage (only after every prerequisite in
+``docs/deployment/bootstrap-authorization-db-role.md`` is resolved;
+the confirmation flag must exactly equal the authorization ref):
+
+    DATABASE_URL=<production-DATABASE_URL> \
+    APP_ENV=production \
+    python -m xportra.dev.global_staff_bootstrap \
+        --authorization-ref XPA-GSA-INIT-001 \
+        --production-confirmation XPA-GSA-INIT-001 \
+        --target-user-id <target-user-uuid> \
+        --actor-user-id <operator-user-uuid> \
+        --justification "initial operator bootstrap"
+
+Never emulate production by pointing a development/test ``APP_ENV``
+at a production ``DATABASE_URL``; run with ``APP_ENV=production``
+and the explicit confirmation so the guard, attribution, and audit
+trail remain truthful.
 
 The authorization record itself must be created out-of-band (by an
 independent authorizer and verifier) before this script is run. This
@@ -128,7 +148,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Provision the initial grant_manage global staff "
         "grant using an approved authorization reference "
-        "(local/operator use only; never production).",
+        "(operator use; production requires an explicit "
+        "--production-confirmation matching the authorization ref).",
     )
     parser.add_argument(
         "--authorization-ref",
@@ -155,6 +176,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--justification",
         required=True,
         help="Justification recorded on the grant and audit event.",
+    )
+    parser.add_argument(
+        "--production-confirmation",
+        default="",
+        help="Required only when APP_ENV=production: must exactly "
+        "match --authorization-ref, explicitly confirming this "
+        "one-time production bootstrap. Ignored outside production.",
     )
     return parser
 
@@ -186,16 +214,21 @@ def main(
     values = os.environ if environment is None else environment
 
     if _is_production(values):
-        print(
-            "refusing to bootstrap global staff grant: "
-            "APP_ENV=production. This utility is local/operator use "
-            "only. Production bootstrap requires a separately "
-            "authorized operator to execute this procedure against "
-            "the production database after the runtime-role decision "
-            "is resolved.",
-            file=sys.stderr,
-        )
-        return 2
+        confirmation = str(args.production_confirmation or "").strip()
+        expected_ref = str(args.authorization_ref or "").strip()
+        if not confirmation or confirmation != expected_ref:
+            print(
+                "refusing to bootstrap global staff grant: "
+                "APP_ENV=production requires --production-confirmation "
+                "to exactly match the --authorization-ref being "
+                "consumed. This is a one-time, explicitly confirmed "
+                "operator action; rerun with the matching confirmation "
+                "only after every prerequisite in "
+                "docs/deployment/bootstrap-authorization-db-role.md "
+                "is resolved.",
+                file=sys.stderr,
+            )
+            return 2
 
     try:
         settings = DatabaseSettings.from_environment(values)

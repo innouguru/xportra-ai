@@ -160,25 +160,52 @@ Once all prerequisites above are resolved and the production runtime role is con
   - `verifier_user_id` = independent verifier's `xportra.users.id`
   - `justification` = documented reason (including single-operator exception justification if applicable)
   - `approved_at`, `verified_at` timestamps set
+- Uniqueness of `authorization_ref` is **not** enforced by a database
+  constraint (migration 016 has no unique index on the ref column). Before
+  inserting the authorization record, the operator must run this read-only
+  check and confirm it returns zero rows:
+
+  ```sql
+  SELECT id, target_user_id, permission, status, consumed_at
+  FROM xportra.global_staff_authorizations
+  WHERE authorization_ref = 'XPA-GSA-INIT-001';
+  ```
+
+  Exactly one row must exist after insertion; never insert a second row
+  with the same reference.
 - Target user exists in `xportra.users` with `status = 'active'` and `supabase_uid` mapped to their Supabase Auth identity.
 - Actor (operator) is an active `xportra.users` row, distinct from the target.
 - Evidence retention location established (per prerequisite 1); `authorization_ref` links to retained evidence.
 
 ### Execution
 
-Run on the operator machine against the production database:
+Run on the operator machine against the production database. The CLI
+refuses `APP_ENV=production` unless `--production-confirmation` exactly
+matches the `--authorization-ref` being consumed. That exact-match flag
+is the explicit, one-time production confirmation: the production path
+cannot be enabled accidentally, and every service-level authorization
+check (approved, unconsumed, target/permission match, actor ≠ target,
+atomic grant + authorization consumption + audit) still applies:
 
 ```bash
 DATABASE_URL=<production-DATABASE_URL> \
 APP_ENV=production \
 python -m xportra.dev.global_staff_bootstrap \
     --authorization-ref XPA-GSA-INIT-001 \
+    --production-confirmation XPA-GSA-INIT-001 \
     --target-user-id <verified-target-user-uuid> \
     --actor-user-id <verified-actor-user-uuid> \
     --justification "<approved justification>"
 ```
 
-**Important:** The `bootstrap_global_staff_grant()` function and `main()` refuse to run when `APP_ENV=production`. Production bootstrap must be executed through the same service logic (`GlobalStaffGrantService.bootstrap`) by an authorized operator using a separate operational procedure, not through this CLI. This CLI is local-development and operator-testing only.
+**Important:** never emulate production by setting
+`APP_ENV=development` or `APP_ENV=test` while pointing `DATABASE_URL`
+at the production database. Always run with `APP_ENV=production` and
+the explicit confirmation against the production database so the
+guard, attribution, and audit trail remain truthful. The CLI does not
+bypass `GlobalStaffGrantService.bootstrap`; grant and audit rows are
+created exclusively through the service transaction, and the CLI
+never prints the DSN or credentials.
 
 ### Verification after bootstrap
 
@@ -195,4 +222,23 @@ Confirm (read-only, against production database):
 - Does not bypass `GlobalStaffGrantService.bootstrap` (no direct inserts into `global_staff_grants` or `global_staff_audit`).
 - Does not embed credentials or secrets in source code, arguments, logs, or documentation.
 - Does not apply migrations or change `DATABASE_URL`.
+
+## Addendum (2026-10-28) — production confirmation mechanism
+
+- The CLI production path is `--production-confirmation` exactly matching
+  `--authorization-ref` (see Execution above). Without the exact match the
+  CLI exits with code 2 before opening any database connection; the guard
+  is covered by unit tests in
+  `tests/unit/test_global_staff_bootstrap_cli.py`.
+- Correction to the 2026-10-23 findings above: the dedicated `xportra_app`
+  role has since been created and used locally against the isolated
+  `xportra_test` database; the bootstrap integration tests
+  (`tests/integration/test_global_staff_bootstrap_postgresql.py`, 7 tests)
+  passed as `xportra_app`. Production role configuration remains unchanged.
+- Known service-level observation (not a blocker for this bootstrap):
+  `GlobalStaffGrantService.bootstrap` does not evaluate the optional
+  `expires_at` column even though its error message mentions expiry.
+  Authorizations without an `expires_at` value (NULL, the default) are
+  unaffected. Do not set `expires_at` on the initial authorization record;
+  expiry enforcement remains open follow-up work.
 
