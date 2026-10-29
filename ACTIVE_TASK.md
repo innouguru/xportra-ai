@@ -474,3 +474,20 @@ through the staff API (Milestones 1-5). The remaining scope includes
 exporter catalog UI/UX, tenant-specific requirement filtering, and
 version management; these require separate authorization and frontend
 work.
+
+---
+
+## Git synchronization pass (2026-10-29)
+
+Push preparation: verified all committed milestones (backend focused
+regulatory suites 112/112; backend unit suite excluding the corrupt
+untracked catalog test fragment 2342 passed / 2 pre-existing failures;
+frontend 582 passed / 1 pre-existing failure; TypeScript check and
+production build pass). Migration 030 constraint-drop fix committed.
+The untracked exporter catalog backend was audited and is classified
+incomplete and unverified (broken router dependency, catalog SQL
+omits the published-status filter, dead pending-flag governance code,
+corrupt test fragment) - preserved unmodified in the working tree and
+explicitly NOT committed; it requires a separate authorized task.
+No push was performed within the earlier milestone; the push itself is
+documented in CURRENT_STATE.md when completed.

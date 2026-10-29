@@ -4674,3 +4674,44 @@ source intake, worker, eligible-requirements, governance blocks)
 112/112 pass. PostgreSQL integration tests were NOT run: no
 DATABASE_URL configured; nothing was written to any database and no
 production system was contacted. No push performed.
+
+
+## Git Synchronization Before Deployment (2026-10-29)
+
+**Verdict:** synchronized with one reserved workstream.
+
+- Committed locally (was previously synchronized): Milestones 1-5,
+  publication/cross-tenant fixes, and the staff regulatory ingestion
+  dashboard. Verified before push: backend focused regulatory suites
+  112/112; full backend unit suite with the corrupt catalog test file
+  excluded: 2342 passed / 2 pre-existing documented failures (RAG
+  domain IO audit false positive on text scanning of fitz.open(); the
+  worker start/stop event-loop flake, which passes in isolation).
+  Frontend: TypeScript check and production build pass; full suite
+  582 passed / 1 failure, the pre-existing RegisterPage pending test
+  asserting sessionStorage where pendingRegistration.ts intentionally
+  persists to localStorage.
+- Migration 030 committed fix: the status CHECK constraint drop
+  (DROP CONSTRAINT IF EXISTS regulatory_requirements_status_check)
+  is now part of the migration transaction instead of an operator
+  comment. Idempotent; no migration history rewritten.
+
+**Catalog workstream deliberately NOT committed in this pass:** the
+untracked exporter catalog backend (xportra/api/catalog.py,
+xportra/application/regulatory_catalog_service.py, the app.py router
+registration, catalog schemas in schemas.py, and
+tests/unit/test_regulatory_catalog.py) was audited and found
+incomplete and unverified: the router service dependency is broken
+(Depends(lambda s: s) instead of the established get_services), the
+catalog SQL omits the required r.status = published filter, pending
+governance-flag blocking is dead code, and the only catalog test file
+is a 9-line syntax-error fragment whose presence breaks pytest
+collection for tests/unit. Committing or fixing these is a separate
+authorized implementation task; the files are preserved unmodified in
+the working tree. Deployment therefore has no /catalog/requirements
+endpoint until that task lands; this matches the previously deployed
+state.
+
+- Remaining untracked files are preserved investigation scripts,
+  local review artifacts, generated reports, and local tooling files.
+  No secrets, credentials, or environment values were committed.
