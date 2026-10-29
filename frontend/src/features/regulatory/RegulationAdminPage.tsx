@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { userFacingErrorMessage } from "../../api/client";
 import type { AuthCredentials } from "../../api/client";
 import {
@@ -190,11 +190,18 @@ function SourceDetail({
   const [loading, setLoading] = useState(true);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
 
+  // Sequence guard: when the inspected source changes while a load is in
+  // flight, only the most recent request may mutate this section's state.
+  // Older responses arrive stale and are discarded instead of overlapping.
+  const loadTokenRef = useRef(0);
+
   const load = useCallback(async () => {
+    const token = ++loadTokenRef.current;
     setLoading(true);
     setError(null);
     try {
       const detail = await getRegulatorySource(auth, sourceId);
+      if (token !== loadTokenRef.current) return;
       setSource(detail);
       const [artifactRows, jobRows, candidateRows, flagRows] = await Promise.all([
         listSourceArtifacts(auth, sourceId),
@@ -202,14 +209,18 @@ function SourceDetail({
         listSourceCandidates(auth, sourceId),
         listFlagsForSource(auth, sourceId),
       ]);
+      if (token !== loadTokenRef.current) return;
       setArtifacts(artifactRows.items);
       setJobs(jobRows.items);
       setCandidates(candidateRows.items);
       setFlags(flagRows.items);
     } catch (caught) {
+      if (token !== loadTokenRef.current) return;
       setError(caught);
     } finally {
-      setLoading(false);
+      if (token === loadTokenRef.current) {
+        setLoading(false);
+      }
     }
   }, [auth, sourceId]);
 
@@ -360,7 +371,12 @@ function SourceDetail({
 
           <h3>Candidate requirements</h3>
           {candidates !== null && candidates.length === 0 ? (
-            <p className="muted">No candidates extracted or entered for this source.</p>
+            <p className="muted">
+              No candidates extracted or entered for this source. Manual
+              candidate entry is not offered here because no authorized
+              backend operation creates candidates by hand in this view — it
+              would be a separate, backend-backed capability.
+            </p>
           ) : null}
           {candidates !== null && candidates.length > 0 ? (
             <ol className="ledger">
@@ -447,16 +463,19 @@ export function CandidateReview({
   const [stageBDecision, setStageBDecision] =
     useState<"approved" | "rejected" | "clarification_required">("approved");
   const [stageBPilotScope, setStageBPilotScope] = useState("");
-  const [stageBEvidenceRefs, setStageBEvidenceRefs] = useState("");
   const [stageBPending, setStageBPending] = useState(false);
   const [stageBError, setStageBError] = useState<string | null>(null);
 
+  // Sequence guard: only the most recent candidate load may mutate state.
+  const loadTokenRef = useRef(0);
+
   const load = useCallback(async () => {
+    const token = ++loadTokenRef.current;
     setLoading(true);
     setError(null);
     try {
       const detail = await getRegulatoryCandidate(auth, candidateId);
-      setCandidate(detail);
+      if (token !== loadTokenRef.current) return;
       const [
         stageAResponse,
         stageAHistoryResponse,
@@ -470,15 +489,20 @@ export function CandidateReview({
         listStageBHistory(auth, candidateId),
         listRequirementGovernanceFlags(auth, detail.id),
       ]);
+      if (token !== loadTokenRef.current) return;
+      setCandidate(detail);
       setStageA(stageAResponse);
       setStageAHistory(stageAHistoryResponse.items);
       setStageB(stageBResponse);
       setStageBHistory(stageBHistoryResponse.items);
       setFlags(flagRows.items);
     } catch (caught) {
+      if (token !== loadTokenRef.current) return;
       setError(caught);
     } finally {
-      setLoading(false);
+      if (token === loadTokenRef.current) {
+        setLoading(false);
+      }
     }
   }, [auth, candidateId]);
 
@@ -515,18 +539,20 @@ export function CandidateReview({
       setStageBError("A rationale is required for the Stage B decision.");
       return;
     }
+    if (!stageBPilotScope.trim()) {
+      setStageBError("Pilot scope is required for the Stage B decision.");
+      return;
+    }
     setStageBPending(true);
     setStageBError(null);
     try {
       await submitStageBDecision(auth, candidateId, {
         stage_b_status: stageBDecision,
         rationale: stageBRationale.trim(),
-        pilot_scope: stageBPilotScope.trim() || null,
-        evidence_references: stageBEvidenceRefs.trim()
-          ? stageBEvidenceRefs.split(",").map((value) => value.trim()).filter(Boolean)
-          : null,
+        pilot_scope: stageBPilotScope.trim(),
       });
       setStageBRationale("");
+      setStageBPilotScope("");
       await load();
       await onRefresh();
     } catch (caught) {
@@ -706,7 +732,9 @@ export function CandidateReview({
               <p key={entry.id} className="muted">
                 {entry.stage_b_status} — {createdAt(entry.reviewed_at)} — {entry.rationale}
                 {entry.evidence_references.length > 0
-                  ? ` — evidence: ${entry.evidence_references.join(", ")}`
+                  ? ` — evidence: ${entry.evidence_references
+                      .map((ref) => (typeof ref === "string" ? ref : JSON.stringify(ref)))
+                      .join(", ")}`
                   : ""}
               </p>
             ))
@@ -734,25 +762,13 @@ export function CandidateReview({
                 </select>
               </div>
               <div className="form-row">
-                <label htmlFor="stage-b-pilot-scope">Pilot scope (optional)</label>
+                <label htmlFor="stage-b-pilot-scope">Pilot scope (required)</label>
                 <input
                   id="stage-b-pilot-scope"
                   type="text"
                   value={stageBPilotScope}
                   onChange={(event) => setStageBPilotScope(event.target.value)}
-                  placeholder="e.g. cocoa pilot"
-                />
-              </div>
-              <div className="form-row">
-                <label htmlFor="stage-b-evidence-refs">
-                  Evidence references (comma-separated, optional)
-                </label>
-                <input
-                  id="stage-b-evidence-refs"
-                  type="text"
-                  value={stageBEvidenceRefs}
-                  onChange={(event) => setStageBEvidenceRefs(event.target.value)}
-                  placeholder="evidence-id-1, evidence-id-2"
+                  placeholder="e.g. sesame EU pilot"
                 />
               </div>
               <div className="form-row">
@@ -765,6 +781,12 @@ export function CandidateReview({
                   placeholder="Why this pilot-applicability decision"
                 />
               </div>
+              <p className="muted">
+                Evidence is recorded by the backend as structured reference
+                objects; structured evidence attachment is not offered from
+                this view and is not required for the decision to be
+                recorded. Pilot scope and rationale are mandatory.
+              </p>
             </fieldset>
             {stageBError ? (
               <p role="alert" className="ledger-reason">{stageBError}</p>

@@ -3,8 +3,8 @@
 **Active task:** Phase 4D — Regulatory Ingestion Execution Path — Milestone 2
 (worker-driven durable ingestion from pending job to candidate persistence).
 
-**Status:** In progress — implementation complete, tests passing, documentation
-pending, commit pending.
+**Status:** Complete — committed as 12ddfc2 (fix: regulatory publication status
+transition and cross-tenant fail-closed).
 
 **Authorization basis:** Explicitly assigned by user tasking. The existing
 bootstrap task (initial `grant_manage` provisioning under `XPA-GSA-INIT-001`)
@@ -369,13 +369,108 @@ but are confirmed working and tested at this milestone:
   that this milestone does not claim to have executed.
 - Documented as unresolved production verification rather than a gap.
 
-### Next recommended milestone
+### Additional fixes (session recovery)
 
-Exporter-facing release workflow with full pipeline exercise
-(ingestion → Stage A → Stage B → eligibility → publication → catalog).
+During session recovery, the following defects were identified and fixed:
+
+1. **Publication status transition** (`xportra/application/regulatory_publication_eligibility_service.py`):
+   `publish_requirement()` now transitions `status` to `'published'` and sets
+   `published_at`/`updated_at` atomically, preventing re-publication and enabling
+   exporter catalog filtering by status.
+
+2. **Cross-tenant fail-closed** (`xportra/api/router.py`): Removed the
+   `VectorStoreError` catch from the `/rag/query` endpoint. Cross-tenant detection
+   and other retrieval integrity failures now propagate to the exception handler,
+   returning HTTP 502 with `vector_store_error` instead of being masked as HTTP 200
+   with `insufficient_evidence`. Updated affected tests in
+   `test_rag_api_boundary.py` and `test_rag_composition.py`.
+
+3. **Down migration** (`migrations/030_regulatory_publication.down.sql`): Added
+   down migration that reverses the CHECK constraint change and removes
+   `published_at`.
+
+### Milestone 7: Staff Regulatory Ingestion Dashboard (2026-10-29)
+
+**Verdict:** COMPLETE AND VERIFIED (mocked-boundary frontend tests; no
+database/live verification).
+
+**Recovery finding:** A prior closeout claimed this milestone complete, but
+inspection showed the untracked `frontend/src/features/ingestion/`
+contained a non-compiling file (JSX fragments interleaved inside
+callbacks, references to an undefined `children` value, one-argument
+calls to three-argument API functions, and no decision forms at all).
+The route `/regulatory-ingestion` referenced by the nav item was not
+registered. Treated the repository as authoritative and reimplemented.
+
+**Actual implementation:**
+
+1. `features/ingestion/IngestionDashboard.tsx` now exists as the
+   navigation-facing entry point for `/regulatory-ingestion`. It composes
+   the committed, tested staff implementation
+   (`features/regulatory/RegulationAdminPage.tsx`) instead of duplicating
+   authorization-sensitive workflow logic. That page provides every
+   milestone section: source selection with recorded metadata
+   (status, jurisdiction, version, supersession, provenance), ingestion
+   job monitoring (status badge, attempts, timestamps, failure details),
+   artifacts, extracted candidates (requirement text, source location,
+   extraction outcome, entry mode, artifact reference), governance
+   flags (pending flags shown as not bypassable), Stage A decisions
+   (`POST /stage-a`, rationale mandatory) and Stage B decisions
+   (`POST /stage-b`, rationale + pilot scope mandatory), with loading,
+   empty, authorization-denial, retryable error, pending-action,
+   and refresh states.
+2. `/regulatory-ingestion` registered in `App.tsx` behind `RequireAuth`
+   + `AuthenticatedShell` (existing conventions); the existing
+   `/regulatory` deep link is unchanged; no duplicate nav entries.
+3. Backend contract corrections aligned `frontend/src/api/regulatory.ts`
+   with `xportra/api/schemas.py`:
+   `RegulatoryStageBReviewRequest.pilot_scope` is mandatory
+   (`min_length=1`) — the form now requires it and never sends `null`;
+   `evidence_references` must be `list[dict]` server-side — the
+   free-text comma-separated input that sent `string[]` (a guaranteed
+   422) was removed and the history entry type/rendering handle
+   reference objects honestly.
+4. Stale-response guard added to the shared page: source-detail and
+   candidate-review loads are request-token sequenced, so a late
+   response for a previously selected source/candidate can no longer
+   overwrite the current selection.
+
+**Security/governance:** server-side `GRANT_MANAGE` / `STAGE_A_VERIFY` /
+`STAGE_B_APPROVE` remain the authority; no client-side authorization
+substitutes; no retry or manual-entry or publication action is offered
+(no authorized backend operation for them); authorization denials are
+surfaced as errors, never simulated as success.
+
+**Tests:**
+- New `IngestionDashboard.test.tsx` (9 tests): renders/inspects sources
+  with jobs and candidates, authorization denial, Stage A payload +
+  refresh, duplicate-submission prevention while pending, Stage B
+  pilot-scope requirement + exact supported payload, no
+  publication/applicability controls, stale-response discard, empty
+  state, error + retry.
+- `AuthenticatedShell.test.tsx` nav assertion strengthened to three
+  destinations with `/regulatory-ingestion` verified.
+- `AppRoutes.test.tsx`: route reachable from the nav item inside the
+  shell, protected from signed-out visitors.
+- Full frontend suite: 582 passed / 1 failed — the single failure is
+  pre-existing (`RegisterPage.test.tsx` expects
+  `sessionStorage` for pending-registration, while
+  `app/pendingRegistration.ts` intentionally uses `localStorage`;
+  unrelated to ingestion).
+- TypeScript check and production build pass (existing large-chunk
+  advisory).
+- Backend focused suites: Stage A (17), Stage B (17), publication
+  eligibility (19), source intake, worker, eligible-requirements
+  endpoint, governance-blocks-Stage-B — 112/112 passed.
+- PostgreSQL integration tests skipped: no `DATABASE_URL` configured in
+  this environment; no production or shared database was contacted.
+
+**Next recommended milestone:** exporter-facing release workflow
+(ingestion → Stage A → Stage B → eligibility → publication → catalog),
+separately authorized; also consider correcting the pre-existing
+`RegisterPage.test.tsx` storage-key expectation as its own task.
 The two-stage review pipeline is fully implemented and tested end-to-end
-through the staff API (Milestones 1-5).
-
-The remaining scope includes: exporter catalog UI/UX, 
-tenant-specific requirement filtering, and version management.
-These require separate authorization and frontend work.
+through the staff API (Milestones 1-5). The remaining scope includes
+exporter catalog UI/UX, tenant-specific requirement filtering, and
+version management; these require separate authorization and frontend
+work.

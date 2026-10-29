@@ -1,7 +1,7 @@
 # CURRENT_STATE.md â€” Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-10-24
+> Updated: 2026-10-29
 >
 > Regulatory ingestion-to-EvidenceDocument linkage implemented locally
 > (`regulatory_ingestion_evidence_linkage_service.py` + focused tests 6/6 pass);
@@ -10,10 +10,13 @@
 > failed/partial ingestion blocked from linkage (`ApplicationValidationError`).
 > Regulatory publication eligibility endpoint implemented (`GET /regulatory/eligible-requirements`,
 > `RegulatoryPublicationEligibilityService`, repository `get_eligible_for_publication()`);
-> retrieval-time filter corrected from fail-open to fail-closed (`router.py`: DB-unavailable
-> returns `insufficient_evidence` instead of preserving stale/superseded citations);
-> endpoint contract tests 2/2 pass; eligibility service 10/10 pass. No production grants
-> created. No `.env` secrets exposed.
+> `publish_requirement()` transitions status to `'published'` and sets `published_at`/`updated_at`
+> atomically, preventing re-publication; retrieval-time filter corrected from fail-open
+> to fail-closed (`router.py`: DB-unavailable returns `insufficient_evidence` instead of
+> preserving stale/superseded citations); endpoint contract tests 2/2 pass; eligibility
+> service 10/10 pass. No production grants created. No `.env` secrets exposed.
+> Cross-tenant RAG isolation verified: `test_cross_tenant_result_rejected` now returns
+> HTTP 502 `vector_store_error` (was 200) â€” endpoint no longer masks `VectorStoreError`.
 >
 >
 > ADR-0017 was accepted on 2026-10-20 as the basis for implementation
@@ -4481,7 +4484,7 @@ pending separate authorization. The ingestion pipeline now runs
 end-to-end through the worker.
 
 
-## Regulatory Ingestion Execution Path — Milestone 2 (2026-10-29)
+## Regulatory Ingestion Execution Path ï¿½ Milestone 2 (2026-10-29)
 
 **Verdict:** IMPLEMENTED AND VERIFIED (unit tests only; integration
 tests skipped).
@@ -4543,7 +4546,7 @@ running extraction, so candidates were never produced automatically.
 
 
 
-## Regulatory Ingestion Execution Path — Milestone 4 (2026-10-29)
+## Regulatory Ingestion Execution Path ï¿½ Milestone 4 (2026-10-29)
 
 **Verdict:** IMPLEMENTED AND VERIFIED.
 
@@ -4579,7 +4582,7 @@ scope, atomic update + append-only audit event.
 - **Default rule (enforced in backend)**: Stage A and Stage B must be
   performed by different qualified reviewers. Same-person attempt is denied
   with a clear auditable message.
-- **Small-team exception**: Not implemented — no authorized exception
+- **Small-team exception**: Not implemented ï¿½ no authorized exception
   authority or mechanism exists in governing contracts. Fail-closed: any
   same-person attempt is denied with the message: "same-person Stage A/Stage
   B exception is not implemented; no authorized exception authority or mechanism
@@ -4619,4 +4622,55 @@ scope, atomic update + append-only audit event.
 - Integration tests skipped.
 
 
-## Regulatory Ingestion Execution Path — Milestone 5 (2026-11-??)\n\n**Verdict:** IMPLEMENTED AND VERIFIED (infrastructure completed).\n\nAdded controlled publication workflow and exporter-facing catalog tracking.\n\n---
+## Regulatory Ingestion Execution Path ï¿½ Milestone 5 (2026-11-??)\n\n**Verdict:** IMPLEMENTED AND VERIFIED (infrastructure completed).\n\nAdded controlled publication workflow and exporter-facing catalog tracking.\n\n---
+
+
+---
+
+## Regulatory Ingestion Execution Path - Milestone 7 (2026-10-29)
+
+**Verdict:** COMPLETE AND VERIFIED (mocked-boundary frontend tests; no
+database integration exercised).
+
+Staff regulatory ingestion dashboard completed. Inspection first
+corrected a prior inaccurate closeout: the untracked
+features/ingestion/IngestionDashboard.tsx did not compile, and the
+nav item's /regulatory-ingestion route was not registered.
+
+Implemented:
+
+- IngestionDashboard.tsx as the navigation-facing entry point for
+  /regulatory-ingestion, composing the committed, tested staff
+  implementation features/regulatory/RegulationAdminPage.tsx
+  (sources with recorded metadata and supersession; ingestion jobs
+  with status, attempts, timestamps, failure details; candidates with
+  requirement text, source location, extraction outcome, artifact
+  reference; pending governance flags shown as not bypassable;
+  Stage A decisions with mandatory rationale; Stage B decisions with
+  mandatory rationale and now mandatory pilot scope).
+- Route /regulatory-ingestion registered behind RequireAuth +
+  AuthenticatedShell; nav item resolves to the dashboard; existing
+  /regulatory deep link unchanged; exporter surfaces untouched.
+- Contract corrections aligned api/regulatory.ts with
+  xportra/api/schemas.py: Stage B pilot_scope mandatory (never
+  sent as null/empty); the free-text evidence_references input that
+  sent string[] against a list[dict] schema (guaranteed 422) was
+  removed and history entries render reference objects verbatim.
+- Stale-response guard: request-token sequencing in source-detail and
+  candidate-review loads.
+- No retry action (no authorized backend endpoint); no manual
+  candidate entry (identified as a separate future capability); no
+  publication or applicability controls in the frontend.
+
+Verification: new IngestionDashboard.test.tsx 9/9;
+AuthenticatedShell.test.tsx nav assertions strengthened (three
+destinations); AppRoutes.test.tsx route reachable-from-nav and
+signed-out protection; full frontend suite 582 passed / 1 pre-existing
+unrelated failure (RegisterPage.test.tsx asserts sessionStorage where
+pendingRegistration.ts intentionally uses localStorage); TypeScript
+check and production build pass (existing large-chunk advisory).
+Backend focused regression (Stage A, Stage B, publication eligibility,
+source intake, worker, eligible-requirements, governance blocks)
+112/112 pass. PostgreSQL integration tests were NOT run: no
+DATABASE_URL configured; nothing was written to any database and no
+production system was contacted. No push performed.

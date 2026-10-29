@@ -118,7 +118,6 @@ describe("regulatory API functions", () => {
       stage_b_status: "approved",
       rationale: "Applies to pilot scope.",
       pilot_scope: "cocoa pilot",
-      evidence_references: ["ev-1"],
     });
     const [url, init] = spy.mock.calls[0] as unknown as FetchCall;
     // Distinct from the Stage A route — two independent review stages.
@@ -128,7 +127,6 @@ describe("regulatory API functions", () => {
       stage_b_status: "approved",
       rationale: "Applies to pilot scope.",
       pilot_scope: "cocoa pilot",
-      evidence_references: ["ev-1"],
     });
     expect(result.stage_b_status).toBe("approved");
   });

@@ -36,6 +36,7 @@ import { ReportPage } from "./features/assessment/ReportPage";
 import { HistoryPage } from "./features/assessment/HistoryPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { RegulationAdminPage } from "./features/regulatory/RegulationAdminPage";
+import { IngestionDashboard } from "./features/ingestion/IngestionDashboard";
 import { AskPage } from "./features/ask/AskPage";
 
 function LegacyWorkspaceRoute() {
@@ -71,6 +72,11 @@ function LegacyWorkspaceRoute() {
  *   unqualified `/workspace` redirects when a saved case is available.
  *   Workspace routes are gated by `RequireAuth` (unauthenticated visitors
  *   return to `/session`, never to external destinations).
+ * - `/regulatory` and `/regulatory-ingestion` — staff regulatory
+ *   administration surfaces (source inspection, ingestion jobs,
+ *   candidates, Stage A/B review) gated by `RequireAuth`; all
+ *   privileged actions are additionally authorized server-side by
+ *   global staff grants.
  */
 export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> }) {
   return (
@@ -105,6 +111,16 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
                   <RequireAuth>
                     <AuthenticatedShell crumbs={[{ label: "Regulatory administration" }]}>
                       <RegulationAdminPage />
+                    </AuthenticatedShell>
+                  </RequireAuth>
+                }
+              />
+              <Route
+                path="/regulatory-ingestion"
+                element={
+                  <RequireAuth>
+                    <AuthenticatedShell crumbs={[{ label: "Regulatory ingestion" }]}>
+                      <IngestionDashboard />
                     </AuthenticatedShell>
                   </RequireAuth>
                 }

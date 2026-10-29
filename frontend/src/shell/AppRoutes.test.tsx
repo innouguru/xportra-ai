@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { App } from "../App";
@@ -53,9 +53,58 @@ afterEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   delete document.documentElement.dataset.theme;
+  vi.unstubAllGlobals();
 });
 
 describe("authenticated routes", () => {
+  it("serves the staff ingestion dashboard inside the application shell for signed-in users", () => {
+    // The dashboard calls the staff regulatory API; authorization is
+    // enforced server-side, so a denial is expected here and the shell
+    // chrome must still render for a signed-in visitor.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            error: { code: "permission_denied", message: "Permission denied." },
+          }),
+          { status: 403 },
+        ),
+      ),
+    );
+    renderAt("/regulatory-ingestion", { token: "test-token" });
+    expect(screen.getByRole("complementary", { name: "Application" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
+      "Regulatory ingestion",
+    );
+  });
+
+  it("resolves the Regulatory Ingestion navigation item to the dashboard route", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            error: { code: "permission_denied", message: "Permission denied." },
+          }),
+          { status: 403 },
+        ),
+      ),
+    );
+    renderAt("/dashboard", { token: "test-token" });
+    fireEvent.click(
+      screen.getByRole("navigation", { name: "Primary" }).querySelector(
+        'a[href="/regulatory-ingestion"]',
+      ) as HTMLAnchorElement,
+    );
+    await waitFor(() => {
+      expect(screen.getByText("Regulatory administration")).toBeInTheDocument();
+    });
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
+      "Regulatory ingestion",
+    );
+  });
+
   it("serves the dashboard inside the application shell for signed-in users", () => {
     renderAt("/dashboard", { token: "test-token" });
     expect(screen.getByRole("complementary", { name: "Application" })).toBeInTheDocument();
@@ -108,7 +157,9 @@ describe("authenticated routes", () => {
     },
   );
 
-  it.each(["/start", "/settings"])("protects %s from signed-out visitors", (path) => {
+  it.each(["/start", "/settings", "/regulatory-ingestion"])(
+    "protects %s from signed-out visitors",
+    (path) => {
     renderAt(path);
     expect(screen.getByRole("heading", { name: "Connect to your workspace" })).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Application" })).toBeNull();

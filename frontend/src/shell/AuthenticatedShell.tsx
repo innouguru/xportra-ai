@@ -12,15 +12,17 @@ import { useTheme } from "../theme/theme";
  * Phase 10.8B authenticated application shell.
  *
  * Shipment-first workspace frame (R-10.8.1–R-10.8.3,
- * ADR-0012): expandable sidebar with exactly two
- * primary destinations (Dashboard, View Shipments),
- * brand link opening the public landing route in a
- * new tab, compact account control, subtle
- * notification entry point, theme toggle, and a
- * mobile navigation drawer. Product pages
- * (dashboard content, shipments table, workspace,
- * settings) arrive in later 10.8 phases; this file
- * only frames them.
+ * ADR-0012): expandable sidebar with primary
+ * destinations (Dashboard, View Shipments, and the
+ * staff Regulatory Ingestion entry point; staff
+ * authorization is enforced server-side by global
+ * grants, not by the shell), brand link opening the
+ * public landing route in a new tab, compact
+ * account control, subtle notification entry point,
+ * theme toggle, and a mobile navigation drawer.
+ * Product pages (dashboard content, shipments table,
+ * workspace, settings) arrive in later 10.8 phases;
+ * this file only frames them.
  */
 
 const SIDEBAR_STORAGE_KEY = "xportra.shell.sidebar.v1";
@@ -75,6 +77,7 @@ const CHEVRON_RIGHT = "M7.5 5l5 5-5 5";
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: DASHBOARD_ICON },
   { to: "/shipments", label: "View Shipments", icon: SHIPMENTS_ICON },
+  { to: "/regulatory-ingestion", label: "Regulatory Ingestion", icon: DASHBOARD_ICON },
 ] as const;
 
 function ThemeToggle() {

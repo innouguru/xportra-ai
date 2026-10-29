@@ -132,7 +132,12 @@ export interface RegulatoryStageBHistoryEntry {
   reviewed_at: string | null;
   rationale: string;
   pilot_scope: string | null;
-  evidence_references: string[];
+  /**
+   * Backend records `evidence_references` as a JSONB list of reference
+   * objects (`list[dict]` in `RegulatoryStageBReviewRequest`); entries are
+   * rendered verbatim by the page, never interpreted into applicability.
+   */
+  evidence_references: Array<string | Record<string, unknown>>;
   same_person_exception: boolean;
   exception_authorizer_user_id: string | null;
   exception_authorization_ref: string | null;
@@ -242,8 +247,8 @@ export function submitStageBDecision(
   payload: {
     stage_b_status: "approved" | "rejected" | "clarification_required";
     rationale: string;
-    pilot_scope?: string | null;
-    evidence_references?: string[] | null;
+    /** Mandatory server-side (`RegulatoryStageBReviewRequest`); never null. */
+    pilot_scope: string;
   },
 ): Promise<RegulatoryStageBState> {
   return apiFetch(

@@ -65,8 +65,8 @@
   color: inherit;
 }
 
-/* Primary navigation: exactly Dashboard +
- * View Shipments. Selected state is text +
+/* Primary navigation: Dashboard, View Shipments,
+ * and Regulatory Ingestion. Selected state is text +
  * indicator bar (never color alone). */
 .xb-app-nav-link {
   display: flex;

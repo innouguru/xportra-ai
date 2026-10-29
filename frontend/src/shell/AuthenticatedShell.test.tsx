@@ -106,13 +106,14 @@ afterEach(() => {
 });
 
 describe("authenticated shell navigation", () => {
-  it("shows exactly Dashboard and View Shipments as primary navigation", () => {
+  it("shows Dashboard, View Shipments, and Regulatory Ingestion as primary navigation", () => {
     renderShell();
     const primary = screen.getByRole("navigation", { name: "Primary" });
     expect(within(primary).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
     expect(within(primary).getByRole("link", { name: "View Shipments" })).toHaveAttribute("href", "/shipments");
+    expect(within(primary).getByRole("link", { name: "Regulatory Ingestion" })).toHaveAttribute("href", "/regulatory-ingestion");
     const links = within(primary).getAllByRole("link");
-    expect(links).toHaveLength(2);
+    expect(links).toHaveLength(3);
   });
 
   it("does not expose workflow concepts as primary navigation", () => {
