@@ -292,7 +292,20 @@ class RegulatoryCandidateExtractionService:
                 continue
 
         # Mark the job completed (claim first, per the job state machine).
-        self._ingestion.claim_job(job_id, actor_user_id=actor_user_id)
+        # claim_job returns None when another worker already claimed the
+        # job; treat that as an idempotent no-op rather than completing
+        # someone else's work.
+        claimed = self._ingestion.claim_job(job_id, actor_user_id=actor_user_id)
+        if claimed is None:
+            job = self._job_repo.get(job_id)
+            return {
+                "outcome": EXTRACTION_OUTCOME_SUCCEEDED,
+                "candidate_count": len(persisted),
+                "candidates": persisted,
+                "job": job,
+                "duplicate": True,
+                "normalization_id": normalization_id,
+            }
         self._ingestion.complete_job(job_id, actor_user_id=actor_user_id)
         job = self._job_repo.get(job_id)
 

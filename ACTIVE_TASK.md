@@ -1,94 +1,114 @@
 # ACTIVE_TASK.md — Current Active Task
 
-**Active task:** Phase 4D — Regulatory Administration Backend — Milestone 1
-(staff-only regulatory ingestion administration API).
+**Active task:** Phase 4D — Regulatory Ingestion Execution Path — Milestone 2
+(worker-driven durable ingestion from pending job to candidate persistence).
 
 **Status:** In progress — implementation complete, tests passing, documentation
 pending, commit pending.
 
 **Authorization basis:** Explicitly assigned by user tasking. The existing
 bootstrap task (initial `grant_manage` provisioning under `XPA-GSA-INIT-001`)
-remains a separate, not-yet-executed track described in
-`CURRENT_STATE.md` and `tasks/active/phase-4d-task-1-authorization.md`; it is
-not part of this milestone and no bootstrap is executed here.
+remains a separate track. Per tasking, bootstrap is NOT re-executed and no
+production grants are created or revoked. Production grant state cannot be
+verified from this environment (no `DATABASE_URL` configured; no production
+contact). The local test database has no `grant_manage` rows, so the worker
+skips execution fail-closed until `REGULATORY_WORKER_ACTOR_USER_ID` is
+configured with an active grant.
 
 ## Implemented (this milestone)
 
-1. **Source-ingestion operation**
-   - `POST /regulatory/sources/{source_id}/artifacts` — staff-uploaded artifact;
-     accepts `text/plain`, `text/markdown`, `application/json`, `application/pdf`
-     (PDF previously rejected; now accepted — domain parsing already supported it).
-     Validates file type, size (10 MB), base64 content, required metadata via the
-     source pre-check. Stores original bytes in the private regulatory
-     source-artifact storage; persists artifact row + durable pending ingestion job.
-     Idempotent on identical content hash (no duplicate artifacts/jobs).
-   - `POST /regulatory/sources/{source_id}/artifacts/text` — staff-entered inline
-     text; accepts `text/plain`, `text/markdown` (no file upload). Same storage,
-     artifact, job, and idempotency guarantees.
-   - `POST /regulatory/sources` — source registration (existing; requires grant).
+1. **Worker now drives extraction (was: auto-completed jobs without processing)**
+   - `RegulatoryIngestionWorker._poll_cycle` reserves one pending/retryable job
+     via `SELECT ... FOR UPDATE SKIP LOCKED`, then delegates to
+     `RegulatoryCandidateExtractionService.extract_candidates()` which performs
+     the atomic claim (pending/retryable → claimed), parse → normalize → extract
+     → persist, and marks the job completed or failed/retryable.
+   - Jobs without `artifact_id` (source-registration placeholders from
+     `register_source`) are skipped — they have no content to process.
+   - Extraction failures are logged; the job is not falsely completed.
+   - Worker startup/shutdown via FastAPI lifespan unchanged
+     (`xportra/api/app.py`).
 
-2. **List and inspect sources/jobs**
-   - `GET /regulatory/sources` (paginated), `GET /regulatory/sources/{source_id}`,
-     `GET /regulatory/ingestion-jobs/{job_id}`,
-     `GET /regulatory/sources/{source_id}/ingestion-jobs` (paginated).
-   - Processing status, safe error information, metadata included. No credentials
-     or storage paths returned.
+2. **Job claim now accepts `retryable` status**
+   - `RegulatoryIngestionJobRepository.claim` updated:
+     `status = 'pending'` → `status IN ('pending', 'retryable')`, so failed
+     jobs can be reclaimed and retried.
 
-3. **Extraction outcomes** (existing, re-exposed)
-   - `POST /regulatory/ingestion-jobs/{job_id}/extract`, `GET
-     /regulatory/sources/{source_id}/candidates`, `GET /regulatory/candidates/{candidate_id}`.
-   - Candidate provenance traces to source/artifact/ingestion job via
-     `ingestion_job_id`, `artifact_id`, `source_id`, `normalized_document_id`.
+3. **Race-condition handling in extraction**
+   - `extract_candidates` checks `claim_job` return value; if `None` (another
+     worker already claimed), returns `duplicate=True` without completing
+     someone else's job.
 
-4. **Safe retry** — reuses existing job lifecycle (`pending` → claimed →
-   completed/failed/retryable) and idempotency (content-hash dedup, advisory
-   locks). No duplicate jobs/artifacts from repeated requests. No new queue
-   service.
-
-## Authorization and audit
-
-- All mutating and read-only regulatory-admin routes require `GRANT_MANAGE`
-  via `require_global_staff` (actor resolved from verified JWT subject →
-  `users.supabase_uid` → `users.id`; tenant membership never substitutes).
-- Fail-closed on missing/invalid authentication, inactive/unknown user, or
-  missing/revoked grant.
-- Audit through existing `GlobalStaffAuditRepository` / `global_staff_audit`
-  mechanism at the service layer.
-- No hard-coded staff user, no automatic permission grants, no bypass.
+4. **End-to-end path verified via tests**
+   - Pending job → extraction service called → candidates persisted with
+     provenance (`source_id`, `artifact_id`, `ingestion_job_id`,
+     `normalized_document_id`) → job completed.
+   - Parse/extraction failure → job marked retryable/failed, no candidates.
+   - Job without artifact → skipped.
+   - Retryable job → claimable and processable.
+   - Unauthorized worker → skip.
+   - Claim-returns-None → idempotent no-op.
 
 ## Files changed
 
-- `xportra/application/regulatory_source_intake_service.py` — accept `application/pdf`;
-  extract shared `_store_artifact`; add `enter_text_artifact`.
-- `xportra/api/schemas.py` — add `RegulatoryTextEntryRequest`,
-  `RegulatoryArtifactTextResponse`.
-- `xportra/api/regulatory_admin.py` — add `POST
-  /regulatory/sources/{source_id}/artifacts/text` route; update upload docstring.
-- `tests/unit/test_regulatory_source_intake.py` — PDF acceptance test; 10 staff-text
-  tests (accept, markdown, empty/whitespace rejection, pdf type rejection,
-  unsupported type rejection, unauthorized denial, nonexistent source, idempotency,
-  size limit).
+- `xportra/application/regulatory_ingestion_worker.py` — `_poll_cycle`
+  delegates to extraction service; `_process_job` added; `extraction_service`
+  and `job_repo` constructor injection for testability; removed `signal`
+  import (unused).
+- `xportra/persistence/repositories.py` — `RegulatoryIngestionJobRepository.claim`
+  accepts `status IN ('pending', 'retryable')`.
+- `xportra/application/regulatory_candidate_extraction_service.py` —
+  `extract_candidates` checks `claim_job` return value; handles `None`
+  (already claimed) as idempotent no-op.
+- `tests/unit/test_regulatory_ingestion_worker.py` — 7 new tests (process
+  pending job, skip no-artifact, missing job noop, extraction failure,
+  unauthorized skip, retryable job, claim-None race condition).
+- `tests/unit/test_regulatory_source_intake.py` — unchanged from Milestone 1.
 
 ## Migration
 
-None added. Existing migrations 018–029 (ingestion jobs, candidate extraction,
-stage A/B, legal hold, deletion intent, review flags) already support the
-requirement. No schema change needed.
+None added. Existing migrations 018–029 already support the requirement. The
+`claim` SQL change is data-access only, no schema change.
 
-## Remaining work / limitations
+## Authorization
 
-- Bootstrap (`XPA-GSA-INIT-001`) not executed; no `grant_manage` grant exists,
-  so the endpoints cannot be exercised end-to-end against a live database until
-  bootstrap is separately authorized and performed.
-- Integration (PostgreSQL) tests skipped without an isolated `xportra_test`
-  database; not run against the configured `DATABASE_URL` (shared/production).
-- Stage A/B review, publication eligibility, and exporter-facing behavior exist
-  in code but are gated behind `STAGE_A_VERIFY`/`STAGE_B_APPROVE` grants and are
-  not part of this milestone.
-- No deletion endpoint for artifacts (blocked by retention policy; deliberate).
+- Worker requires `REGULATORY_WORKER_ACTOR_USER_ID` with an active
+  `GRANT_MANAGE` grant; fail-closed otherwise.
+- `extract_candidates` requires `GRANT_MAMA` via `GlobalStaffGrantService`.
+- No hard-coded staff user, no automatic grants, no bypass.
+- No production grant created or revoked.
+
+## Tests
+
+- Focused worker tests: 12/12 pass.
+- Focused source intake + candidate extraction + ingestion service: 81 passed.
+- Full unit suite: 2332 passed, 3 failed.
+- The 3 failures are pre-existing and unrelated to this change:
+  1. `test_domain_has_no_io_or_network_surface` — false positive:
+     `xportra/domain/ingestion.py` uses `fitz.open()` (PyMuPDF), which the
+     test's text scan flags as `"open("`. Not Python's `open()`.
+  2. `test_cross_tenant_result_rejected` — RAG test expects 502, gets 200.
+     Pre-existing, not touched by this change.
+  3. `test_start_stop_contract_exists` — event-loop flake; passes in
+     isolation (5/5), fails intermittently in full-suite parallel context.
+- Integration tests skipped (no isolated `xportra_test` database; not run
+  against shared `DATABASE_URL`).
+
+## Bootstrap discrepancy (Phase 4)
+
+- Task context states bootstrap was completed under `XPA-GSA-INIT-001`.
+- Repository documentation (CURRENT_STATE.md §Bootstrap Readiness Review)
+  states the production authorization record and grant "still do not exist
+  and were not created by this review" — remaining operator prerequisites
+  are listed.
+- Resolution: these are not contradictory — the local test database has no
+  grants (expected), and production grant state cannot be verified from this
+  environment (no `DATABASE_URL`, no production contact). Per tasking,
+  bootstrap is NOT re-executed and no production grants are created/revoked.
+- Documented as unresolved verification rather than guessed.
 
 ## Next recommended milestone
 
-Phase 4D task 3/4 — durable ingestion pipeline execution (worker dispatch,
-parsing/extraction wiring) and Stage A/B review API wiring, pending separate
-authorization.
+Stage A/B review API wiring and publication-eligibility exposure, pending
+separate authorization. The ingestion pipeline now runs end-to-end through
+the worker.

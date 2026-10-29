@@ -2396,7 +2396,7 @@ class RegulatoryIngestionJobRepository:
         try:
             with self._database.transaction() as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute("UPDATE xportra.regulatory_ingestion_jobs SET status = 'claimed', started_at = now(), actor_user_id = %s WHERE id = %s AND status = 'pending' RETURNING *", (actor_user_id, job_id))
+                    cursor.execute("UPDATE xportra.regulatory_ingestion_jobs SET status = 'claimed', started_at = now(), actor_user_id = %s WHERE id = %s AND status IN ('pending', 'retryable') RETURNING *", (actor_user_id, job_id))
                     return cursor.fetchone()
         except IntegrityError as cause:
             raise PersistenceIntegrityError("regulatory ingestion job claim", cause) from cause

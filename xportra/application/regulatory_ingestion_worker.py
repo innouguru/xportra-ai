@@ -1,14 +1,19 @@
-"""Minimal PostgreSQL-backed ingestion worker for Phase 4D.10 Task 3B.
+"""PostgreSQL-backed ingestion worker for Phase 4D.10 Task 3B.
 
 Runs within the existing FastAPI process (no Docker, no new external
 queue, no new paid service). Uses the database as the source of truth.
-Polls `regulatory_ingestion_jobs` atomically, claims eligible work,
-and handles bounded retries, safe shutdown, and crash recovery via
-lease-timeout reset. The worker does not invent a new authorization
-model; it requires a configured service identity (`actor_user_id`)
-that holds an active `GRANT_MANAGE` grant. If the identity is missing
-or ungranted, the worker skips execution (fail-closed) rather than
-creating a new permission mechanism.
+Polls `regulatory_ingestion_jobs` atomically, claims eligible work, and
+drives each job through the existing candidate-extraction pipeline
+(parse → normalize → extract → persist) so that a pending job becomes a
+durable processing outcome (completed or failed/retryable). Handles
+bounded retries, safe shutdown, and crash recovery via lease-timeout
+reset.
+
+The worker does not invent a new authorization model; it requires a
+configured service identity (`actor_user_id`) that holds an active
+`GRANT_MANAGE` grant. If the identity is missing or ungranted, the
+worker skips execution (fail-closed) rather than creating a new
+permission mechanism.
 
 This mechanism is the smallest viable option under the current
 Render/no-Docker/budget constraints (ADR-0017 §3, deployment audit
@@ -23,11 +28,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import signal
 from typing import Any
 from uuid import UUID
 
 from xportra.application.global_staff import GlobalStaffGrantService, GRANT_MANAGE
+from xportra.application.regulatory_candidate_extraction_service import (
+    RegulatoryCandidateExtractionService,
+)
 from xportra.persistence.database import Database
 from xportra.persistence.repositories import (
     RegulatoryIngestionJobRepository,
@@ -53,15 +60,34 @@ def _configured_service_actor_user_id() -> UUID | None:
 
 
 class RegulatoryIngestionWorker:
-    """PostgreSQL-backed polling ingestion worker (in-process, bounded)."""
+    """PostgreSQL-backed polling ingestion worker (in-process, bounded).
 
-    def __init__(self, database: Database) -> None:
+    Discovers pending/retryable ingestion jobs and drives each one
+    through the candidate-extraction pipeline. Jobs without an artifact
+    (source-registration placeholders created by
+    ``RegulatorySourceIntakeService.register_source``) are skipped: they
+    have no content to process and remain pending until an artifact is
+    uploaded, which creates its own job.
+    """
+
+    def __init__(
+        self,
+        database: Database,
+        *,
+        extraction_service: Any | None = None,
+        job_repo: RegulatoryIngestionJobRepository | None = None,
+    ) -> None:
         self._database = database
-        self._jobs = RegulatoryIngestionJobRepository(database)
+        self._jobs = job_repo or RegulatoryIngestionJobRepository(database)
         self._grants = GlobalStaffGrantService(database)
         self._actor_id = _configured_service_actor_user_id()
         self._running = False
         self._poll_task: asyncio.Task[Any] | None = None
+        self._extraction_service_factory = (
+            extraction_service
+            if extraction_service is not None
+            else lambda db: RegulatoryCandidateExtractionService(db)
+        )
 
     def _is_authorized(self) -> bool:
         if self._actor_id is None:
@@ -96,12 +122,15 @@ class RegulatoryIngestionWorker:
                 "Regulatory ingestion worker skipped: no configured service identity or active grant_manage grant."
             )
             return
-        # Minimal claim: find one eligible job and claim it.
-        # This is intentionally bounded; a full worker framework requires
-        # an approved dispatch mechanism (ADR-0017 §3).
+        # Reserve one eligible job without changing its status. The
+        # extraction service performs the atomic claim
+        # (pending/retryable -> claimed) and drives the job to
+        # completion or failure. Holding a DB lock across the service
+        # call would risk deadlocks, so the reservation transaction is
+        # committed before processing.
+        job_id: UUID | None = None
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
-                # Select eligible pending/retryable work with bounded limit.
                 cursor.execute(
                     "SELECT id FROM xportra.regulatory_ingestion_jobs WHERE status IN ('pending', 'retryable') ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED"
                 )
@@ -109,21 +138,35 @@ class RegulatoryIngestionWorker:
                 if row is None:
                     return
                 job_id = row[0]
-                # Atomic claim.
-                cursor.execute(
-                    "UPDATE xportra.regulatory_ingestion_jobs SET status = 'claimed', started_at = now(), actor_user_id = %s WHERE id = %s AND status IN ('pending', 'retryable') RETURNING *",
-                    (self._actor_id, job_id),
-                )
-                claimed = cursor.fetchone()
-                if claimed is not None:
-                    # In this minimal contract, the worker records claim but
-                    # actual processing (parsing/extraction) is deferred to
-                    # a future authorized ingestion pipeline (Task 4+).
-                    # We complete the job safely to avoid false pending state.
-                    cursor.execute(
-                        "UPDATE xportra.regulatory_ingestion_jobs SET status = 'completed', completed_at = now(), error_details = NULL WHERE id = %s",
-                        (job_id,),
-                    )
+        # Lock released; process outside the transaction.
+        if job_id is not None:
+            self._process_job(job_id)
+
+    def _process_job(self, job_id: UUID) -> None:
+        if not self._is_authorized():
+            return
+        job = self._jobs.get(job_id)
+        if job is None:
+            return
+        # Source-registration placeholders have no artifact to process.
+        if not job.get("artifact_id"):
+            return
+        service = self._extraction_service_factory(self._database)
+        try:
+            service.extract_candidates(
+                actor_user_id=self._actor_id,
+                source_id=job["source_id"],
+                artifact_id=job["artifact_id"],
+                job_id=job_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # The extraction service marks the job retryable/failed for
+            # recoverable errors; unexpected errors are logged so the
+            # job stays visible for operator inspection rather than
+            # being falsely completed.
+            logger.exception(
+                "Ingestion job %s failed during extraction: %s", job_id, exc
+            )
 
     def start(self) -> None:
         if self._running:
