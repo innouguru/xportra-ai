@@ -38,8 +38,16 @@ from xportra.persistence.repositories import (
 )
 
 MAX_ARTIFACT_CONTENT_BYTES = 10 * 1024 * 1024  # 10 MB
+#: Initially supported artifact content types for staff ingestion:
+# staff-uploaded PDF and staff-entered text (text/plain, text/markdown),
+# plus structured JSON. PDF parsing is provided by the domain layer
+# (xportra.domain.ingestion.ArtifactParsingService).
 ACCEPTED_ARTIFACT_CONTENT_TYPES = frozenset({
-    "text/plain", "text/markdown", "application/json",
+    "text/plain", "text/markdown", "application/json", "application/pdf",
+})
+#: Content types accepted for staff-entered (inline) text artifacts.
+ACCEPTED_TEXT_CONTENT_TYPES = frozenset({
+    "text/plain", "text/markdown",
 })
 VALID_SOURCE_STATUSES = frozenset({
     "draft", "active", "superseded", "withdrawn", "archived",
@@ -277,20 +285,72 @@ class RegulatorySourceIntakeService:
     ) -> dict[str, Any]:
         """Upload an original artifact and create a durable pending job.
 
-        Idempotent: identical content for the same source returns the
-        existing artifact and its latest job without creating duplicates.
-        Concurrent duplicate uploads are serialized by an advisory lock.
+        Accepts ``text/plain``, ``text/markdown``, ``application/json``,
+        and ``application/pdf``. Duplicate uploads of identical content
+        are idempotent.
         """
         self._require_grant(actor_user_id)
         content = self._decode_content(content_base64)
+        return self._store_artifact(
+            actor_user_id=actor_user_id,
+            source_id=source_id,
+            content=content,
+            content_type=content_type,
+            source_version=source_version,
+        )
+
+    def enter_text_artifact(
+        self,
+        actor_user_id: UUID,
+        source_id: UUID,
+        content_text: str,
+        content_type: str,
+        source_version: str | None = None,
+    ) -> dict[str, Any]:
+        """Store staff-entered inline text as a regulatory artifact.
+
+        Unlike :meth:`upload_artifact`, the text is carried directly in
+        the request body (no base64 file upload). Only text media types
+        are accepted. The text is stored in the same private regulatory
+        source-artifact storage as uploaded files, and a durable pending
+        ingestion job is created for it. Identical text for the same
+        source is idempotent.
+        """
+        self._require_grant(actor_user_id)
+        if content_text is None or not content_text.strip():
+            raise ApplicationValidationError("content_text is required")
+        mime_type = (content_type or "").strip().lower()
+        if mime_type not in ACCEPTED_TEXT_CONTENT_TYPES:
+            raise ApplicationValidationError(
+                f"unsupported text content type: {content_type}"
+            )
+        content = content_text.strip().encode("utf-8")
+        return self._store_artifact(
+            actor_user_id=actor_user_id,
+            source_id=source_id,
+            content=content,
+            content_type=mime_type,
+            source_version=source_version,
+        )
+
+    def _store_artifact(
+        self,
+        actor_user_id: UUID,
+        source_id: UUID,
+        content: bytes,
+        content_type: str,
+        source_version: str | None = None,
+    ) -> dict[str, Any]:
+        """Shared artifact storage + job creation for upload and text entry.
+
+        Validates size and content type, writes the original bytes to the
+        private regulatory source-artifact storage, then atomically creates
+        (or returns the existing) artifact row and a pending ingestion job.
+        """
         if len(content) > MAX_ARTIFACT_CONTENT_BYTES:
             raise ApplicationValidationError("artifact exceeds size limit")
         mime_type = (content_type or "").strip().lower()
         if mime_type not in ACCEPTED_ARTIFACT_CONTENT_TYPES:
-            if mime_type == "application/pdf":
-                raise ApplicationValidationError(
-                    "PDF artifacts are not supported in this release"
-                )
             raise ApplicationValidationError(
                 f"unsupported artifact content type: {content_type}"
             )

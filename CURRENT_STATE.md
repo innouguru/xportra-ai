@@ -4280,3 +4280,87 @@ passed; integration 7/7 passed (local `xportra_test`, command-scoped
 DSN). Nothing staged or committed; all pre-existing uncommitted changes
 and untracked files preserved.
 
+## Regulatory Administration Backend — Milestone 1 (2026-10-29)
+
+**Verdict:** IMPLEMENTED AND VERIFIED (unit tests only; integration
+tests require an isolated `xportra_test` database and were not run
+against the configured shared `DATABASE_URL`).
+
+Implemented the staff-only regulatory ingestion administration API,
+building on the existing Phase 4D.10 foundation (migrations 018–029,
+source intake/candidate extraction/ingestion services, worker,
+`global_staff_grants` + `global_staff_audit`). No new migration was
+required — the existing schema already supports the requirement.
+
+### Endpoints (all staff-only, `GRANT_MAME` via `require_global_staff`)
+
+- `POST /regulatory/sources/{source_id}/artifacts` — staff-uploaded
+  artifact; accepts `text/plain`, `text/markdown`, `application/json`,
+  `application/pdf` (PDF previously rejected at the application layer;
+  domain parsing already supported it). Validates content type, 10 MB
+  size, base64 content; stores original bytes in the private regulatory
+  source-artifact storage; persists artifact row + durable pending
+  ingestion job. Idempotent on identical content hash. Returns
+  artifact + job; no storage credentials or paths exposed.
+- `POST /regulatory/sources/{source_id}/artifacts/text` — staff-entered
+  inline text; accepts `text/plain`, `text/markdown` (no file upload).
+  Same storage, artifact, job, and idempotency guarantees.
+- `POST /regulatory/sources` — source registration (existing).
+- `GET /regulatory/sources` (paginated), `GET /regulatory/sources/{source_id}`,
+  `GET /regulatory/ingestion-jobs/{job_id}`,
+  `GET /regulatory/sources/{source_id}/ingestion-jobs` (paginated) —
+  processing status, safe error information, metadata; no secret leakage.
+- `POST /regulatory/ingestion-jobs/{job_id}/extract`,
+  `GET /regulatory/sources/{source_id}/candidates`,
+  `GET /regulatory/candidates/{candidate_id}` — extraction outcomes with
+  provenance (`ingestion_job_id`, `artifact_id`, `source_id`,
+  `normalized_document_id`).
+
+### Authorization and audit
+
+- `GRANT_MANAGE` required for all mutating and read-only regulatory-admin
+  routes; actor resolved from verified JWT subject → `users.id`;
+  tenant membership never substitutes; fail-closed on missing/invalid
+  identity or grant.
+- Audit through existing `GlobalStaffAuditRepository` /
+  `global_staff_audit` mechanism.
+- No hard-coded staff user, no automatic grants, no bypass.
+
+### Files changed
+
+- `xportra/application/regulatory_source_intake_service.py` — accept
+  `application/pdf`; shared `_store_artifact`; new `enter_text_artifact`.
+- `xportra/api/schemas.py` — `RegulatoryTextEntryRequest`,
+  `RegulatoryArtifactTextResponse`.
+- `xportra/api/regulatory_admin.py` — `POST
+  /regulatory/sources/{source_id}/artifacts/text` route; upload docstring.
+- `tests/unit/test_regulatory_source_intake.py` — PDF acceptance +
+  10 staff-text tests.
+
+### Tests
+
+- Focused: 44/44 pass (`test_regulatory_source_intake.py`).
+- Regulatory + API regression: 192 passed.
+- Full unit suite: 2325 passed; 3 pre-existing failures unrelated to
+  this change (RAG domain IO audit, RAG cross-tenant matrix, worker
+  event-loop flake — all pass in isolation or are untouched).
+- Integration tests skipped (no isolated `xportra_test` database;
+  not run against shared `DATABASE_URL`).
+
+### Limitations
+
+- Bootstrap (`XPA-GSA-INIT-001`) not executed; no `grant_manage` grant
+  exists, so endpoints cannot be exercised end-to-end against a live
+  database until bootstrap is separately authorized and performed.
+- Stage A/B review, publication eligibility, and exporter-facing
+  behavior exist in code but are gated behind separate grants and are
+  not part of this milestone.
+- No artifact deletion endpoint (blocked by retention policy; deliberate).
+
+### Next recommended milestone
+
+Phase 4D task 3/4 — durable ingestion pipeline execution (worker
+dispatch, parsing/extraction wiring) and Stage A/B review API wiring,
+pending separate authorization.
+
+

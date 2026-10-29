@@ -39,6 +39,7 @@ from xportra.api.errors import APIError
 from xportra.api.schemas import (
     RegulatoryArtifactListResponse,
     RegulatoryArtifactResponse,
+    RegulatoryArtifactTextResponse,
     RegulatoryArtifactUploadRequest,
     RegulatoryCandidateListResponse,
     RegulatoryCandidateResponse,
@@ -55,6 +56,7 @@ from xportra.api.schemas import (
     RegulatorySourceResponse,
     RegulatorySupersessionRequest,
     RegulatorySupersessionResponse,
+    RegulatoryTextEntryRequest,
     RegulatoryStageAReviewHistoryListResponse,
     RegulatoryStageAReviewHistoryResponse,
     RegulatoryStageAReviewRequest,
@@ -82,6 +84,21 @@ def _intake_service(services: Any = Depends(get_services)) -> RegulatorySourceIn
 
 IntakeServiceDependency = Annotated[
     RegulatorySourceIntakeService, Depends(_intake_service)
+]
+
+
+def _text_entry_service(services: Any = Depends(get_services)) -> RegulatorySourceIntakeService:
+    database = getattr(services, "database", None)
+    if database is None:
+        raise APIError(
+            503, "application_not_ready",
+            "Application services are not initialized",
+        )
+    return RegulatorySourceIntakeService(database)
+
+
+TextEntryServiceDependency = Annotated[
+    RegulatorySourceIntakeService, Depends(_text_entry_service)
 ]
 
 
@@ -407,14 +424,42 @@ def upload_artifact(
 ):
     """Upload an original artifact and establish a durable ingestion job.
 
-    Accepts ``text/plain``, ``text/markdown``, and ``application/json``
-    only. ``application/pdf`` is explicitly rejected. Duplicate uploads
-    of identical content are idempotent.
+    Accepts ``text/plain``, ``text/markdown``, ``application/json``, and
+    ``application/pdf``. Duplicate uploads of identical content are
+    idempotent.
     """
     result = service.upload_artifact(
         actor_user_id=actor_id,
         source_id=source_id,
         content_base64=payload.content_base64,
+        content_type=payload.content_type,
+        source_version=payload.source_version,
+    )
+    return _artifact_response(result["artifact"])
+
+
+@router.post(
+    "/regulatory/sources/{source_id}/artifacts/text",
+    response_model=RegulatoryArtifactTextResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def enter_text_artifact(
+    source_id: UUID,
+    payload: RegulatoryTextEntryRequest,
+    service: TextEntryServiceDependency,
+    actor_id: GlobalStaffDependency,
+):
+    """Enter staff-typed text as a regulatory artifact (no file upload).
+
+    Accepts ``text/plain`` and ``text/markdown`` only. The text is stored
+    in the private regulatory source-artifact storage and a durable
+    ingestion job is created. Identical text for the same source is
+    idempotent.
+    """
+    result = service.enter_text_artifact(
+        actor_user_id=actor_id,
+        source_id=source_id,
+        content_text=payload.content_text,
         content_type=payload.content_type,
         source_version=payload.source_version,
     )

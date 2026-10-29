@@ -19,6 +19,7 @@ from xportra.application.errors import (
 )
 from xportra.application.regulatory_source_intake_service import (
     RegulatorySourceIntakeService,
+    MAX_ARTIFACT_CONTENT_BYTES,
 )
 from xportra.persistence.database import Database
 
@@ -33,6 +34,7 @@ CONTENT_TYPES = {
     "text/plain": b"hello world",
     "text/markdown": b"# Sesame Regulation\n\nShall be safe.",
     "application/json": b'{"requirement": "labeling"}',
+    "application/pdf": b"%PDF-1.4 fake pdf bytes",
 }
 
 
@@ -512,21 +514,190 @@ class RegulatorySourceIntakeTests(TestCase):
         self.assertFalse(result["duplicate"])
         self.assertEqual(result["artifact"]["content_type"], "application/json")
 
-    def test_pdf_artifact_is_rejected(self):
+    def test_pdf_artifact_is_accepted(self):
         factory = ServiceFactory()
         service = factory.service()
         source = service.register_source(
             actor_user_id=ACTOR, authority_id=AUTHORITY,
             jurisdiction="EU", title="Test Source",
         )
-        with self.assertRaises(ApplicationValidationError) as raised:
+        result = service.upload_artifact(
+            actor_user_id=ACTOR,
+            source_id=source["id"],
+            content_base64=_b64(CONTENT_TYPES["application/pdf"]),
+            content_type="application/pdf",
+        )
+        self.assertFalse(result["duplicate"])
+        self.assertIsNotNone(result["artifact"])
+        self.assertIsNotNone(result["job"])
+        self.assertEqual(result["job"]["status"], "pending")
+        self.assertEqual(result["artifact"]["content_type"], "application/pdf")
+        self.assertEqual(result["artifact"]["content_length"], len(CONTENT_TYPES["application/pdf"]))
+
+    def test_text_entry_artifact_is_accepted(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Test Source",
+        )
+        result = service.enter_text_artifact(
+            actor_user_id=ACTOR,
+            source_id=source["id"],
+            content_text="Sesame seeds shall be free from Salmonella.",
+            content_type="text/plain",
+        )
+        self.assertFalse(result["duplicate"])
+        self.assertIsNotNone(result["artifact"])
+        self.assertIsNotNone(result["job"])
+        self.assertEqual(result["job"]["status"], "pending")
+        self.assertEqual(result["artifact"]["content_type"], "text/plain")
+        import hashlib
+        expected_hash = hashlib.sha256(
+            b"Sesame seeds shall be free from Salmonella."
+        ).hexdigest()
+        self.assertEqual(result["artifact"]["content_hash"], expected_hash)
+
+    def test_text_entry_markdown_is_accepted(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Test Source",
+        )
+        result = service.enter_text_artifact(
+            actor_user_id=ACTOR,
+            source_id=source["id"],
+            content_text="# Sesame Regulation\n\nShall be safe.",
+            content_type="text/markdown",
+        )
+        self.assertFalse(result["duplicate"])
+        self.assertEqual(result["artifact"]["content_type"], "text/markdown")
+
+    def test_text_entry_empty_content_is_rejected(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Test Source",
+        )
+        with self.assertRaises(ApplicationValidationError) as ctx:
+            service.enter_text_artifact(
+                actor_user_id=ACTOR,
+                source_id=source["id"],
+                content_text="",
+                content_type="text/plain",
+            )
+        self.assertIn("content_text is required", str(ctx.exception))
+
+    def test_text_entry_whitespace_only_content_is_rejected(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Test Source",
+        )
+        with self.assertRaises(ApplicationValidationError):
+            service.enter_text_artifact(
+                actor_user_id=ACTOR,
+                source_id=source["id"],
+                content_text="   \n  ",
+                content_type="text/plain",
+            )
+
+    def test_text_entry_pdf_content_type_is_rejected(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Test Source",
+        )
+        with self.assertRaises(ApplicationValidationError):
+            service.enter_text_artifact(
+                actor_user_id=ACTOR,
+                source_id=source["id"],
+                content_text="some text",
+                content_type="application/pdf",
+            )
+
+    def test_text_entry_unsupported_content_type_is_rejected(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Test Source",
+        )
+        with self.assertRaises(ApplicationValidationError):
+            service.enter_text_artifact(
+                actor_user_id=ACTOR,
+                source_id=source["id"],
+                content_text="some text",
+                content_type="image/png",
+            )
+
+    def test_text_entry_unauthorized_denied(self):
+        factory = ServiceFactory(granted_actor=False)
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Test Source",
+        )
+        with self.assertRaises(PermissionDeniedError):
+            service.enter_text_artifact(
+                actor_user_id=NON_GRANTED,
+                source_id=source["id"],
+                content_text="some text",
+                content_type="text/plain",
+            )
+
+    def test_text_entry_nonexistent_source_is_rejected(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        with self.assertRaises(ApplicationNotFoundError):
+            service.enter_text_artifact(
+                actor_user_id=ACTOR,
+                source_id=UUID("99999999-0000-0000-0000-000000000999"),
+                content_text="some text",
+                content_type="text/plain",
+            )
+
+    def test_text_entry_idempotent_duplicate(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Test Source",
+        )
+        text = "Identical sesame text for idempotency."
+        result1 = service.enter_text_artifact(
+            actor_user_id=ACTOR, source_id=source["id"],
+            content_text=text, content_type="text/plain",
+        )
+        self.assertFalse(result1["duplicate"])
+        result2 = service.enter_text_artifact(
+            actor_user_id=ACTOR, source_id=source["id"],
+            content_text=text, content_type="text/plain",
+        )
+        self.assertTrue(result2["duplicate"])
+        self.assertEqual(result2["artifact"]["id"], result1["artifact"]["id"])
+        self.assertEqual(len(factory.artifacts.artifacts), 1)
+
+    def test_upload_artifact_exceeds_size_limit_is_rejected(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Test Source",
+        )
+        oversized = b"x" * (MAX_ARTIFACT_CONTENT_BYTES + 1)
+        with self.assertRaises(ApplicationValidationError) as ctx:
             service.upload_artifact(
                 actor_user_id=ACTOR,
                 source_id=source["id"],
-                content_base64=_b64(b"%PDF-1.4 fake"),
-                content_type="application/pdf",
+                content_base64=_b64(oversized),
+                content_type="text/plain",
             )
-        self.assertIn("PDF", str(raised.exception))
+        self.assertIn("exceeds size limit", str(ctx.exception))
 
     def test_unsupported_content_type_is_rejected(self):
         factory = ServiceFactory()

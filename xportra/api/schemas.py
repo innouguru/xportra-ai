@@ -792,6 +792,35 @@ class RegulatoryArtifactUploadRequest(APIRequest):
     source_version: str | None = Field(default=None, max_length=100)
 
 
+class RegulatoryTextEntryRequest(APIRequest):
+    """Enter staff-typed text as a regulatory artifact (no file upload).
+
+    The text is carried directly in the request body and stored in the
+    private regulatory source-artifact storage alongside uploaded files.
+    Only text media types are accepted.
+    """
+
+    content_text: str = Field(min_length=1)
+    content_type: str = Field(min_length=1, max_length=255)
+    source_version: str | None = Field(default=None, max_length=100)
+
+
+class RegulatoryArtifactTextResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_id: UUID
+    content_hash: str
+    content_length: int
+    content_type: str
+    acquisition_channel: str
+    acquired_at: datetime
+    status: str
+    source_version: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 class RegulatoryArtifactResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

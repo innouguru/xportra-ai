@@ -1,78 +1,94 @@
 # ACTIVE_TASK.md — Current Active Task
 
-**Active task:** Phase 4D initial global staff bootstrap — production-readiness review complete (2026-10-28). Verdict READY WITH CONDITIONS. Commit `3819589` implementation re-verified; production execution path resolved: the operator CLI (`xportra/dev/global_staff_bootstrap.py`) now supports an explicit `--production-confirmation` that must exactly equal `--authorization-ref` when `APP_ENV=production` (checked before any DB connection; exit 2 otherwise) — previously no safe production path existed (the doc's production command was refused by design and no alternative was defined). Service authorization checks, single-use atomic consumption, actor ≠ target, atomic grant+audit and audit-linkage are unchanged and re-verified (integration 7/7 as `xportra_app` on local `xportra_test`). Authorization schema (migration 016) matches the approved form fields; `authorization_ref` uniqueness is not DB-enforced (read-only pre-insert check SQL now documented); optional `expires_at` is not evaluated by the service (do not set it on the initial record). Prior context (2026-10-24, retained): hosted migrations 015–018 pre-existing, 016/017/019–028 applied and verified; 029 excluded (ADR-0019); identity mapping verified end-to-end read-only (masked).
+**Active task:** Phase 4D — Regulatory Administration Backend — Milestone 1
+(staff-only regulatory ingestion administration API).
 
-**Status:** READY WITH CONDITIONS — no authorization record, grant, or audit row exists in production; this review created/consumed nothing and contacted no production system. Remaining operator prerequisites before executing the approved `XPA-GSA-INIT-001` bootstrap: (1) establish evidence store + trusted verification channel, (2) finalize DB connection identity (`xportra_app` per `docs/deployment/bootstrap-authorization-db-role.md` or documented privileged-role justification), (3) fully define exception authority, (4) provision/identify the distinct active actor and verifier user rows required by the authorization schema and the actor ≠ target rule, (5) insert the approved authorization record out-of-band (with the documented uniqueness check), (6) execute the documented production command with `--production-confirmation XPA-GSA-INIT-001`, (7) verify the three read-only acceptance queries. Full detail in `CURRENT_STATE.md` (entry: Initial Global Staff Bootstrap — Production-Readiness Review, 2026-10-28).
+**Status:** In progress — implementation complete, tests passing, documentation
+pending, commit pending.
 
-**2026-10-28 configuration readiness (uncommitted):** production connectivity as `xportra_app` with SSL verification was successfully tested from Windows (CA at gitignored `cert/prod-ca-2021.crt`; temporary test script deleted). Configuration semantics confirmed: the CLI reads the process environment only (`DATABASE_URL`/`APP_ENV`; no dotenv loading anywhere in `xportra/`), and the DSN is passed verbatim to libpq via psycopg — TLS therefore lives in the DSN (`?sslmode=verify-full`) plus `sslrootcert` or `PGSSLROOTCERT`; no code change needed. Deployment doc updated with the secret-safe operator procedure (dedicated gitignored `.env.production-operator`, session-scoped non-echoing load, never inline the DSN); CLI docstring updated; 2 new unit tests pin verbatim SSL-DSN passthrough. Verification: unit 46 passed; integration bootstrap suite 7/7 passed (local `xportra_test` as `xportra_app`). No production contact; nothing staged or committed. Detail in `CURRENT_STATE.md` (entry: Production Bootstrap Configuration Readiness — xportra_app + TLS, 2026-10-28).
+**Authorization basis:** Explicitly assigned by user tasking. The existing
+bootstrap task (initial `grant_manage` provisioning under `XPA-GSA-INIT-001`)
+remains a separate, not-yet-executed track described in
+`CURRENT_STATE.md` and `tasks/active/phase-4d-task-1-authorization.md`; it is
+not part of this milestone and no bootstrap is executed here.
 
-**Authorization scope:** Initial global staff permission grant and audit
-foundation only, per ADR-0017 and the approved Phase 4D.10 Task 2 decisions
-(subsections A–L). Subsequent Phase 4D.10 tasks (Task 3 and later) are NOT
-authorized. Regulatory administration workflow, source management, Stage A/B,
-publication, and exporter-facing behavior are NOT part of this task.
+## Implemented (this milestone)
 
-**Implemented, unit-tested, and validated against a live database:**
-1. Migration 015: `xportra.global_staff_grants` (current-state grants, unique
-   constraint on `(user_id, permission)`, revocation UPDATEs existing row,
-   re-grant reactivates it) and `xportra.global_staff_audit` (append-only;
-   update/delete rejected by trigger). Down migration included. Migration
-   applied and verified against the live test database.
-2. `GlobalStaffGrantRepository` and `GlobalStaffAuditRepository` in
-   `xportra/persistence/repositories.py`.
-3. `GlobalStaffGrantService` in `xportra/application/global_staff.py`:
-   grant/revoke/bootstrap/is_granted, atomic grant+audit in one transaction,
-   fail-closed on audit failure, self-grant/self-revocation of `grant_manage`
-   denied, self-bootstrap denied (applies approved self-management policy),
-   target account status validated on grant/revoke (active only), advisory-lock
-   serialization for bootstrap, least-privilege (`grant_manage` only),
-   idempotent bootstrap, authorization-reference verification for bootstrap
-   (`global_staff_authorizations`), authorization consumption in transaction,
-   audit event retains authorization reference.
-4. `GRANT_MANAGE` authorization constant in `xportra/api/authorization.py`;
-   `require_global_staff` dependency in `xportra/api/dependencies.py` (actor
-   resolved from verified JWT subject → `users.supabase_uid` → `users.id`;
-   tenant membership never substitutes).
-5. Unit tests `tests/unit/test_global_staff.py` (14 passed); full focused
-   suite passed. Integration tests `tests/integration/test_global_staff_postgresql.py`
-   updated (rollback coverage, concurrency coverage, self-bootstrap fix,
-   separate operator user for bootstrap); NOT executed because `DATABASE_URL`
-   points to a production/shared database, not an isolated test database.
-6. Migration 016 (`global_staff_authorizations`) and 017
-   (`global_staff_audit_authorization_ref`) created; not applied to any
-   verified environment. `GlobalStaffAuthorizationRepository` added;
-   audit repository supports `authorization_ref`.
-7. Integration tests `tests/integration/test_global_staff_postgresql.py`
-    (13 passed) against a live test database with migration 015 applied.
-    Tests are skipped when `DATABASE_URL` is not configured.
+1. **Source-ingestion operation**
+   - `POST /regulatory/sources/{source_id}/artifacts` — staff-uploaded artifact;
+     accepts `text/plain`, `text/markdown`, `application/json`, `application/pdf`
+     (PDF previously rejected; now accepted — domain parsing already supported it).
+     Validates file type, size (10 MB), base64 content, required metadata via the
+     source pre-check. Stores original bytes in the private regulatory
+     source-artifact storage; persists artifact row + durable pending ingestion job.
+     Idempotent on identical content hash (no duplicate artifacts/jobs).
+   - `POST /regulatory/sources/{source_id}/artifacts/text` — staff-entered inline
+     text; accepts `text/plain`, `text/markdown` (no file upload). Same storage,
+     artifact, job, and idempotency guarantees.
+   - `POST /regulatory/sources` — source registration (existing; requires grant).
 
-**Not implemented / deferred in this task:**
-- Execution of the initial bootstrap against a database (no live provisioning;
-  initial operator provisioning remains a separate product-owner authorized
-  operation; internal user ID never hardcoded).
-- Grant/revocation API routes and staff administration UI (Task 8 scope).
-- Manual-recovery recording mechanism, exception authority, retention deletion
-  controls, and Stage A/B permissions.
-- Bootstrap authorization mechanism implemented (table, verification,
-  audit linkage, service integration); initial live authorization record
-  creation and initial operator provisioning remain deferred (separate
-  product-owner authorized operation); see `tasks/blocked/bootstrap-authorization-policy.md`.
+2. **List and inspect sources/jobs**
+   - `GET /regulatory/sources` (paginated), `GET /regulatory/sources/{source_id}`,
+     `GET /regulatory/ingestion-jobs/{job_id}`,
+     `GET /regulatory/sources/{source_id}/ingestion-jobs` (paginated).
+   - Processing status, safe error information, metadata included. No credentials
+     or storage paths returned.
 
-**External identity verification (product owner performed, read-only):**
-- Supabase Auth account `innouguru@gmail.com` exists.
-- Its Auth UID matched exactly one `xportra.users` row via `supabase_uid`.
-- Matched user status: `active`.
-- `user_tenant_memberships`: active membership, role `owner`.
-- No Auth UID, internal UUID, tenant UUID, token, or secret is recorded.
+3. **Extraction outcomes** (existing, re-exposed)
+   - `POST /regulatory/ingestion-jobs/{job_id}/extract`, `GET
+     /regulatory/sources/{source_id}/candidates`, `GET /regulatory/candidates/{candidate_id}`.
+   - Candidate provenance traces to source/artifact/ingestion job via
+     `ingestion_job_id`, `artifact_id`, `source_id`, `normalized_document_id`.
 
-**Verification:** identity-mapping contract verified from repository code
-(auth.py, repositories.py, migration 002). No global permission mechanism
-previously existed in any migration or `.py` file.
+4. **Safe retry** — reuses existing job lifecycle (`pending` → claimed →
+   completed/failed/retryable) and idempotency (content-hash dedup, advisory
+   locks). No duplicate jobs/artifacts from repeated requests. No new queue
+   service.
 
-**No changes staged, committed, pushed, deployed, or made to production.**
+## Authorization and audit
 
-**2026-10-21 authorization hardening (local, not committed):** `complete_job`/`fail_job` authorization added; `RegulatorySourceStorageApplicationService` created with `GRANT_MANAGE` enforcement; adapter `delete` unexposed; deletion blocker documented (`docs/phases/regulatory-artifact-retention-policy.md`). Focused tests: 12 passed; regression adapter/ingestion/worker tests pass. Integration tests skipped without `DATABASE_URL`.
+- All mutating and read-only regulatory-admin routes require `GRANT_MANAGE`
+  via `require_global_staff` (actor resolved from verified JWT subject →
+  `users.supabase_uid` → `users.id`; tenant membership never substitutes).
+- Fail-closed on missing/invalid authentication, inactive/unknown user, or
+  missing/revoked grant.
+- Audit through existing `GlobalStaffAuditRepository` / `global_staff_audit`
+  mechanism at the service layer.
+- No hard-coded staff user, no automatic permission grants, no bypass.
 
-## Phase 4D.15 — Workstream E Verification (2026-10-22)
+## Files changed
 
-Verdict: PASS WITH CONDITIONS. No new defects. End-to-end paths verified locally; pre-existing failures (stage A dsn fixtures, ingestion audit order-dependence, 029 provenance) documented. No files changed. No production smoke executed (staging blocked; no authorization). Next: resolve DB role + 029 provenance, then authorized live verification. Workstream F deferred.
+- `xportra/application/regulatory_source_intake_service.py` — accept `application/pdf`;
+  extract shared `_store_artifact`; add `enter_text_artifact`.
+- `xportra/api/schemas.py` — add `RegulatoryTextEntryRequest`,
+  `RegulatoryArtifactTextResponse`.
+- `xportra/api/regulatory_admin.py` — add `POST
+  /regulatory/sources/{source_id}/artifacts/text` route; update upload docstring.
+- `tests/unit/test_regulatory_source_intake.py` — PDF acceptance test; 10 staff-text
+  tests (accept, markdown, empty/whitespace rejection, pdf type rejection,
+  unsupported type rejection, unauthorized denial, nonexistent source, idempotency,
+  size limit).
+
+## Migration
+
+None added. Existing migrations 018–029 (ingestion jobs, candidate extraction,
+stage A/B, legal hold, deletion intent, review flags) already support the
+requirement. No schema change needed.
+
+## Remaining work / limitations
+
+- Bootstrap (`XPA-GSA-INIT-001`) not executed; no `grant_manage` grant exists,
+  so the endpoints cannot be exercised end-to-end against a live database until
+  bootstrap is separately authorized and performed.
+- Integration (PostgreSQL) tests skipped without an isolated `xportra_test`
+  database; not run against the configured `DATABASE_URL` (shared/production).
+- Stage A/B review, publication eligibility, and exporter-facing behavior exist
+  in code but are gated behind `STAGE_A_VERIFY`/`STAGE_B_APPROVE` grants and are
+  not part of this milestone.
+- No deletion endpoint for artifacts (blocked by retention policy; deliberate).
+
+## Next recommended milestone
+
+Phase 4D task 3/4 — durable ingestion pipeline execution (worker dispatch,
+parsing/extraction wiring) and Stage A/B review API wiring, pending separate
+authorization.
