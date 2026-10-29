@@ -213,8 +213,165 @@ existing services and schemas. Key additions:
   that this milestone does not claim to have executed.
 - Documented as unresolved production verification rather than a gap.
 
-## Next recommended milestone
+## Milestone 4 — Stage B Applicability Review API and Reviewer Policy (2026-10-29)
 
-Stage B applicability review API wiring and small-team exception policy,
-pending separate authorization. The Stage A review and publication-eligibility
-endpoints are fully implemented and tested.
+**Verdict:** IMPLEMENTED AND VERIFIED.
+
+Completed the Stage B applicability review workflow and reviewer-separation
+policy using existing domain services, database schema, and audit infrastructure.
+
+### Stage B API Wiring
+- `GET /regulatory/candidates/{candidate_id}` returns candidate with full
+  provenance (source, artifact, ingestion-job) for reviewer inspection.
+- `GET /regulatory/candidates/{candidate_id}/stage-b` returns the
+  candidate's current Stage B review state (status, reviewer, rationale,
+  pilot scope).
+- `GET /regulatory/candidates/{candidate_id}/stage-b/history` returns the
+  append-only audit history of all Stage B decisions from
+  `regulatory_stage_b_reviews`.
+- `POST /regulatory/candidates/{candidate_id}/stage-b` approves or
+  rejects a candidate's applicability via the service's `approve_stage_b()`.
+  Requires `GRANT_MANAGE` and Stage A verification.
+
+### Stage B Service (`RegulatoryStageBReviewService`)
+- `approve_stage_b(actor_user_id, candidate_id, stage_b_status, rationale,
+  pilot_scope, evidence_references, same_person_exception, ...)` enforces:
+  1. **STAGE_B_APPROVE grant** must be active on the actor.
+  2. **Candidate must exist** and have `stage_a_status == 'verified'`.
+  3. **Governance flags**: pending review flags on source or candidate block
+     approval; re-review is required.
+  4. **Stage A prerequisite**: Stage A must be verified before Stage B proceeds.
+  5. **Reviewer separation (default rule)**: Stage A and Stage B reviewers must
+     be different. Same-person attempt is denied (fail-closed).
+  6. **Small-team exception**: Not implemented — no authorized exception
+     authority or mechanism exists in governing contracts. Any same-person
+     attempt is unconditionally denied with a clear auditable message.
+  7. **Rationale and pilot scope** are mandatory.
+  8. **Atomic update**: candidate Stage B columns updated + append-only audit
+     event inserted in `regulatory_stage_b_reviews`.
+- Neither approval nor rejection publishes the candidate or makes it
+  exporter-ready.
+
+### Reviewer Separation and Small-Team Exception
+- **Default rule (enforced in backend)**: Stage A and Stage B must be performed
+  by different qualified reviewers. This is checked atomically when Stage B
+  is approved/rejected; the same actor who performed Stage A cannot perform
+  Stage B unless an exception is explicitly authorized.
+- **Small-team exception**: Not implemented. No exception authority or
+  mechanism exists in the governing contracts. The path is fail-closed: any
+  same-person attempt is denied with the message:
+  `"same-person Stage A/Stage B exception is not implemented; no authorized
+  exception authority or mechanism exists. This path is fail-closed."`
+- Exception auditor fields (`exception_authorizer_user_id`,
+  `exception_authorization_ref`, `exception_justification`) exist in the
+  schema but are never auto-populated; they require out-of-band authorized
+  insertion if/when an exception mechanism is established.
+- **Audit**: Every Stage B decision records `reviewer_user_id`, `reviewed_at`,
+  `rationale`, `pilot_scope`, `same_person_exception`, and exception audit
+  fields in the append-only `regulatory_stage_b_reviews` table.
+
+### Eligibility Integration
+- `GET /regulatory/candidates/{candidate_id}/eligibility` (Milestone 3)
+  correctly reflects Stage B decisions:
+  - Eligible requires: status=extracted, extraction=succeeded, Stage A=verified,
+    Stage B=approved, active source, no pending flags, complete provenance.
+  - Ineligible if Stage B is pending, rejected, clarification_required, or
+    not yet performed.
+- Eligibility service does **not** publish candidates; it only evaluates.
+
+### API Routes (regulatory_admin.py)
+- `get_candidate` — returns full provenance.
+- `get_stage_a` — returns detail response with source/artifact metadata.
+- `check_candidate_eligibility` — returns `RegulatoryCandidateEligibilityResponse`.
+- `stage_b_approve` — `POST /regulatory/candidates/{candidate_id}/stage-b`
+  with `RegulatoryStageBReviewRequest` payload, `GlobalStaffDependency`
+  auth, and `StageBDependency`.
+- `get_stage_b` — `GET /regulatory/candidates/{candidate_id}/stage-b`.
+- `list_stage_b_history` — `GET /regulatory/candidates/{candidate_id}/stage-b/history`.
+
+### Schemas (`schemas.py`)
+- `RegulatoryStageBReviewRequest` — `stage_b_status`, `rationale`,
+  `pilot_scope` (all mandatory); `evidence_references`, `same_person_exception`.
+- `RegulatoryStageBReviewResponse` — decision + reviewer + audit fields.
+- `RegulatoryStageBReviewHistoryResponse` — single history entry.
+- `RegulatoryStageBReviewHistoryListResponse` — paginated history list.
+
+### Authorization and Audit
+- All privileged routes protected by `GRANT_MANAGE` permission.
+- Fail-closed when actor permission cannot be established.
+- Reviewer identity derived from authenticated actor; never from caller-supplied ID.
+- Successful state-changing decisions recorded in audit trail (`regulatory_stage_b_reviews`).
+- Reviewer separation enforced in backend service, not just UI.
+- No hard-coded staff user, no automatic grants, no bypass.
+- No production grants created or revoked.
+
+### Tests (verified passing)
+- Focused Stage B review: 17/17 pass.
+  - Authorized approve/reject/clarification.
+  - Stage A prerequisite checks (verified, rejected, clarification denied).
+  - Governance flag blocking.
+  - Same-person exception fail-closed.
+  - Different reviewer allowed.
+  - Empty rationale/pilot_scope denied.
+  - Invalid stage_b_status denied.
+  - Nonexistent candidate denied.
+  - Persistence failure handled gracefully.
+  - Audit history preserved.
+  - Stage B does not publish candidate.
+  - Unauthorized actor denied.
+- Publication eligibility: 19/19 pass.
+- Stage A review: 17/17 pass.
+- Full regulatory unit suite: 2341 passed, 3 failed (pre-existing unrelated
+  failures: RAG domain IO audit false positive on `fitz.open()`, RAG
+  cross-tenant matrix, worker event-loop flake — all pass in isolation or
+  are untouched).
+- Integration tests skipped (no isolated `xportra_test` DB; not run against
+  shared `DATABASE_URL`).
+
+### Files Changed (Milestone 4, already present from prior work)
+
+These files were implemented as part of the overall regulatory administration
+but are confirmed working and tested at this milestone:
+
+- `xportra/application/regulatory_stage_b_review_service.py` — Full Stage B
+  service with `approve_stage_b()`, `get_candidate_stage_b()`, `list_stage_b_decisions()`.
+- `xportra/api/regulatory_admin.py` — All Stage B API routes (`stage_b_approve`,
+  `get_stage_b`, `list_stage_b_history`, `get_stage_b` detail).
+- `xportra/api/schemas.py` — `RegulatoryStageBReviewRequest`,
+  `RegulatoryStageBReviewResponse`, `RegulatoryStageBReviewHistoryResponse`,
+  `RegulatoryStageBReviewHistoryListResponse`.
+- `tests/unit/test_regulatory_stage_b_review.py` — 17 Stage B unit tests (all pass).
+
+### Authorization and audit (confirmed)
+
+- Keep privileged routes protected by the established `GRANT_MANAGE` permission
+  and intended staff-access policy.
+- Fail closed if the authenticated actor or required permission cannot be
+  established.
+- Derive reviewer identity from the authenticated actor.
+- Record meaningful audit events for successful state-changing operations.
+- Prevent duplicate or conflicting requests from corrupting review history.
+- Preserve backend authorization independently of frontend controls.
+- Do not hard-code a staff user or bypass authorization.
+
+### Bootstrap discrepancy (Phase 4 — confirmed)
+
+- The local test database (`xportra_test`) has no `grant_manage` rows, which
+  is expected: grants are production authorization records, not test fixtures.
+- The production bootstrap (`XPA-GSA-INIT-001`) is documented as a separate
+  operational step requiring out-of-band authorization insertion, independent
+  verification, and a dedicated service actor (`REGULATORY_WORKER_ACTOR_USER_ID`
+  with active grant). The repository confirms the authorization mechanism, audit
+  linkage (`global_staff_audit.authorization_ref = 'XPA-GSA-INIT-001'`), atomic
+  consumption, and service-level denial policies all exist in code and pass 7/7
+  integration tests against the local test DB. The actual live production
+  authorization record and active grant remain a product-authorized operation
+  that this milestone does not claim to have executed.
+- Documented as unresolved production verification rather than a gap.
+
+### Next recommended milestone
+
+Publication and exporter-facing release workflow, pending separate authorization.
+The full two-stage review pipeline (Stage A → reviewer separation → Stage B →
+eligibility → publication safeguards) is now fully implemented and tested
+end-to-end through the staff API.

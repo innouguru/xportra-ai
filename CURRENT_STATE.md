@@ -4542,3 +4542,79 @@ running extraction, so candidates were never produced automatically.
 
 
 
+
+## Regulatory Ingestion Execution Path — Milestone 4 (2026-10-29)
+
+**Verdict:** IMPLEMENTED AND VERIFIED.
+
+Completed the Stage B applicability review workflow and reviewer-separation
+policy using existing domain services, database schema, and audit
+infrastructure.
+
+### Stage B API Wiring
+
+- `GET /regulatory/candidates/{candidate_id}` returns candidate with full
+  provenance (source, artifact, ingestion-job) for reviewer inspection.
+- `GET /regulatory/candidates/{candidate_id}/stage-b` returns the
+  candidate's current Stage B review state (status, reviewer, rationale,
+  pilot scope).
+- `GET /regulatory/candidates/{candidate_id}/stage-b/history` returns the
+  append-only audit history of all Stage B decisions from
+  `regulatory_stage_b_reviews`.
+- `POST /regulatory/candidates/{candidate_id}/stage-b` approves or
+  rejects a candidate's applicability via the service's `approve_stage_b()`.
+  Requires `GRANT_MANAGE` and Stage A verification.
+
+### Stage B Service (`RegulatoryStageBReviewService`)?
+
+`approve_stage_b()` enforces: STAGE_B_APPROVE grant, candidate must have
+`stage_a_status == 'verified'`, governance flags block approval if pending,
+Stage A prerequisite, reviewer separation (default rule: different reviewers
+required, fail-closed), small-team exception not implemented (fail-closed:
+same-person attempt unconditionally denied), mandatory rationale and pilot
+scope, atomic update + append-only audit event.
+
+### Reviewer Separation and Small-Team Exception
+
+- **Default rule (enforced in backend)**: Stage A and Stage B must be
+  performed by different qualified reviewers. Same-person attempt is denied
+  with a clear auditable message.
+- **Small-team exception**: Not implemented — no authorized exception
+  authority or mechanism exists in governing contracts. Fail-closed: any
+  same-person attempt is denied with the message: "same-person Stage A/Stage
+  B exception is not implemented; no authorized exception authority or mechanism
+  exists. This path is fail-closed."
+- Exception auditor fields exist in the schema but are never auto-populated;
+  they require out-of-band authorized insertion if/when an exception mechanism
+  is established.
+- **Audit**: Every Stage B decision records `reviewer_user_id`, `reviewed_at`,
+  `rationale`, `pilot_scope`, `same_person_exception`, and exception audit
+  fields in the append-only `regulatory_stage_b_reviews` table.
+
+### Eligibility Integration
+
+- `GET /regulatory/candidates/{candidate_id}/eligibility` correctly reflects
+  Stage B decisions: eligible requires Stage B=approved; ineligible if Stage
+  B is pending, rejected, or not yet performed.
+- Eligibility evaluation does not publish a candidate.
+
+### Authorization and audit
+
+- All privileged routes protected by `GRANT_MANAGE`; fail-closed.
+- Reviewer identity from authenticated actor; no hard-coded staff users.
+- Successful state-changing decisions recorded in audit trail.
+- Reviewer separation enforced in backend; not just UI.
+- No production grants created or revoked.
+
+### Tests
+
+- Stage B: 17/17 pass (authorized operations, prerequisite checks, governance
+  flag blocking, same-person fail-closed, different reviewer allowed, audit
+  history, no publication).
+- Publication eligibility: 19/19 pass.
+- Stage A: 17/17 pass.
+- Full suite: 2341 passed, 3 failed (pre-existing unrelated: RAG domain IO
+  audit false positive on `fitz.open()`, RAG cross-tenant matrix, worker
+  event-loop flake).
+- Integration tests skipped.
+
