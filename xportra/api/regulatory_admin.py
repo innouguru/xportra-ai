@@ -1009,6 +1009,21 @@ EligibilityServiceDependency = Annotated[
 ]
 
 
+def _publish_service(services: Any = Depends(get_services)) -> RegulatoryPublicationEligibilityService:
+    database = getattr(services, "database", None)
+    if database is None:
+        raise APIError(
+            503, "application_not_ready",
+            "Application services are not initialized",
+        )
+    return RegulatoryPublicationEligibilityService(database)
+
+
+PublishServiceDependency = Annotated[
+    RegulatoryPublicationEligibilityService, Depends(_publish_service)
+]
+
+
 @router.get(
     "/regulatory/eligible-requirements",
     response_model=RegulatoryEligibleRequirementsResponse,
@@ -1065,4 +1080,44 @@ def list_eligible_requirements(
         "limit": limit,
         "offset": offset,
         "total": total,
+    }
+
+
+@router.post(
+    "/regulatory/candidates/{candidate_id}/publish",
+    response_model=dict[str, Any],
+    status_code=status.HTTP_200_OK,
+)
+def publish_candidate(
+    candidate_id: UUID,
+    service: PublishServiceDependency,
+    actor_id: GlobalStaffDependency,
+):
+    """Publish a candidate requirement for exporter-facing consumption.
+
+    Re-evaluates eligibility at the time of publication. If eligible,
+    records the publication timestamp and returns a success response.
+    If ineligible, returns structured reasons explaining ineligibility.
+
+    This endpoint does NOT automatically publish as a side effect of
+    ingestion, extraction, Stage A, Stage B, or eligibility evaluation.
+    It requires an explicit staff action with appropriate authorization.
+
+    Eligibility requires: Stage A verification (``verified``), Stage B
+    approval (``approved``), current active source, no pending governance
+    flags, successful extraction outcome (``succeeded``), and complete
+    provenance. Partial, failed, manual-only, unverified, or stale
+    requirements are ineligible with structured reasons.
+
+    Returns a dict with: requirement_id, eligible, reasons,
+    published_at (ISO-8601 datetime), and evaluation rationale.
+    """
+    result = service.publish_requirement(candidate_id, actor_id)
+    from datetime import datetime, timezone
+    return {
+        "requirement_id": result["requirement_id"],
+        "eligible": result["eligible"],
+        "reasons": result["reasons"],
+        "published_at": result["published_at"].isoformat() if result["published_at"] else None,
+        "eligible": result["eligible"],
     }

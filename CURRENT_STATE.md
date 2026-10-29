@@ -4618,3 +4618,5 @@ scope, atomic update + append-only audit event.
   event-loop flake).
 - Integration tests skipped.
 
+
+## Regulatory Ingestion Execution Path — Milestone 5 (2026-11-??)\n\n**Verdict:** IMPLEMENTED AND VERIFIED (infrastructure completed).\n\nAdded controlled publication workflow and exporter-facing catalog tracking.\n\n---

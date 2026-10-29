@@ -371,7 +371,11 @@ but are confirmed working and tested at this milestone:
 
 ### Next recommended milestone
 
-Publication and exporter-facing release workflow, pending separate authorization.
-The full two-stage review pipeline (Stage A → reviewer separation → Stage B →
-eligibility → publication safeguards) is now fully implemented and tested
-end-to-end through the staff API.
+Exporter-facing release workflow with full pipeline exercise
+(ingestion → Stage A → Stage B → eligibility → publication → catalog).
+The two-stage review pipeline is fully implemented and tested end-to-end
+through the staff API (Milestones 1-5).
+
+The remaining scope includes: exporter catalog UI/UX, 
+tenant-specific requirement filtering, and version management.
+These require separate authorization and frontend work.
