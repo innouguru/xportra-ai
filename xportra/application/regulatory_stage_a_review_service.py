@@ -65,16 +65,24 @@ class RegulatoryStageAReviewService:
     # ---------------------------------------------------------------- queries
 
     def get_candidate_stage_a(self, candidate_id: UUID) -> dict[str, Any] | None:
-        """Return a candidate's Stage A review state."""
+        """Return a candidate's Stage A review state with provenance.
+
+        Includes candidate text, source/artifact references, ingestion-job
+        provenance, and source metadata so a reviewer can make an informed
+        Stage A decision.
+        """
         row = self._requirement_repo.get(candidate_id)
         if row is None:
             return None
-        return {
+        provenance = self._requirement_repo.get_with_provenance(candidate_id)
+        result = {
             "id": row["id"],
             "source_id": row.get("source_id"),
             "artifact_id": row.get("artifact_id"),
             "requirement_text": row["requirement_text"],
+            "requirement_type": row.get("requirement_type"),
             "source_location": row.get("source_location") or {},
+            "position": row.get("position"),
             "extraction_outcome": row["extraction_outcome"],
             "status": row["status"],
             "stage_a_status": row.get("stage_a_status", "pending"),
@@ -82,7 +90,23 @@ class RegulatoryStageAReviewService:
             "stage_a_reviewed_at": row.get("stage_a_reviewed_at"),
             "stage_a_rationale": row.get("stage_a_rationale"),
             "manual_entry": row.get("manual_entry", False),
+            # Provenance for review traceability.
+            "source_title": provenance.get("source_title") if provenance else None,
+            "source_jurisdiction": provenance.get("source_jurisdiction") if provenance else None,
+            "source_version": provenance.get("source_version") if provenance else None,
+            "source_status": provenance.get("source_status") if provenance else None,
+            "source_authority_id": provenance.get("source_authority_id") if provenance else None,
+            "artifact_uri": provenance.get("artifact_uri") if provenance else None,
+            "artifact_content_hash": provenance.get("artifact_content_hash") if provenance else None,
+            "artifact_content_length": provenance.get("artifact_content_length") if provenance else None,
+            "artifact_content_type": provenance.get("artifact_content_type") if provenance else None,
+            "artifact_acquisition_channel": provenance.get("artifact_acquisition_channel") if provenance else None,
+            "ingestion_job_id": row.get("ingestion_job_id"),
+            "ingestion_job_status": provenance.get("ingestion_job_status") if provenance else None,
+            "ingestion_job_error_details": provenance.get("ingestion_job_error_details") if provenance else None,
+            "ingestion_job_parser_version": provenance.get("ingestion_job_parser_version") if provenance else None,
         }
+        return result
 
     def list_stage_a_decisions(self, requirement_id: UUID) -> list[dict[str, Any]]:
         """Return all Stage A review decisions for a candidate (append-only history)."""

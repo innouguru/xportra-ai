@@ -4481,3 +4481,64 @@ pending separate authorization. The ingestion pipeline now runs
 end-to-end through the worker.
 
 
+## Regulatory Ingestion Execution Path — Milestone 2 (2026-10-29)
+
+**Verdict:** IMPLEMENTED AND VERIFIED (unit tests only; integration
+tests skipped).
+
+Fixed the durable ingestion pipeline: worker discovers and claims
+pending/retryable jobs atomically, drives each through the existing
+candidate-extraction pipeline (parse -> normalize -> extract -> persist),
+and marks jobs completed or failed/retryable with safe error information.
+Previously the worker claimed jobs and marked them completed without
+running extraction, so candidates were never produced automatically.
+
+### Changes
+
+- RegulatoryIngestionWorker._poll_cycle reserves eligible jobs
+  (SELECT ... FOR UPDATE SKIP LOCKED) then delegates to
+  RegulatoryCandidateExtractionService.extract_candidates() which
+  performs atomic claim, parse/normalize/extract/persist, and completes
+  or fails the job. Jobs without rtifact_id are skipped. Failures
+  are logged; the job is never falsely completed.
+- RegulatoryIngestionJobRepository.claim now accepts status IN
+  ('pending', 'retryable') so failed/retryable jobs can be reclaimed.
+- extract_candidates checks claim_job return value; None (already
+  claimed by another worker) returns duplicate=True without completing
+  someone else's work.
+- No migration added; existing 018-029 schema suffices.
+
+### Tests
+
+- Focused worker: 12/12 pass.
+- Focused source intake + candidate extraction: 81 passed.
+- Full suite: 2332 passed, 3 failed (same pre-existing unrelated failures:
+  RAG domain IO audit false positive on itz.open(), RAG cross-tenant
+  matrix, worker event-loop flake).
+- Integration tests skipped.
+
+### Authorization and audit
+
+- Worker requires REGULATORY_WORKER_ACTOR_USER_ID with active
+  GRANT_MANAGE; skip execution fail-closed otherwise.
+- extract_candidates requires GRANT_MANAGE; fail-closed.
+- No production grants created/revoked; bootstrap not re-executed.
+
+### Bootstrap discrepancy (Phase 4) - confirmed
+
+- The local test database (xportra_test) has no grant_manage rows,
+  which is expected: grants are production authorization records, not
+  test fixtures. The production bootstrap (XPA-GSA-INIT-001) is
+  documented as a separate operational step that requires out-of-band
+  authorization insertion, independent verification, and a dedicated
+  service actor (REGULATORY_WORKER_ACTOR_USER_ID with active grant).
+- The repository documentation confirms the authorization mechanism, audit
+  linkage (global_staff_audit.authorization_ref = 'XPA-GSA-INIT-001'),
+  atomic consumption, and service-level denial policies all exist in code
+  and pass 7/7 integration tests against the local test DB. The actual
+  live production authorization record and active grant remain a product-owner
+  authorized operation that this milestone does not claim to have executed.
+- Documented as unresolved production verification rather than a gap.
+
+
+

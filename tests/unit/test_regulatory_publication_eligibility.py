@@ -130,7 +130,7 @@ class EligibilityTests(TestCase):
                     "stage_a_status": "verified",
                     "stage_b_status": "approved",
                     "parser_version": "v1",
-                    "ingestion_job_id": UUID("ffffffff-0000-0000-0000-000000000006"),
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
                     "stage_b_pilot_scope": "sesame-eu-pilot-v1",
                 }
             }),
@@ -160,7 +160,7 @@ class EligibilityTests(TestCase):
                         "stage_a_status": "verified",
                         "stage_b_status": "approved",
                         "parser_version": "v1",
-                        "ingestion_job_id": UUID("ffffffff-0000-0000-0000-000000000006"),
+                        "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
                         "stage_b_pilot_scope": "sesame-eu-pilot-v1",
                     }
                 })
@@ -188,7 +188,7 @@ class EligibilityTests(TestCase):
                     "stage_a_status": "verified",
                     "stage_b_status": "approved",
                     "parser_version": "v1",
-                    "ingestion_job_id": UUID("ffffffff-0000-0000-0000-000000000006"),
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
                     "stage_b_pilot_scope": "sesame-eu-pilot-v1",
                 }
             ]
@@ -207,7 +207,7 @@ class EligibilityTests(TestCase):
                     "stage_a_status": "verified",
                     "stage_b_status": "approved",
                     "parser_version": "v1",
-                    "ingestion_job_id": UUID("ffffffff-0000-0000-0000-000000000006"),
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
                     "stage_b_pilot_scope": "sesame-eu-pilot-v1",
                 }
             })
@@ -229,7 +229,7 @@ class EligibilityTests(TestCase):
                     "stage_a_status": "verified",
                     "stage_b_status": "approved",
                     "parser_version": "v1",
-                    "ingestion_job_id": UUID("ffffffff-0000-0000-0000-000000000006"),
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
                     "stage_b_pilot_scope": "sesame-eu-pilot-v1",
                 }
             })
@@ -250,7 +250,7 @@ class EligibilityTests(TestCase):
                     "stage_a_status": "pending",
                     "stage_b_status": "approved",
                     "parser_version": "v1",
-                    "ingestion_job_id": UUID("ffffffff-0000-0000-0000-000000000006"),
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
                     "stage_b_pilot_scope": "sesame-eu-pilot-v1",
                 }
             })
@@ -272,7 +272,7 @@ class EligibilityTests(TestCase):
                     "stage_a_status": "verified",
                     "stage_b_status": "pending",
                     "parser_version": "v1",
-                    "ingestion_job_id": UUID("ffffffff-0000-0000-0000-000000000006"),
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
                     "stage_b_pilot_scope": "sesame-eu-pilot-v1",
                 }
             })
@@ -321,7 +321,7 @@ class EligibilityTests(TestCase):
                     "stage_a_status": "verified",
                     "stage_b_status": "approved",
                     "parser_version": "v1",
-                    "ingestion_job_id": UUID("ffffffff-0000-0000-0000-000000000006"),
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
                     "stage_b_pilot_scope": "sesame-eu-pilot-v1",
                 }
             })
@@ -330,3 +330,143 @@ class EligibilityTests(TestCase):
         service._requirement_repo.get_eligible_for_publication = lambda **kw: []
         eligible = service.get_eligible_requirements(tenant=tenant)
         self.assertNotIn(REQUIREMENT_ID, [r.get("id") for r in eligible])
+
+    # ---------------------------------------------------------------- check_eligibility
+
+    def test_check_eligibility_eligible_with_empty_reasons(self):
+        service = self._service()
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertTrue(eligible)
+        self.assertEqual(reasons, [])
+
+    def test_check_eligibility_ineligible_failed_extraction(self):
+        service = self._service(
+            requirement_repo=FakeRequirementRepo({
+                REQUIREMENT_ID: {
+                    "id": REQUIREMENT_ID,
+                    "normalized_document_id": UUID("77777777-0000-0000-0000-000000000700"),
+                    "source_id": SOURCE_ID,
+                    "status": "extracted",
+                    "extraction_outcome": "failed",
+                    "stage_a_status": "verified",
+                    "stage_b_status": "approved",
+                    "parser_version": "v1",
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
+                    "stage_b_pilot_scope": "sesame-eu-pilot-v1",
+                }
+            })
+        )
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertFalse(eligible)
+        self.assertTrue(any("extraction outcome" in r for r in reasons))
+
+    def test_check_eligibility_ineligible_stage_a_not_verified(self):
+        service = self._service(
+            requirement_repo=FakeRequirementRepo({
+                REQUIREMENT_ID: {
+                    "id": REQUIREMENT_ID,
+                    "normalized_document_id": UUID("77777777-0000-0000-0000-000000000700"),
+                    "source_id": SOURCE_ID,
+                    "status": "extracted",
+                    "extraction_outcome": "succeeded",
+                    "stage_a_status": "pending",
+                    "stage_b_status": "approved",
+                    "parser_version": "v1",
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
+                    "stage_b_pilot_scope": "sesame-eu-pilot-v1",
+                }
+            })
+        )
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertFalse(eligible)
+        self.assertTrue(any("Stage A" in r for r in reasons))
+
+    def test_check_eligibility_ineligible_stage_b_not_approved(self):
+        service = self._service(
+            requirement_repo=FakeRequirementRepo({
+                REQUIREMENT_ID: {
+                    "id": REQUIREMENT_ID,
+                    "normalized_document_id": UUID("77777777-0000-0000-0000-000000000700"),
+                    "source_id": SOURCE_ID,
+                    "status": "extracted",
+                    "extraction_outcome": "succeeded",
+                    "stage_a_status": "verified",
+                    "stage_b_status": "pending",
+                    "parser_version": "v1",
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
+                    "stage_b_pilot_scope": "sesame-eu-pilot-v1",
+                }
+            })
+        )
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertFalse(eligible)
+        self.assertTrue(any("Stage B" in r for r in reasons))
+
+    def test_check_eligibility_ineligible_source_superseded(self):
+        service = self._service(
+            source_repo=FakeSourceRepo(status="superseded"),
+        )
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertFalse(eligible)
+        self.assertTrue(any("source status" in r for r in reasons))
+
+    def test_check_eligibility_ineligible_pending_flag(self):
+        service = self._service(
+            review_flag_repo=FakeFlagRepo(flags={
+                str(REQUIREMENT_ID): [{"status": "pending_review", "trigger_type": "version_change"}]
+            }),
+        )
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertFalse(eligible)
+        self.assertTrue(any("pending governance" in r for r in reasons))
+
+    def test_check_eligibility_ineligible_missing_provenance(self):
+        service = self._service(
+            requirement_repo=FakeRequirementRepo({
+                REQUIREMENT_ID: {
+                    "id": REQUIREMENT_ID,
+                    "normalized_document_id": None,
+                    "source_id": SOURCE_ID,
+                    "status": "extracted",
+                    "extraction_outcome": "succeeded",
+                    "stage_a_status": "verified",
+                    "stage_b_status": "approved",
+                    "parser_version": "v1",
+                    "ingestion_job_id": None,
+                    "stage_b_pilot_scope": "sesame-eu-pilot-v1",
+                }
+            })
+        )
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertFalse(eligible)
+        self.assertTrue(any("provenance" in r.lower() for r in reasons))
+
+    def test_check_eligibility_requirement_not_found(self):
+        service = self._service()
+        eligible, reasons = service.check_eligibility(
+            UUID("99999999-0000-0000-0000-000000000999")
+        )
+        self.assertFalse(eligible)
+        self.assertTrue(any("not found" in r for r in reasons))
+
+    def test_is_eligible_delegates_to_check_eligibility(self):
+        service = self._service()
+        self.assertTrue(service.is_eligible(REQUIREMENT_ID))
+        # Ineligible case
+        service2 = self._service(
+            requirement_repo=FakeRequirementRepo({
+                REQUIREMENT_ID: {
+                    "id": REQUIREMENT_ID,
+                    "normalized_document_id": UUID("77777777-0000-0000-0000-000000000700"),
+                    "source_id": SOURCE_ID,
+                    "status": "extracted",
+                    "extraction_outcome": "failed",
+                    "stage_a_status": "verified",
+                    "stage_b_status": "approved",
+                    "parser_version": "v1",
+                    "ingestion_job_id": UUID("11111111-0000-0000-0000-000000000006"),
+                    "stage_b_pilot_scope": "sesame-eu-pilot-v1",
+                }
+            })
+        )
+        self.assertFalse(service2.is_eligible(REQUIREMENT_ID))

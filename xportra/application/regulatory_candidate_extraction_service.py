@@ -106,6 +106,14 @@ class RegulatoryCandidateExtractionService:
     def get_candidate(self, candidate_id: UUID) -> dict[str, Any] | None:
         return self._requirement_repo.get(candidate_id)
 
+    def get_candidate_with_provenance(self, candidate_id: UUID) -> dict[str, Any] | None:
+        """Return a candidate with source, artifact, and ingestion-job provenance.
+
+        Enables a reviewer to trace candidate text back to the source,
+        artifact, and extraction run.
+        """
+        return self._requirement_repo.get_with_provenance(candidate_id)
+
     def get_job(self, job_id: UUID) -> dict[str, Any] | None:
         return self._job_repo.get(job_id)
 

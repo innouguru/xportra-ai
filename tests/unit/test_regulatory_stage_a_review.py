@@ -150,26 +150,26 @@ class FakeRequirementRepository:
         row["updated_at"] = reviewed_at
         return row
 
-    def update_stage_a(
-        self,
-        requirement_id: UUID,
-        stage_a_status: str,
-        reviewer_user_id: UUID,
-        reviewed_at,
-        rationale: str,
-    ) -> dict | None:
-        """Update Stage A columns; idempotent for identical retries."""
-        if self.fail_update:
-            raise RuntimeError("simulated stage_a update failure")
+    def get_with_provenance(self, requirement_id: UUID) -> dict | None:
+        """Return the requirement row with provenance fields (all None for fake)."""
         row = self.requirements.get(requirement_id)
         if row is None:
             return None
-        row["stage_a_status"] = stage_a_status
-        row["stage_a_reviewer_user_id"] = reviewer_user_id
-        row["stage_a_reviewed_at"] = reviewed_at
-        row["stage_a_rationale"] = rationale
-        row["updated_at"] = reviewed_at
-        return row
+        return {
+            "source_title": None,
+            "source_jurisdiction": None,
+            "source_version": None,
+            "source_status": None,
+            "source_authority_id": None,
+            "artifact_uri": None,
+            "artifact_content_hash": None,
+            "artifact_content_length": None,
+            "artifact_content_type": None,
+            "artifact_acquisition_channel": None,
+            "ingestion_job_status": None,
+            "ingestion_job_error_details": None,
+            "ingestion_job_parser_version": None,
+        }
 
 
 class FakeAuditRepository:

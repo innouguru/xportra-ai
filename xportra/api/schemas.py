@@ -967,7 +967,13 @@ class RegulatoryManualCandidateResponse(BaseModel):
 
 
 class RegulatoryCandidateResponse(BaseModel):
-    """One candidate requirement (unreviewed, not approved)."""
+    """One candidate requirement (unreviewed, not approved).
+
+    Provenance fields (source, artifact, ingestion job) are populated
+    by the detail endpoint to enable traceability from candidate text
+    back to the source artifact and extraction run. The list endpoint
+    omits these fields for brevity.
+    """
 
     id: UUID
     source_id: UUID
@@ -987,6 +993,38 @@ class RegulatoryCandidateResponse(BaseModel):
     ingestion_job_id: UUID | None
     created_at: datetime
     updated_at: datetime
+    #: Source metadata for review traceability.
+    source_title: str | None = None
+    source_jurisdiction: str | None = None
+    source_version: str | None = None
+    source_status: str | None = None
+    source_authority_id: UUID | None = None
+    #: Artifact metadata for review traceability.
+    artifact_uri: str | None = None
+    artifact_content_hash: str | None = None
+    artifact_content_length: int | None = None
+    artifact_content_type: str | None = None
+    artifact_acquisition_channel: str | None = None
+    #: Ingestion job status for review traceability.
+    ingestion_job_status: str | None = None
+    ingestion_job_error_details: str | None = None
+    ingestion_job_parser_version: str | None = None
+
+
+class RegulatoryCandidateEligibilityResponse(BaseModel):
+    """Publication eligibility for a single candidate, with structured reasons.
+
+    Eligibility requires Stage A verification, Stage B approval, current
+    active source, no pending governance flags, successful extraction, and
+    complete provenance. Reasons explain why a candidate is not eligible;
+    an empty reasons list means eligible. This endpoint evaluates only —
+    it does not publish the candidate.
+    """
+
+    candidate_id: UUID
+    eligible: bool
+    reasons: list[str] = Field(default_factory=list)
+    evaluated_at: datetime
 
 
 class RegulatoryEligibleRequirementResponse(BaseModel):

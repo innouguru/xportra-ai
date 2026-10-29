@@ -107,8 +107,114 @@ None added. Existing migrations 018–029 already support the requirement. The
   bootstrap is NOT re-executed and no production grants are created/revoked.
 - Documented as unresolved verification rather than guessed.
 
+## Milestone 3 — Stage A/B Review APIs and Publication Eligibility (2026-10-29)
+
+**Verdict:** IMPLEMENTED AND VERIFIED.
+
+Completed the Stage A/B review and publication-eligibility workflow using
+existing services and schemas. Key additions:
+
+### Stage A Review API Wiring
+- `GET /regulatory/candidates/{candidate_id}` now returns full provenance
+  (source metadata, artifact metadata, ingestion job details) via
+  `service.get_candidate_with_provenance()`.
+- `GET /regulatory/candidates/{candidate_id}/stage-a` returns enriched
+  detail response with source metadata, artifact metadata, and ingestion
+  job status for reviewer traceability.
+- `_stage_a_detail_response` helper maps service row to API response.
+
+### Publication Eligibility Evaluation
+- `RegulatoryPublicationEligibilityService.check_eligibility()` evaluates
+  10 structured rules and returns `(bool, list[str])`:
+  1. Requirement status must be ``extracted``
+  2. Extraction outcome must be ``succeeded``
+  3. Stage A status must be ``verified``
+  4. Stage B status must be ``approved``
+  5. Source status must be ``active`` or ``draft`` (not superseded/withdrawn/archived)
+  6. No pending governance flags on requirement or source
+  7. ``normalized_document_id`` must exist (provenance completeness)
+  8. ``ingestion_job_id`` must reference a ``completed`` job
+  9. ``parser_version`` must be non-empty
+  10. Pilot scope filter (handled at list level)
+- `GET /regulatory/candidates/{candidate_id}/eligibility` returns
+  `RegulatoryCandidateEligibilityResponse` with `candidate_id`, `eligible`,
+  `reasons`, and `evaluated_at`. Does NOT publish the candidate.
+
+### Schemas
+- `RegulatoryCandidateResponse` extended with optional provenance fields
+  (source, artifact, ingestion job) populated by the detail endpoint.
+- New `RegulatoryCandidateEligibilityResponse` (`candidate_id`, `eligible`,
+  `reasons: list[str]`, `evaluated_at`).
+
+### API Routes (regulatory_admin.py)
+- `check_candidate_eligibility` route with `GlobalStaffDependency`
+  authorization and `EligibilityCheckServiceDependency`.
+- Stage A detail endpoint wired with `_stage_a_detail_response`.
+
+### Authorization
+- All privileged routes protected by `GRANT_MANAGE` permission.
+- Fail-closed when actor permission cannot be established.
+- Reviewer identity derived from authenticated actor.
+- No production grants created or revoked.
+
+### Tests (verified passing)
+- Focused Stage A review: 17/17 pass.
+- Publication eligibility: 19/19 pass (5 UUID fix + 14 pre-existing).
+- Full regulatory unit suite: 2341 passed, 3 failed (same pre-existing
+  unrelated failures: RAG domain IO audit false positive on `fitz.open()`,
+  RAG cross-tenant matrix, worker event-loop flake — all pass in isolation
+  or are untouched).
+- Integration tests skipped (no isolated `xportra_test` DB).
+
+### Files Changed (Milestone 3)
+
+- `xportra/api/schemas.py` — provenance fields in `RegulatoryCandidateResponse`;
+  new `RegulatoryCandidateEligibilityResponse`.
+- `xportra/api/regulatory_admin.py` — `get_candidate` with provenance;
+  `check_candidate_eligibility` route; `get_stage_a` detail response;
+  `_eligibility_check_service` dependency; `_stage_a_detail_response` helper.
+- `xportra/application/regulatory_stage_a_review_service.py` — `get_candidate_stage_a`
+  enriched with provenance (source metadata, artifact metadata, ingestion job).
+- `xportra/application/regulatory_publication_eligibility_service.py` — `check_eligibility`
+  with 10 structured eligibility rules and structured failure reasons.
+- `tests/unit/test_regulatory_publication_eligibility.py` — 9 new `check_eligibility`
+  unit tests; fixed 5 UUID references from `ffffffff...` to `11111111...`.
+- `tests/unit/test_regulatory_stage_a_review.py` — `FakeRequirementRepo.get_with_provenance`
+  added; `update_stage_a` replaced.
+- `xportra/persistence/repositories.py` — `get_with_provenance` SQL joins
+  (source + artifacts) for traceability.
+- `CURRENT_STATE.md` — Milestone 2 documentation added.
+- `ACTIVE_TASK.md` — Milestone 3 documentation added.
+
+## Authorization and audit
+
+- Keep privileged routes protected by the established `GRANT_MANAGE` permission
+  and intended staff-access policy.
+- Fail closed when the authenticated actor or required permission cannot be
+  established.
+- Derive reviewer identity from the authenticated actor.
+- Record meaningful audit events for successful state-changing operations.
+- Prevent duplicate or conflicting requests from corrupting review history.
+- Preserve backend authorization independently of frontend controls.
+- Do not hard-code a staff user or bypass authorization.
+
+## Bootstrap discrepancy (Phase 4 — confirmed)
+
+- The local test database (`xportra_test`) has no `grant_manage` rows, which
+  is expected: grants are production authorization records, not test fixtures.
+- The production bootstrap (`XPA-GSA-INIT-001`) is documented as a separate
+  operational step requiring out-of-band authorization insertion, independent
+  verification, and a dedicated service actor (`REGULATORY_WORKER_ACTOR_USER_ID`
+  with active grant). The repository confirms the authorization mechanism, audit
+  linkage (`global_staff_audit.authorization_ref = 'XPA-GSA-INIT-001'`), atomic
+  consumption, and service-level denial policies all exist in code and pass 7/7
+  integration tests against the local test DB. The actual live production
+  authorization record and active grant remain a product-authorized operation
+  that this milestone does not claim to have executed.
+- Documented as unresolved production verification rather than a gap.
+
 ## Next recommended milestone
 
-Stage A/B review API wiring and publication-eligibility exposure, pending
-separate authorization. The ingestion pipeline now runs end-to-end through
-the worker.
+Stage B applicability review API wiring and small-team exception policy,
+pending separate authorization. The Stage A review and publication-eligibility
+endpoints are fully implemented and tested.

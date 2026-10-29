@@ -113,20 +113,121 @@ class RegulatoryPublicationEligibilityService:
         tenant: TenantContext | None = None,
     ) -> bool:
         """Return True only if the single requirement passes all eligibility rules."""
+        eligible, _ = self.check_eligibility(requirement_id, tenant=tenant)
+        return eligible
+
+    def check_eligibility(
+        self,
+        requirement_id: UUID,
+        tenant: TenantContext | None = None,
+    ) -> tuple[bool, list[str]]:
+        """Return ``(eligible, reasons)`` for a single requirement.
+
+        Reasons are structured, human-readable strings explaining why a
+        requirement is not eligible for publication. An empty reasons list
+        means eligible. Unknown, missing, or inconsistent states are
+        treated as ineligible (never inferred as eligible).
+        """
         if not isinstance(requirement_id, UUID):
             raise DomainValidationError("requirement_id must be a UUID")
-        eligible_list = self.get_eligible_requirements(
-            tenant=tenant,
-            include_provenance=True,
+
+        reasons: list[str] = []
+
+        # Load the requirement row.
+        row = self._requirement_repo.get(requirement_id)
+        if row is None:
+            return False, ["requirement not found"]
+
+        # 1. status must be 'extracted'
+        if row.get("status") != "extracted":
+            reasons.append(
+                f"requirement status is '{row.get('status')}', expected 'extracted'"
+            )
+
+        # 2. extraction_outcome must be 'succeeded'
+        if row.get("extraction_outcome") != "succeeded":
+            reasons.append(
+                f"extraction outcome is '{row.get('extraction_outcome')}', "
+                "expected 'succeeded'"
+            )
+
+        # 3. stage_a_status must be 'verified'
+        if row.get("stage_a_status") != "verified":
+            reasons.append(
+                f"Stage A status is '{row.get('stage_a_status')}', "
+                "expected 'verified'"
+            )
+
+        # 4. stage_b_status must be 'approved'
+        if row.get("stage_b_status") != "approved":
+            reasons.append(
+                f"Stage B status is '{row.get('stage_b_status')}', "
+                "expected 'approved'"
+            )
+
+        # 5. Source must be active (not superseded/withdrawn/archived)
+        source_id = row.get("source_id")
+        if source_id is not None:
+            source_row = self._source_repo.get(source_id)
+            if source_row is None:
+                reasons.append("source not found")
+            elif source_row.get("status") not in {"draft", "active"}:
+                reasons.append(
+                    f"source status is '{source_row.get('status')}', "
+                    "expected 'active' or 'draft'"
+                )
+        else:
+            reasons.append("requirement has no source linkage")
+
+        # 6. No pending review flags on source or requirement
+        pending_flags = self._pending_flags_for_requirement_and_source(
+            requirement_id, source_id
         )
-        # For single-requirement check, filter by id after eligibility computation.
-        # This preserves the same deterministic rules as the list method.
-        # Note: the list method does not filter by requirement_id; we filter after.
-        for row in eligible_list:
-            row_id = UUID(str(row.get("id"))) if row.get("id") is not None and not isinstance(row.get("id"), UUID) else (row.get("id") if isinstance(row.get("id"), UUID) else None)
-            if row_id == requirement_id:
-                return True
-        return False
+        if pending_flags:
+            flag_types = ", ".join(
+                f.get("trigger_type", "unknown") for f in pending_flags
+            )
+            reasons.append(
+                f"pending governance flag(s): {flag_types}; re-review required"
+            )
+
+        # 7. Provenance: normalized_document_id must exist
+        norm_doc_id = row.get("normalized_document_id")
+        if not norm_doc_id:
+            reasons.append("missing normalized document (provenance incomplete)")
+
+        # 8. Provenance: ingestion_job_id must reference a completed job
+        ingestion_job_id = row.get("ingestion_job_id")
+        if ingestion_job_id is not None:
+            try:
+                job_id = (
+                    UUID(str(ingestion_job_id))
+                    if not isinstance(ingestion_job_id, UUID)
+                    else ingestion_job_id
+                )
+                job = self._job_repo.get(job_id)
+                if job is None:
+                    reasons.append("ingestion job not found")
+                elif job.get("status") != "completed":
+                    reasons.append(
+                        f"ingestion job status is '{job.get('status')}', "
+                        "expected 'completed'"
+                    )
+            except (ValueError, AttributeError):
+                reasons.append("invalid ingestion job identifier")
+        else:
+            reasons.append("missing ingestion job (provenance incomplete)")
+
+        # 9. Provenance: parser_version must be non-empty
+        parser_version = row.get("parser_version")
+        if not parser_version or not isinstance(parser_version, str) or not parser_version.strip():
+            reasons.append("missing parser version (provenance incomplete)")
+
+        # 10. Pilot scope filter: if provided, stage_b_pilot_scope must match
+        # (handled at list level; not applicable to single check without filter)
+
+        eligible = len(reasons) == 0
+        return eligible, reasons
 
     # ---------------------------------------------------------------- internals
 

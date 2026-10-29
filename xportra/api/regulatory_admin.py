@@ -41,6 +41,7 @@ from xportra.api.schemas import (
     RegulatoryArtifactResponse,
     RegulatoryArtifactTextResponse,
     RegulatoryArtifactUploadRequest,
+    RegulatoryCandidateEligibilityResponse,
     RegulatoryCandidateListResponse,
     RegulatoryCandidateResponse,
     RegulatoryExtractRequest,
@@ -249,6 +250,20 @@ def _candidate_response(candidate: dict[str, Any]) -> dict[str, Any]:
         "ingestion_job_id": candidate.get("ingestion_job_id"),
         "created_at": candidate["created_at"],
         "updated_at": candidate["updated_at"],
+        # Provenance fields (populated only when the caller requests them).
+        "source_title": candidate.get("source_title"),
+        "source_jurisdiction": candidate.get("source_jurisdiction"),
+        "source_version": candidate.get("source_version"),
+        "source_status": candidate.get("source_status"),
+        "source_authority_id": candidate.get("source_authority_id"),
+        "artifact_uri": candidate.get("artifact_uri"),
+        "artifact_content_hash": candidate.get("artifact_content_hash"),
+        "artifact_content_length": candidate.get("artifact_content_length"),
+        "artifact_content_type": candidate.get("artifact_content_type"),
+        "artifact_acquisition_channel": candidate.get("artifact_acquisition_channel"),
+        "ingestion_job_status": candidate.get("ingestion_job_status"),
+        "ingestion_job_error_details": candidate.get("ingestion_job_error_details"),
+        "ingestion_job_parser_version": candidate.get("ingestion_job_parser_version"),
     }
 
 
@@ -638,11 +653,103 @@ def get_candidate(
     service: ExtractionServiceDependency,
     actor_id: GlobalStaffDependency,
 ):
-    """Retrieve one candidate requirement by ID."""
-    row = service.get_candidate(candidate_id)
+    """Retrieve one candidate requirement by ID with full provenance.
+
+    Returns candidate text plus source, artifact, and ingestion-job
+    metadata so a reviewer can trace the candidate back to its source
+    artifact and extraction run.
+    """
+    row = service.get_candidate_with_provenance(candidate_id)
     if row is None:
         raise ApplicationNotFoundError("candidate requirement not found")
     return _candidate_response(row)
+
+
+def _eligibility_check_service(
+    services: Any = Depends(get_services),
+) -> RegulatoryPublicationEligibilityService:
+    database = getattr(services, "database", None)
+    if database is None:
+        raise APIError(
+            503, "application_not_ready",
+            "Application services are not initialized",
+        )
+    return RegulatoryPublicationEligibilityService(database)
+
+
+EligibilityCheckServiceDependency = Annotated[
+    RegulatoryPublicationEligibilityService, Depends(_eligibility_check_service)
+]
+
+
+@router.get(
+    "/regulatory/candidates/{candidate_id}/eligibility",
+    response_model=RegulatoryCandidateEligibilityResponse,
+)
+def check_candidate_eligibility(
+    candidate_id: UUID,
+    service: EligibilityCheckServiceDependency,
+    actor_id: GlobalStaffDependency,
+):
+    """Evaluate publication eligibility for a single candidate.
+
+    Returns whether the candidate is eligible for exporter-facing
+    publication, with structured reasons explaining any ineligibility.
+    This endpoint evaluates only — it does not publish the candidate.
+
+    Eligibility requires Stage A verification (``verified``), Stage B
+    approval (``approved``), current active source, no pending governance
+    flags, successful extraction outcome (``succeeded``), and complete
+    provenance. Partial, failed, manual-only, unverified, or stale
+    requirements are ineligible with structured reasons.
+    """
+    from datetime import datetime, timezone
+
+    eligible, reasons = service.check_eligibility(candidate_id)
+    return {
+        "candidate_id": candidate_id,
+        "eligible": eligible,
+        "reasons": reasons,
+        "evaluated_at": datetime.now(timezone.utc),
+    }
+
+
+def _stage_a_detail_response(candidate: dict[str, Any]) -> dict[str, Any]:
+    """Stage A detail: review state plus candidate and source provenance."""
+    return {
+        "id": candidate["id"],
+        "requirement_id": candidate["id"],
+        "source_id": candidate.get("source_id"),
+        "artifact_id": candidate.get("artifact_id"),
+        "requirement_text": candidate.get("requirement_text"),
+        "requirement_type": candidate.get("requirement_type"),
+        "source_location": candidate.get("source_location") or {},
+        "position": candidate.get("position"),
+        "extraction_outcome": candidate.get("extraction_outcome"),
+        "status": candidate.get("status"),
+        "manual_entry": candidate.get("manual_entry", False),
+        "stage_a_status": candidate.get("stage_a_status"),
+        "stage_a_reviewer_user_id": candidate.get("stage_a_reviewer_user_id"),
+        "stage_a_reviewed_at": candidate.get("stage_a_reviewed_at"),
+        "stage_a_rationale": candidate.get("stage_a_rationale"),
+        # Source metadata for review traceability.
+        "source_title": candidate.get("source_title"),
+        "source_jurisdiction": candidate.get("source_jurisdiction"),
+        "source_version": candidate.get("source_version"),
+        "source_status": candidate.get("source_status"),
+        "source_authority_id": candidate.get("source_authority_id"),
+        # Artifact metadata for review traceability.
+        "artifact_uri": candidate.get("artifact_uri"),
+        "artifact_content_hash": candidate.get("artifact_content_hash"),
+        "artifact_content_length": candidate.get("artifact_content_length"),
+        "artifact_content_type": candidate.get("artifact_content_type"),
+        "artifact_acquisition_channel": candidate.get("artifact_acquisition_channel"),
+        # Ingestion job status for review traceability.
+        "ingestion_job_id": candidate.get("ingestion_job_id"),
+        "ingestion_job_status": candidate.get("ingestion_job_status"),
+        "ingestion_job_error_details": candidate.get("ingestion_job_error_details"),
+        "ingestion_job_parser_version": candidate.get("ingestion_job_parser_version"),
+    }
 
 
 def _stage_a_response(candidate: dict[str, Any]) -> dict[str, Any]:
@@ -718,21 +825,16 @@ def get_stage_a(
     service: StageAServiceDependency,
     actor_id: StageADependency,
 ):
-    """Retrieve a candidate's current Stage A review state."""
+    """Retrieve a candidate's current Stage A review state with provenance.
+
+    Returns candidate text, source/artifact references, ingestion-job
+    provenance, and source metadata so a reviewer can make an informed
+    Stage A decision.
+    """
     row = service.get_candidate_stage_a(candidate_id)
     if row is None:
         raise ApplicationNotFoundError("candidate requirement not found")
-    return {
-        "id": row["id"],
-        "requirement_id": row["id"],
-        "source_id": row.get("source_id"),
-        "stage_a_status": row["stage_a_status"],
-        "stage_a_reviewer_user_id": row.get("stage_a_reviewer_user_id"),
-        "stage_a_reviewed_at": row.get("stage_a_reviewed_at"),
-        "stage_a_rationale": row.get("stage_a_rationale"),
-        "audit_id": None,
-        "audit_created_at": None,
-    }
+    return _stage_a_detail_response(row)
 
 
 @router.get(

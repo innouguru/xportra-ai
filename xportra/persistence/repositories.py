@@ -856,6 +856,45 @@ class RegulatoryRequirementRepository:
             (requirement_id,),
         )
 
+    def get_with_provenance(self, requirement_id: UUID) -> Row | None:
+        """Return a candidate with source, artifact, and ingestion-job provenance.
+
+        Joins regulatory sources and source artifacts so a reviewer can trace
+        candidate text back to the source/artifact and extraction run.
+        """
+        return _fetch_one(
+            self._database,
+            """
+            SELECT requirement.*,
+                   document.artifact_id, document.source_id,
+                   source.title AS source_title,
+                   source.jurisdiction AS source_jurisdiction,
+                   source.version AS source_version,
+                   source.status AS source_status,
+                   source.authority_id AS source_authority_id,
+                   artifact.artifact_uri AS artifact_uri,
+                   artifact.content_hash AS artifact_content_hash,
+                   artifact.content_length AS artifact_content_length,
+                   artifact.content_type AS artifact_content_type,
+                   artifact.acquisition_channel AS artifact_acquisition_channel,
+                   job.id AS ingestion_job_id,
+                   job.status AS ingestion_job_status,
+                   job.error_details AS ingestion_job_error_details,
+                   job.parser_version AS ingestion_job_parser_version
+            FROM xportra.regulatory_requirements AS requirement
+            JOIN xportra.regulatory_document_normalizations AS document
+              ON document.id = requirement.normalized_document_id
+            LEFT JOIN xportra.regulatory_sources AS source
+              ON source.id = requirement.source_id
+            LEFT JOIN xportra.regulatory_source_artifacts AS artifact
+              ON artifact.id = document.artifact_id
+            LEFT JOIN xportra.regulatory_ingestion_jobs AS job
+              ON job.id = requirement.ingestion_job_id
+            WHERE requirement.id = %s
+            """,
+            (requirement_id,),
+        )
+
     def update_stage_a(
         self,
         requirement_id: UUID,
