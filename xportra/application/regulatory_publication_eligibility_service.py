@@ -269,17 +269,19 @@ class RegulatoryPublicationEligibilityService:
 
         published_at = None
         if eligible:
-            # Record the publication timestamp.
+            # Record the publication timestamp and transition status to 'published'
+            # so the requirement is no longer eligible for re-publication and is
+            # visible in the exporter-facing catalog.
             published_at = datetime.now(timezone.utc)
             with self._database.transaction() as connection:
                 connection.execute(
                     "UPDATE xportra.regulatory_requirements "
-                    "SET published_at = %s "
+                    "SET status = 'published', "
+                    "published_at = %s, "
+                    "updated_at = %s "
                     "WHERE id = %s",
-                    (published_at, requirement_id),
+                    (published_at, published_at, requirement_id),
                 )
-            # Note: the caller is responsible for updating the requirement
-            # status if desired; this method only records the publication timestamp.
 
         return {
             "requirement_id": requirement_id,

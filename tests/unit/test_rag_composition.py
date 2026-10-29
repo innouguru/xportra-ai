@@ -735,11 +735,9 @@ class RAGCompositionTenantTests(unittest.TestCase):
         )
         with client_for(service) as client:
             response = post_query(client, headers=HEADER_A)
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 502)
         body = response.json()
-        self.assertEqual(body["status"], "insufficient_evidence")
-        self.assertTrue(body["is_empty"])
-        self.assertNotIn(str(CHUNK_B1), response.text)
+        self.assertEqual(body["error"]["code"], "vector_store_error")
 
     def test_out_of_scope_result_rejected(self):
         service, _, _, _ = make_e2e_service(
@@ -753,10 +751,9 @@ class RAGCompositionTenantTests(unittest.TestCase):
             )
         # The fake returns tenant-A items without scope narrowing;
         # the existing scope re-check must reject out-of-scope rows.
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 502)
         body = response.json()
-        self.assertEqual(body["status"], "insufficient_evidence")
-        self.assertTrue(body["is_empty"])
+        self.assertEqual(body["error"]["code"], "vector_store_error")
 
 
 class RAGCompositionFailureTests(unittest.TestCase):
@@ -766,10 +763,9 @@ class RAGCompositionFailureTests(unittest.TestCase):
         )
         with client_for(service) as client:
             response = post_query(client)
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 502)
         body = response.json()
-        self.assertEqual(body["status"], "insufficient_evidence")
-        self.assertTrue(body["is_empty"])
+        self.assertEqual(body["error"]["code"], "vector_store_error")
 
     def test_answer_validation_failure_maps(self):
         llm = ScriptedLLMClient(responses=[make_answer("See [E9].")])
@@ -843,11 +839,10 @@ class RAGCompositionFailureTests(unittest.TestCase):
             response = post_query(client)
         # A RuntimeError inside the fake vector index is translated
         # to a VectorStoreError by the adapter, which the router
-        # handles gracefully as insufficient evidence.
-        self.assertEqual(response.status_code, 200)
+        # handles as a vector store error.
+        self.assertEqual(response.status_code, 502)
         body = response.json()
-        self.assertEqual(body["status"], "insufficient_evidence")
-        self.assertTrue(body["is_empty"])
+        self.assertEqual(body["error"]["code"], "vector_store_error")
         # The response must not expose the internal failure details.
         self.assertNotIn("postgresql", response.text.lower())
 

@@ -6,7 +6,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 
 from xportra.domain.answer_validation import ValidatedAnswer
-from xportra.domain.errors import DomainNotFoundError, VectorStoreError
+from xportra.domain.errors import DomainNotFoundError
 from xportra.domain.evidence_context import EvidenceContextBudget
 from xportra.domain.evidence_retrieval import EvidenceRetrievalScope
 
@@ -112,28 +112,16 @@ def query_rag(
             document_id=payload.scope.document_id,
             document_version=payload.scope.document_version,
         )
-    try:
-        validated = rag.query(
-            payload.information_need,
-            tenant_id=member.tenant,
-            mode=payload.mode,
-            context_budget=EvidenceContextBudget(
-                payload.max_context_characters),
-            scope=scope,
-            top_k=payload.top_k,
-            candidate_pool=payload.candidate_pool,
-        )
-    except VectorStoreError as exc:
-        # Graceful recovery when Qdrant collection or service is unavailable.
-        # Return an explicit insufficient-evidence response rather than a crash.
-        return RAGQueryResponse(
-            answer_text="No regulatory evidence found — please refine your question.",
-            status="insufficient_evidence",
-            is_empty=True,
-            extracted_references=[],
-            invalid_references=[],
-            citations=[],
-        )
+    validated = rag.query(
+        payload.information_need,
+        tenant_id=member.tenant,
+        mode=payload.mode,
+        context_budget=EvidenceContextBudget(
+            payload.max_context_characters),
+        scope=scope,
+        top_k=payload.top_k,
+        candidate_pool=payload.candidate_pool,
+    )
     response = _rag_response(validated)
     # Retrieval-time eligibility enforcement: exclude citations whose
     # regulatory source is inactive (superseded/stale/withdrawn/archived)
