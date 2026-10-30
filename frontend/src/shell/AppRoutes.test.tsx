@@ -14,6 +14,23 @@ const STALE_RECORD = {
   open_requirements: [],
 };
 
+const STAFF_ME = {
+  user_id: "11111111-1111-1111-1111-111111111111",
+  display_name: "Alex Regulator",
+  email: "alex@example.test",
+  organization_id: "22222222-2222-2222-2222-222222222222",
+  organization_name: "Acme Exporters Ltd",
+  role: "owner",
+  staff_permissions: ["grant_manage"],
+};
+
+const EXPORTER_ME = {
+  ...STAFF_ME,
+  display_name: "Jane Exporter",
+  email: "jane@example.test",
+  staff_permissions: [],
+};
+
 function CurrentRoute() {
   return <output aria-label="Current route">{useLocation().pathname}</output>;
 }
@@ -30,7 +47,26 @@ function CurrentRoute() {
  * belongs to later 10.8 phases.
  */
 
-function renderAt(path: string, authInitial?: { token: string }) {
+/**
+ * Stub fetch so ``GET /me`` returns the supplied identity while every
+ * other backend call is denied server-side. This keeps tests honest
+ * about which requests a page really makes and mirrors the established
+ * regulatory-backend stubbing pattern.
+ */
+function stubFetch(meResponse: Response) {
+  return vi.fn(async (input: string | Request): Promise<Response> => {
+    const url = typeof input === "string" ? input : input.url;
+    if (url.endsWith("/me")) {
+      return meResponse;
+    }
+    return new Response(
+      JSON.stringify({ error: { code: "permission_denied", message: "Permission denied." } }),
+      { status: 403, headers: { "Content-Type": "application/json" } },
+    );
+  });
+}
+
+function renderAt(path: string, authInitial?: { token: string }, me?: unknown) {
   window.matchMedia = ((query: string) => ({
     matches: false,
     media: query,
@@ -41,6 +77,17 @@ function renderAt(path: string, authInitial?: { token: string }) {
     removeListener: () => undefined,
     dispatchEvent: () => false,
   })) as unknown as typeof window.matchMedia;
+  vi.stubGlobal(
+    "fetch",
+    stubFetch(
+      me !== undefined
+        ? new Response(JSON.stringify(me), { status: 200, headers: { "Content-Type": "application/json" } })
+        : new Response(
+            JSON.stringify({ error: { code: "permission_denied", message: "Permission denied." } }),
+            { status: 403, headers: { "Content-Type": "application/json" } },
+          ),
+    ),
+  );
   render(
     <MemoryRouter initialEntries={[path]}>
       <App authInitial={authInitial} />
@@ -60,18 +107,9 @@ describe("authenticated routes", () => {
   it("serves the staff ingestion dashboard inside the application shell for signed-in users", () => {
     // The dashboard calls the staff regulatory API; authorization is
     // enforced server-side, so a denial is expected here and the shell
-    // chrome must still render for a signed-in visitor.
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            error: { code: "permission_denied", message: "Permission denied." },
-          }),
-          { status: 403 },
-        ),
-      ),
-    );
+    // chrome must still render for a signed-in visitor. ``GET /me``
+    // fails, so the staff entry point stays hidden; only the shell
+    // chrome and breadcrumb are asserted.
     renderAt("/regulatory-ingestion", { token: "test-token" });
     expect(screen.getByRole("complementary", { name: "Application" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
@@ -80,18 +118,16 @@ describe("authenticated routes", () => {
   });
 
   it("resolves the Regulatory Ingestion navigation item to the dashboard route", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            error: { code: "permission_denied", message: "Permission denied." },
-          }),
-          { status: 403 },
+    renderAt("/dashboard", { token: "test-token" }, STAFF_ME);
+    // Wait for the server-resolved identity to grant staff access before
+    // the navigation item is rendered.
+    await waitFor(() => {
+      expect(
+        screen.getByRole("navigation", { name: "Primary" }).querySelector(
+          'a[href="/regulatory-ingestion"]',
         ),
-      ),
-    );
-    renderAt("/dashboard", { token: "test-token" });
+      ).not.toBeNull();
+    });
     fireEvent.click(
       screen.getByRole("navigation", { name: "Primary" }).querySelector(
         'a[href="/regulatory-ingestion"]',
@@ -164,6 +200,19 @@ describe("authenticated routes", () => {
     expect(screen.getByRole("heading", { name: "Connect to your workspace" })).toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Application" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "New shipment" })).toBeNull();
+  });
+
+  it("denies an unauthorized exporter direct access to /regulatory-ingestion", async () => {
+    renderAt("/regulatory-ingestion", { token: "test-token" }, EXPORTER_ME);
+    // The shell chrome renders, but the staff guard fails closed with an
+    // in-place access-denied panel once the exporter identity resolves.
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "This area is restricted" })).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/Regulatory ingestion administration is limited to authorized staff/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Return to your dashboard/ })).toHaveAttribute("href", "/dashboard");
+    expect(screen.queryByRole("heading", { name: "Your shipments" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Regulatory ingestion" })).toBeNull();
   });
 
   it("does not render workspace navigation for a signed-out visitor with a stale record", async () => {

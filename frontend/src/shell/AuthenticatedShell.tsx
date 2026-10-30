@@ -7,6 +7,7 @@ import { BrandMark } from "../components/BrandMark";
 import { Breadcrumbs, WorkspaceContainer } from "../primitives/layout";
 import { useEscapeKey, useFocusRestore } from "../primitives/a11y";
 import { useTheme } from "../theme/theme";
+import { GRANT_MANAGE } from "../types/api";
 
 /**
  * Phase 10.8B authenticated application shell.
@@ -14,15 +15,20 @@ import { useTheme } from "../theme/theme";
  * Shipment-first workspace frame (R-10.8.1–R-10.8.3,
  * ADR-0012): expandable sidebar with primary
  * destinations (Dashboard, View Shipments, and the
- * staff Regulatory Ingestion entry point; staff
- * authorization is enforced server-side by global
- * grants, not by the shell), brand link opening the
- * public landing route in a new tab, compact
- * account control, subtle notification entry point,
- * theme toggle, and a mobile navigation drawer.
- * Product pages (dashboard content, shipments table,
- * workspace, settings) arrive in later 10.8 phases;
- * this file only frames them.
+ * staff Regulatory Ingestion entry point), brand link
+ * opening the public landing route in a new tab,
+ * compact account control, subtle notification entry
+ * point, theme toggle, and a mobile navigation drawer.
+ *
+ * The Regulatory Ingestion entry point is only shown
+ * when the server-resolved identity carries an active
+ * ``grant_manage`` global staff permission; the harness
+ * never infers staff access from authentication,
+ * organization membership, or email. Unknown or
+ * unavailable authorization state hides the item (fail
+ * closed). Route enforcement and every privileged
+ * operation remain protected server-side by global
+ * staff grants.
  */
 
 const SIDEBAR_STORAGE_KEY = "xportra.shell.sidebar.v1";
@@ -77,8 +83,26 @@ const CHEVRON_RIGHT = "M7.5 5l5 5-5 5";
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Dashboard", icon: DASHBOARD_ICON },
   { to: "/shipments", label: "View Shipments", icon: SHIPMENTS_ICON },
-  { to: "/regulatory-ingestion", label: "Regulatory Ingestion", icon: DASHBOARD_ICON },
 ] as const;
+
+const STAFF_NAV_ITEM = {
+  to: "/regulatory-ingestion",
+  label: "Regulatory Ingestion",
+  icon: DASHBOARD_ICON,
+} as const;
+
+/**
+ * Whether the current person may see staff surfaces. Only a
+ * server-resolved identity bearing an active ``grant_manage`` grant
+ * counts; loading, error, and absent identity all yield ``false`` so
+ * staff navigation fails closed.
+ */
+function hasStaffAccess(
+  identity: ReturnType<typeof useIdentity>["identity"],
+  status: ReturnType<typeof useIdentity>["status"],
+): boolean {
+  return status === "ready" && (identity?.staff_permissions ?? []).includes(GRANT_MANAGE);
+}
 
 function ThemeToggle() {
   const { resolved, setMode } = useTheme();
@@ -300,6 +324,8 @@ function SidebarBody({
 }) {
   const { identity, status } = useIdentity();
   const organization = identity?.organization_name ?? null;
+  const staff = hasStaffAccess(identity, status);
+  const navItems = staff ? [...NAV_ITEMS, STAFF_NAV_ITEM] : [...NAV_ITEMS];
   return (
     <>
       <div className="xb-sidebar__brand">
@@ -317,7 +343,7 @@ function SidebarBody({
         ) : null}
       </div>
       <nav className="xb-sidebar__nav" aria-label="Primary">
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

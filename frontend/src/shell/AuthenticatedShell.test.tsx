@@ -27,6 +27,14 @@ const DEFAULT_IDENTITY: Identity = {
   organization_id: "22222222-2222-2222-2222-222222222222",
   organization_name: "Acme Exporters Ltd",
   role: "owner",
+  staff_permissions: [],
+};
+
+const STAFF_IDENTITY: Identity = {
+  ...DEFAULT_IDENTITY,
+  display_name: "Alex Regulator",
+  email: "alex@example.test",
+  staff_permissions: ["grant_manage"],
 };
 
 function stubFetchIdentity(identity: Identity) {
@@ -106,14 +114,39 @@ afterEach(() => {
 });
 
 describe("authenticated shell navigation", () => {
-  it("shows Dashboard, View Shipments, and Regulatory Ingestion as primary navigation", () => {
-    renderShell();
+  it("shows Dashboard, View Shipments, and Regulatory Ingestion to authorized staff", async () => {
+    renderShell("/dashboard", "test-token", STAFF_IDENTITY);
     const primary = screen.getByRole("navigation", { name: "Primary" });
     expect(within(primary).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
     expect(within(primary).getByRole("link", { name: "View Shipments" })).toHaveAttribute("href", "/shipments");
-    expect(within(primary).getByRole("link", { name: "Regulatory Ingestion" })).toHaveAttribute("href", "/regulatory-ingestion");
+    await waitFor(() =>
+      expect(
+        within(primary).getByRole("link", { name: "Regulatory Ingestion" }),
+      ).toHaveAttribute("href", "/regulatory-ingestion"),
+    );
     const links = within(primary).getAllByRole("link");
     expect(links).toHaveLength(3);
+  });
+
+  it("hides Regulatory Ingestion from an ordinary authenticated exporter", () => {
+    renderShell(); // DEFAULT_IDENTITY has staff_permissions: []
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    expect(within(primary).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
+    expect(within(primary).getByRole("link", { name: "View Shipments" })).toHaveAttribute("href", "/shipments");
+    expect(within(primary).queryByRole("link", { name: "Regulatory Ingestion" })).toBeNull();
+    const links = within(primary).getAllByRole("link");
+    expect(links).toHaveLength(2);
+  });
+
+  it("hides Regulatory Ingestion while authorization state is unknown or unavailable", () => {
+    // Fetch never resolves: identity stays in a non-ready state, so the
+    // shell fails closed and does not reveal the staff entry point.
+    stubFetchReject();
+    renderShell("/dashboard", "test-token", null);
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    expect(within(primary).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
+    expect(within(primary).getByRole("link", { name: "View Shipments" })).toHaveAttribute("href", "/shipments");
+    expect(within(primary).queryByRole("link", { name: "Regulatory Ingestion" })).toBeNull();
   });
 
   it("does not expose workflow concepts as primary navigation", () => {

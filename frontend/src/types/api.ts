@@ -374,12 +374,25 @@ export interface OrganizationRegistrationResult {
 }
 
 /**
+ * Global staff permission that admits a person to the regulatory
+ * ingestion administration surface (source inspection, ingestion
+ * jobs, candidate review). The name mirrors the backend grant store
+ * exactly; permissions are granted server-side only and never
+ * inferred from authentication, organization membership, or email.
+ */
+export const GRANT_MANAGE = "grant_manage";
+
+/**
  * The authenticated account's identity as returned by ``GET /me``.
  *
  * The display name and email come from the provisioned application user
  * record (``xportra.users``); the organization name comes from the
  * user's active tenant membership (``xportra.tenants.legal_name``).
  * Both are resolved server-side so the client never forges identity.
+ * ``staff_permissions`` lists active global staff grants (e.g.
+ * ``grant_manage``), also resolved server-side; an empty list means
+ * the person is not staff, and the shell treats unknown state as
+ * unauthorized.
  */
 export interface Identity {
   user_id: string;
@@ -388,4 +401,5 @@ export interface Identity {
   organization_id: string | null;
   organization_name: string | null;
   role: string | null;
+  staff_permissions: string[];
 }

@@ -3,6 +3,7 @@ import { AuthProvider } from "./app/AuthContext";
 import { IdentityProvider } from "./app/IdentityContext";
 import type { AuthCredentials } from "./api/client";
 import { RequireAuth } from "./app/RequireAuth";
+import { RequireStaff } from "./app/RequireStaff";
 import { WorkflowProvider, useWorkflow } from "./app/WorkflowContext";
 import { WorkflowSessionSync } from "./app/WorkflowSessionSync";
 import { AnalysisProvider } from "./app/AnalysisContext";
@@ -72,11 +73,13 @@ function LegacyWorkspaceRoute() {
  *   unqualified `/workspace` redirects when a saved case is available.
  *   Workspace routes are gated by `RequireAuth` (unauthenticated visitors
  *   return to `/session`, never to external destinations).
- * - `/regulatory` and `/regulatory-ingestion` — staff regulatory
+ * - ``/regulatory`` and ``/regulatory-ingestion`` — staff regulatory
  *   administration surfaces (source inspection, ingestion jobs,
- *   candidates, Stage A/B review) gated by `RequireAuth`; all
- *   privileged actions are additionally authorized server-side by
- *   global staff grants.
+ *   candidates, Stage A/B review) gated by ``RequireAuth`` plus the
+ *   staff-only ``RequireStaff`` guard, which fails closed unless the
+ *   server-resolved identity carries an active global staff
+ *   ``grant_manage`` grant. All privileged actions remain
+ *   additionally authorized server-side by global staff grants.
  */
 export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> }) {
   return (
@@ -120,7 +123,9 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
                 element={
                   <RequireAuth>
                     <AuthenticatedShell crumbs={[{ label: "Regulatory ingestion" }]}>
-                      <IngestionDashboard />
+                      <RequireStaff>
+                        <IngestionDashboard />
+                      </RequireStaff>
                     </AuthenticatedShell>
                   </RequireAuth>
                 }
