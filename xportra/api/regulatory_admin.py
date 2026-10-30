@@ -37,6 +37,7 @@ from xportra.api.dependencies import (
 )
 from xportra.api.errors import APIError
 from xportra.api.schemas import (
+    AuthorityResponse,
     RegulatoryArtifactListResponse,
     RegulatoryArtifactResponse,
     RegulatoryArtifactTextResponse,
@@ -65,12 +66,38 @@ from xportra.api.schemas import (
     RegulatoryStageBReviewHistoryListResponse,
     RegulatoryStageBReviewHistoryResponse,
     RegulatoryStageBReviewRequest,
+    RegulatoryStageBReviewResponse,
     RegulatoryEligibleRequirementsResponse,
     RegulatoryEligibleRequirementResponse,
     RegulatoryStageBReviewResponse,
 )
+from xportra.persistence.repositories import AuthorityRepository
 
 router = APIRouter(tags=["regulatory-admin"])
+
+
+@router.get(
+    "/regulatory/authorities",
+    response_model=list[AuthorityResponse],
+)
+def list_authorities(
+    actor_id: GlobalStaffDependency,
+    services: Any = Depends(get_services),
+) -> list[AuthorityResponse]:
+    """List active regulatory authorities for the staff ingestion shell.
+
+    Requires an active ``GRANT_MANAGE`` global staff grant. Returns all
+    active authorities for use in the source registration authority selector.
+    """
+    database = getattr(services, "database", None)
+    if database is None:
+        raise APIError(
+            503, "application_not_ready",
+            "Application services are not initialized",
+        )
+    authority_repo = AuthorityRepository(database)
+    rows = authority_repo.list_active()
+    return [AuthorityResponse.model_validate(row) for row in rows]
 
 
 def _intake_service(services: Any = Depends(get_services)) -> RegulatorySourceIntakeService:

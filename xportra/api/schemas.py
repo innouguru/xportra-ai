@@ -766,6 +766,18 @@ class RegulatorySourceResponse(BaseModel):
     updated_at: datetime
 
 
+class AuthorityResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    name: str
+    jurisdiction: str
+    authority_type: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class RegulatorySupersessionRequest(APIRequest):
     """Record that this source supersedes another source.
 
