@@ -7,6 +7,7 @@
  * supersession, freshness, publication, or exporter applicability.
  *
  * Covered routes (all require global staff grants server-side):
+ * - GET  /regulatory/authorities                       (GRANT_MANAGE)
  * - POST  /regulatory/sources                       (GRANT_MANAGE)
  * - GET  /regulatory/sources                       (GRANT_MANAGE)
  * - GET  /regulatory/sources/{id}                  (GRANT_MANAGE)
@@ -53,6 +54,15 @@ export interface RegulatorySourceCreateRequest {
   effective_date?: string | null;
   publication_date?: string | null;
   source_url?: string | null;
+}
+
+/** A regulatory authority record, used to populate the authority selector. */
+export interface RegulatoryAuthority {
+  id: string;
+  name: string;
+  jurisdiction: string;
+  authority_type: string;
+  status: string;
 }
 
 /** Valid source statuses recognized by the backend. */
@@ -183,6 +193,12 @@ export function listRegulatorySources(
   credentials: AuthCredentials,
 ): Promise<{ items: RegulatorySource[]; total: number }> {
   return apiFetch("/regulatory/sources", credentials);
+}
+
+export function listRegulatoryAuthorities(
+  credentials: AuthCredentials,
+): Promise<RegulatoryAuthority[]> {
+  return apiFetch("/regulatory/authorities", credentials);
 }
 
 export function registerRegulatorySource(
