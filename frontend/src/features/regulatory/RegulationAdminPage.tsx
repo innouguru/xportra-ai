@@ -21,6 +21,7 @@ import {
   listStageBHistory,
   submitStageADecision,
   submitStageBDecision,
+  uploadRegulatoryArtifact,
   type RegulatoryArtifact,
   type RegulatoryCandidate,
   type RegulatoryGovernanceFlag,
@@ -40,6 +41,12 @@ import {
   LoadingState,
   StatusBadge,
 } from "../../components/StatusBits";
+import {
+  REGULATORY_ARTIFACT_ACCEPT,
+  SUPPORTED_ARTIFACT_TEXT,
+  describeUnsupportedArtifactFile,
+  resolveArtifactContentType,
+} from "../../lib/regulatoryUpload";
 
 /**
  * Regulatory administration surface (authorized staff only).
@@ -250,6 +257,10 @@ function SourceDetail({
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(null);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadPending, setUploadPending] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
   // Sequence guard: when the inspected source changes while a load is in
   // flight, only the most recent request may mutate this section's state.
@@ -284,6 +295,44 @@ function SourceDetail({
       }
     }
   }, [auth, sourceId]);
+
+  const handleUpload = useCallback(
+    async (file: File) => {
+      const fileRejection = describeUnsupportedArtifactFile(file);
+      if (fileRejection) {
+        setUploadError(fileRejection);
+        return;
+      }
+      setUploadPending(true);
+      setUploadError(null);
+      setUploadSuccess(null);
+      try {
+        const content_base64 = await file.arrayBuffer().then((buf) => {
+          const bytes = new Uint8Array(buf);
+          const chunkSize = 0x8000;
+          let binary = "";
+          for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+            const chunk = bytes.subarray(offset, offset + chunkSize);
+            binary += String.fromCharCode(...chunk);
+          }
+          return btoa(binary);
+        });
+        const result = await uploadRegulatoryArtifact(auth as AuthCredentials, sourceId, {
+          content_base64,
+          content_type: resolveArtifactContentType(file),
+          source_version: source?.version ?? null,
+        });
+        setUploadSuccess(`Artifact “${file.name}” uploaded (${result.content_length} bytes, ${result.content_type}).`);
+        setUploadFile(null);
+        await load();
+      } catch (caught) {
+        setUploadError(userFacingErrorMessage(caught));
+      } finally {
+        setUploadPending(false);
+      }
+    },
+    [auth, sourceId, source?.version, load],
+  );
 
   useEffect(() => {
     void load();
@@ -429,6 +478,77 @@ function SourceDetail({
               ))}
             </ol>
           ) : null}
+
+          <section aria-label="Upload artifact">
+            <h3>Upload original regulatory document</h3>
+            <p className="muted">
+              Supported: {SUPPORTED_ARTIFACT_TEXT} (max 10 MB). The backend
+              validates every file; unsupported or oversized files are
+              rejected.
+            </p>
+            <form
+              className="form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (uploadFile) {
+                  void handleUpload(uploadFile);
+                }
+              }}
+            >
+              <fieldset>
+                <div className="form-row">
+                  <label htmlFor="artifact-file">Choose file</label>
+                  <input
+                    id="artifact-file"
+                    type="file"
+                    accept={REGULATORY_ARTIFACT_ACCEPT}
+                    disabled={uploadPending || loading}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      if (!file) {
+                        setUploadFile(null);
+                        return;
+                      }
+                      const fileRejection = describeUnsupportedArtifactFile(file);
+                      if (fileRejection) {
+                        // Unsupported files are never stored as the
+                        // selection, so the submit path cannot send them.
+                        setUploadFile(null);
+                        setUploadError(fileRejection);
+                        setUploadSuccess(null);
+                        event.target.value = "";
+                        return;
+                      }
+                      setUploadError(null);
+                      setUploadFile(file);
+                    }}
+                  />
+                </div>
+                {uploadFile ? (
+                  <div className="form-row">
+                    <p className="hint">
+                      Selected: {uploadFile.name} ({Math.round(uploadFile.size / 1024)} KB, {uploadFile.type || "unknown type"})
+                    </p>
+                  </div>
+                ) : null}
+              </fieldset>
+              <div className="form-row">
+                <button
+                  type="submit"
+                  className="primary-button"
+                  disabled={uploadPending || loading || !uploadFile}
+                >
+                  {uploadPending ? "Uploading…" : "Upload document"}
+                </button>
+              </div>
+            </form>
+            {uploadError ? (
+              <p role="alert" className="ledger-reason">{uploadError}</p>
+            ) : null}
+            {uploadSuccess ? (
+              <p className="success-message" role="status">{uploadSuccess}</p>
+            ) : null}
+          </section>
 
           <h3>Candidate requirements</h3>
           {candidates !== null && candidates.length === 0 ? (

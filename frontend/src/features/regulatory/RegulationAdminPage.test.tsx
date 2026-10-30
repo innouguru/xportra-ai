@@ -953,4 +953,211 @@ describe("RegulationAdminPage", () => {
     expect(submitBtn).toHaveAttribute("disabled");
   });
 
+  it("shows upload section and selects a file", async () => {
+    vi.stubGlobal("fetch", stubRegulatoryBackend({}));
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    await waitFor(() => {
+      expect(screen.getByText("Artifacts")).toBeTruthy();
+    });
+    expect(screen.getByText("Upload original regulatory document")).toBeTruthy();
+    expect(screen.getByLabelText("Choose file")).toBeTruthy();
+  });
+
+  it("uploads an artifact and displays it", async () => {
+    const artifactsUrl = `/regulatory/sources/${SOURCE.id}/artifacts`;
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.endsWith("/regulatory/authorities")) {
+        return new Response(JSON.stringify([AUTHORITY_A]), { status: 200 });
+      }
+      if (String(url).endsWith("/regulatory/sources") && (init as RequestInit | undefined)?.method === "GET") {
+        return new Response(JSON.stringify({ items: [SOURCE], total: 1 }), { status: 200 });
+      }
+      if (String(url).endsWith("/regulatory/sources") && (init as RequestInit | undefined)?.method === "POST") {
+        return new Response(JSON.stringify(NEW_SOURCE), { status: 201 });
+      }
+      if (String(url).endsWith(artifactsUrl)) {
+        if ((init as RequestInit | undefined)?.method === "POST") {
+          return new Response(
+            JSON.stringify({
+              id: "artifact-123",
+              source_id: SOURCE.id,
+              content_hash: "abc123",
+              content_length: 1024,
+              content_type: "application/pdf",
+              acquisition_channel: "manual_upload",
+              acquired_at: "2026-10-30T00:00:00Z",
+              status: "validated",
+              source_version: null,
+              created_at: "2026-10-30T00:00:00Z",
+              updated_at: "2026-10-30T00:00:00Z",
+            }),
+            { status: 201 },
+          );
+        }
+        return new Response(JSON.stringify({ items: [], limit: 50, offset: 0, total: 0 }), { status: 200 });
+      }
+      return stubRegulatoryBackend({})(input, init);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([AUTHORITY_A]);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    await waitFor(() => {
+      expect(screen.getByText("Upload original regulatory document")).toBeTruthy();
+    });
+    const fileInput = screen.getByLabelText("Choose file") as HTMLInputElement;
+    const pdfFile = new File([new Uint8Array(1024)], "test.pdf", { type: "application/pdf" });
+    Object.defineProperty(fileInput, "files", {
+      value: [pdfFile],
+      writable: false,
+    });
+    fireEvent.change(fileInput);
+    await waitFor(() => {
+      expect(fileInput.files?.[0].name).toBe("test.pdf");
+    });
+    await user.click(screen.getByRole("button", { name: "Upload document" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Artifact.*uploaded/)).toBeTruthy();
+    });
+    // The POST body matches the backend contract, including the
+    // browser-reported MIME type and the source's recorded version.
+    const uploadPost = fetchStub.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(artifactsUrl) &&
+        (init as RequestInit).method === "POST",
+    );
+    expect(uploadPost).toBeTruthy();
+    const uploadBody = JSON.parse(
+      String((uploadPost as unknown as [string, RequestInit])[1].body),
+    );
+    expect(uploadBody.content_type).toBe("application/pdf");
+    expect(uploadBody.source_version).toBe("1.0");
+    expect(typeof uploadBody.content_base64).toBe("string");
+    expect(uploadBody.content_base64.length).toBeGreaterThan(0);
+    // Upload succeeded; artifacts refresh should converge.
+    await waitFor(() => {
+      expect(screen.getByText(/Artifact.*uploaded/)).toBeTruthy();
+    });
+  });
+
+  it("uploads supported artifacts with an empty browser MIME via extension mapping", async () => {
+    const artifactsUrl = `/regulatory/sources/${SOURCE.id}/artifacts`;
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (String(url).endsWith(artifactsUrl) && (init as RequestInit | undefined)?.method === "POST") {
+        return new Response(
+          JSON.stringify({
+            id: "artifact-txt",
+            source_id: SOURCE.id,
+            content_hash: "hash-txt",
+            content_length: 16,
+            content_type: "text/plain",
+            acquisition_channel: "manual_upload",
+            acquired_at: "2026-10-30T00:00:00Z",
+            status: "validated",
+            source_version: "1.0",
+            created_at: "2026-10-30T00:00:00Z",
+            updated_at: "2026-10-30T00:00:00Z",
+          }),
+          { status: 201 },
+        );
+      }
+      return stubRegulatoryBackend({})(input, init);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    await waitFor(() => {
+      expect(screen.getByText("Upload original regulatory document")).toBeTruthy();
+    });
+    const fileInput = screen.getByLabelText("Choose file") as HTMLInputElement;
+    // Browsers often report no MIME type for .txt uploads.
+    const txtFile = new File([new Uint8Array(16)], "notes.txt", { type: "" });
+    Object.defineProperty(fileInput, "files", {
+      value: [txtFile],
+      writable: false,
+    });
+    fireEvent.change(fileInput);
+    await user.click(screen.getByRole("button", { name: "Upload document" }));
+    await waitFor(() => {
+      expect(screen.getByText(/Artifact.*uploaded/)).toBeTruthy();
+    });
+    // The empty MIME is resolved against the extension so the backend
+    // receives a type it actually accepts.
+    const uploadPost = fetchStub.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith(artifactsUrl) &&
+        (init as RequestInit).method === "POST",
+    );
+    expect(uploadPost).toBeTruthy();
+    const uploadBody = JSON.parse(
+      String((uploadPost as unknown as [string, RequestInit])[1].body),
+    );
+    expect(uploadBody.content_type).toBe("text/plain");
+    expect(uploadBody.source_version).toBe("1.0");
+    expect(uploadBody.content_base64.length).toBeGreaterThan(0);
+  });
+
+  it("rejects unsupported and oversized files without uploading", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    await waitFor(() => {
+      expect(screen.getByText("Upload original regulatory document")).toBeTruthy();
+    });
+    const fileInput = screen.getByLabelText("Choose file") as HTMLInputElement;
+    // A file type the backend does not accept is refused at selection.
+    const pngFile = new File([new Uint8Array(8)], "scan.png", { type: "image/png" });
+    Object.defineProperty(fileInput, "files", {
+      value: [pngFile],
+      configurable: true,
+    });
+    fireEvent.change(fileInput);
+    expect(
+      await screen.findByText(/not a supported artifact format/),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Upload document" })).toHaveAttribute("disabled");
+    // An oversized supported file is refused as well.
+    const oversizedFile = new File(
+      [new Uint8Array(10 * 1024 * 1024 + 1)],
+      "big.pdf",
+      { type: "application/pdf" },
+    );
+    Object.defineProperty(fileInput, "files", {
+      value: [oversizedFile],
+      configurable: true,
+    });
+    fireEvent.change(fileInput);
+    expect(
+      await screen.findByText(/over the 10 MB limit/),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Upload document" })).toHaveAttribute("disabled");
+    // Neither rejection ever reached the backend.
+    expect(
+      fetchStub.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith(`/regulatory/sources/${SOURCE.id}/artifacts`) &&
+          (init as RequestInit).method === "POST",
+      ).length,
+    ).toBe(0);
+  });
 });

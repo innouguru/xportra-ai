@@ -218,6 +218,22 @@ export function getRegulatorySource(
   return apiFetch(`/regulatory/sources/${encodeURIComponent(sourceId)}`, credentials);
 }
 
+export function uploadRegulatoryArtifact(
+  credentials: AuthCredentials,
+  sourceId: string,
+  payload: {
+    content_base64: string;
+    content_type: string;
+    source_version?: string | null;
+  },
+): Promise<RegulatoryArtifact> {
+  return apiFetch(
+    `/regulatory/sources/${encodeURIComponent(sourceId)}/artifacts`,
+    credentials,
+    { method: "POST", body: payload },
+  );
+}
+
 export function listSourceArtifacts(
   credentials: AuthCredentials,
   sourceId: string,
