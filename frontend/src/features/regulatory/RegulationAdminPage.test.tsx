@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
 import { RegulationAdminPage } from "./RegulationAdminPage";
+import * as regulatoryApi from "../../api/regulatory";
 
 afterEach(() => {
   vi.unstubAllGlobals();
   sessionStorage.clear();
+  vi.restoreAllMocks();
 });
 
 function deferred<T>() {
@@ -104,6 +106,26 @@ const NEW_SOURCE = {
   updated_at: "2026-01-05T00:00:00Z",
 };
 
+const AUTHORITY_A = {
+  id: "99999999-9999-9999-9999-999999999999",
+  name: "National Agency for Food and Drug Administration and Control",
+  jurisdiction: "NG",
+  authority_type: "government",
+  status: "active",
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
+const AUTHORITY_B = {
+  id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  name: "Nigeria Customs Service",
+  jurisdiction: "NG",
+  authority_type: "government",
+  status: "active",
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-01T00:00:00Z",
+};
+
 /**
  * Route fetch stubs by suffix so every page section receives a
  * deterministic payload. Unmatched URLs fail loudly via 500, keeping
@@ -114,7 +136,6 @@ function stubRegulatoryBackend(options: {
   listBody?: unknown;
 }) {
   return vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
-    void init;
     const url = typeof input === "string" ? input : input.url;
     const respond = (body: unknown, status = 200) =>
       new Response(JSON.stringify(body), {
@@ -122,6 +143,9 @@ function stubRegulatoryBackend(options: {
         headers: { "Content-Type": "application/json" },
       });
 
+    if (url.endsWith("/regulatory/authorities")) {
+      return respond([AUTHORITY_A, AUTHORITY_B], 200);
+    }
     if (url.endsWith("/regulatory/sources")) {
       if ((init as RequestInit | undefined)?.method === "POST") {
         return respond(NEW_SOURCE, 201);
@@ -378,9 +402,27 @@ describe("RegulationAdminPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
     });
-    expect(screen.getByLabelText("Authority ID (required)")).toBeTruthy();
+    expect(screen.getByLabelText("Regulatory authority (required)")).toBeTruthy();
     expect(screen.getByLabelText("Jurisdiction (required)")).toBeTruthy();
     expect(screen.getByLabelText("Title (required)")).toBeTruthy();
+  });
+
+  it("displays authority options by name, not UUID", async () => {
+    vi.stubGlobal("fetch", stubRegulatoryBackend({}));
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    // Authority options load from the backend
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "National Agency for Food and Drug Administration and Control (NG)" })).toBeTruthy();
+    });
+    expect(screen.getByRole("option", { name: "Nigeria Customs Service (NG)" })).toBeTruthy();
   });
 
   it("prevents invalid submission when required fields are empty", async () => {
@@ -395,9 +437,9 @@ describe("RegulationAdminPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
     });
-    await user.click(screen.getByRole("button", { name: "Register source" }));
+    fireEvent.submit(document.querySelector("form.form") as HTMLFormElement);
     expect(
-      await screen.findByText("Title is required."),
+      await screen.findByRole("alert"),
     ).toBeTruthy();
     // No POST call was made.
     expect(
@@ -409,9 +451,13 @@ describe("RegulationAdminPage", () => {
     ).toBe(0);
   });
 
-  it("submits a valid registration with the expected payload", async () => {
+  it("submits a valid registration with the selected authority ID", async () => {
     const fetchStub = stubRegulatoryBackend({});
     vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+      AUTHORITY_B,
+    ]);
     const user = userEvent.setup();
     renderAdmin();
     await waitFor(() => {
@@ -421,8 +467,18 @@ describe("RegulationAdminPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
     });
-    await user.click(screen.getByLabelText("Authority ID (required)"));
-    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    // Select an authority from the dropdown
+    await waitFor(() => {
+      expect(
+        document.getElementById("register-source-authority-id"),
+      ).toBeTruthy();
+    });
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: "99999999-9999-9999-9999-999999999999" },
+    });
     await user.click(screen.getByLabelText("Jurisdiction (required)"));
     await user.keyboard("{selectAll}NG");
     await user.click(screen.getByLabelText("Title (required)"));
@@ -447,7 +503,7 @@ describe("RegulationAdminPage", () => {
       String((postCall as unknown as [string, RequestInit])[1].body),
     );
     expect(body).toEqual({
-      authority_id: "00000000-0000-0000-0000-000000000001",
+      authority_id: "99999999-9999-9999-9999-999999999999",
       jurisdiction: "NG",
       status: "draft",
       title: "Test Source",
@@ -468,6 +524,10 @@ describe("RegulationAdminPage", () => {
       return (fetchStub as (i: string | Request, r?: RequestInit) => Promise<Response>)(input, init);
     });
     vi.stubGlobal("fetch", stub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+      AUTHORITY_B,
+    ]);
     const user = userEvent.setup();
     renderAdmin();
     await waitFor(() => {
@@ -477,8 +537,17 @@ describe("RegulationAdminPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
     });
-    await user.click(screen.getByLabelText("Authority ID (required)"));
-    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    await waitFor(() => {
+      expect(
+        document.getElementById("register-source-authority-id"),
+      ).toBeTruthy();
+    });
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: "99999999-9999-9999-9999-999999999999" },
+    });
     await user.click(screen.getByLabelText("Jurisdiction (required)"));
     await user.keyboard("{selectAll}NG");
     await user.click(screen.getByLabelText("Title (required)"));
@@ -523,9 +592,16 @@ describe("RegulationAdminPage", () => {
           { status: 422 },
         );
       }
-      return new Response(JSON.stringify({ items: [SOURCE], total: 1 }), { status: 200 });
+      if (url.endsWith("/regulatory/sources")) {
+        return new Response(JSON.stringify({ items: [SOURCE], total: 1 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: { code: "unexpected_error", message: "unrouted" } }), { status: 500 });
     });
     vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+      AUTHORITY_B,
+    ]);
     const user = userEvent.setup();
     renderAdmin();
     await waitFor(() => {
@@ -535,12 +611,21 @@ describe("RegulationAdminPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
     });
-    await user.click(screen.getByLabelText("Title (required)"));
-    await user.keyboard("{selectAll}Bad Status Source");
-    await user.click(screen.getByLabelText("Authority ID (required)"));
-    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    await waitFor(() => {
+      expect(
+        document.getElementById("register-source-authority-id"),
+      ).toBeTruthy();
+    });
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: "99999999-9999-9999-9999-999999999999" },
+    });
     await user.click(screen.getByLabelText("Jurisdiction (required)"));
     await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Bad Status Source");
     await user.click(screen.getByRole("button", { name: "Register source" }));
     await waitFor(() => {
       expect(
@@ -569,6 +654,10 @@ describe("RegulationAdminPage", () => {
       return new Response(JSON.stringify({ error: { code: "unexpected_error", message: "unrouted" } }), { status: 500 });
     });
     vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+      AUTHORITY_B,
+    ]);
     const user = userEvent.setup();
     renderAdmin();
     await waitFor(() => {
@@ -578,12 +667,21 @@ describe("RegulationAdminPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
     });
-    await user.click(screen.getByLabelText("Title (required)"));
-    await user.keyboard("{selectAll}Unauthorized Source");
-    await user.click(screen.getByLabelText("Authority ID (required)"));
-    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    await waitFor(() => {
+      expect(
+        document.getElementById("register-source-authority-id"),
+      ).toBeTruthy();
+    });
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: "99999999-9999-9999-9999-999999999999" },
+    });
     await user.click(screen.getByLabelText("Jurisdiction (required)"));
     await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Unauthorized Source");
     await user.click(screen.getByRole("button", { name: "Register source" }));
     await waitFor(() => {
       expect(
@@ -596,6 +694,9 @@ describe("RegulationAdminPage", () => {
     let getSourcesCalls = 0;
     const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
       const url = typeof input === "string" ? input : input.url;
+      if (url.endsWith("/regulatory/authorities")) {
+        return new Response(JSON.stringify([AUTHORITY_A, AUTHORITY_B]), { status: 200 });
+      }
       if (
         String(url).endsWith("/regulatory/sources") &&
         (init as RequestInit | undefined)?.method === "POST"
@@ -615,6 +716,10 @@ describe("RegulationAdminPage", () => {
       return new Response(JSON.stringify({ error: { code: "unexpected_error", message: "unrouted" } }), { status: 500 });
     });
     vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+      AUTHORITY_B,
+    ]);
     const user = userEvent.setup();
     renderAdmin();
     await waitFor(() => {
@@ -624,8 +729,17 @@ describe("RegulationAdminPage", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
     });
-    await user.click(screen.getByLabelText("Authority ID (required)"));
-    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    await waitFor(() => {
+      expect(
+        document.getElementById("register-source-authority-id"),
+      ).toBeTruthy();
+    });
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: "99999999-9999-9999-9999-999999999999" },
+    });
     await user.click(screen.getByLabelText("Jurisdiction (required)"));
     await user.keyboard("{selectAll}NG");
     await user.click(screen.getByLabelText("Title (required)"));
@@ -637,4 +751,206 @@ describe("RegulationAdminPage", () => {
     // The optimistic addition should be visible even though the refresh failed.
     expect(screen.getByText(NEW_SOURCE.title)).toBeTruthy();
   });
+
+  it("shows an error when authority retrieval fails", async () => {
+    const fetchStub = vi.fn(async (input: string | Request): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.endsWith("/regulatory/authorities")) {
+        return new Response(
+          JSON.stringify({ error: { code: "server_error", message: "down" } }),
+          { status: 500 },
+        );
+      }
+      if (url.endsWith("/regulatory/sources")) {
+        return new Response(JSON.stringify({ items: [SOURCE], total: 1 }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({ error: { code: "unexpected_error", message: "unrouted" } }),
+        { status: 500 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    // Authority error is surfaced instead of options
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeTruthy();
+    });
+  });
+
+  it("shows a helpful message when no authorities are registered", async () => {
+    const fetchStub = vi.fn(async (input: string | Request): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.endsWith("/regulatory/authorities")) {
+        return new Response(JSON.stringify([]), { status: 200 });
+      }
+      if (url.endsWith("/regulatory/sources")) {
+        return new Response(JSON.stringify({ items: [SOURCE], total: 1 }), { status: 200 });
+      }
+      return new Response(
+        JSON.stringify({ error: { code: "unexpected_error", message: "unrouted" } }),
+        { status: 500 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    // Helpful message about registering an authority first
+    expect(
+      await screen.findByText(/No regulatory authorities are registered/),
+    ).toBeTruthy();
+  });
+
+  it("rejects submission when authority ID is empty", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+      AUTHORITY_B,
+    ]);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await user.keyboard("{Tab}"); // keep empty authority
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Empty Auth Source");
+    fireEvent.submit(document.querySelector("form.form") as HTMLFormElement);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(
+      fetchStub.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/regulatory/sources") &&
+          (init as RequestInit | undefined)?.method === "POST",
+      ).length,
+    ).toBe(0);
+  });
+
+  it("rejects submission when authority ID is stale or invalid", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+    ]);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    // Inject a stale authority ID manually
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: "stale-unknown-id-0000-0000-0000-000000000000" },
+    });
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Stale Auth Source");
+    fireEvent.submit(document.querySelector("form.form") as HTMLFormElement);
+    expect(
+      await screen.findByRole("alert"),
+    ).toBeTruthy();
+    expect(
+      fetchStub.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/regulatory/sources") &&
+          (init as RequestInit | undefined)?.method === "POST",
+      ).length,
+    ).toBe(0);
+  });
+
+  it("submits with a valid authority from the loaded list and sends the correct UUID", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+    ]);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(
+        document.getElementById("register-source-authority-id"),
+      ).toBeTruthy();
+    });
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: AUTHORITY_A.id },
+    });
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Valid Auth Source");
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(
+        fetchStub.mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith("/regulatory/sources") &&
+            (init as RequestInit).method === "POST",
+        ),
+      ).toBe(true);
+    });
+    const postCall = fetchStub.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith("/regulatory/sources") &&
+        (init as RequestInit).method === "POST",
+    );
+    expect(postCall).toBeTruthy();
+    const body = JSON.parse(
+      String((postCall as unknown as [string, RequestInit])[1].body),
+    );
+    expect(body.authority_id).toBe(AUTHORITY_A.id);
+  });
+
+  it("disables register button when authority is not selected", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+    ]);
+    renderAdmin();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    const submitBtn = screen.getByRole("button", { name: "Register source" });
+    expect(submitBtn).toHaveAttribute("disabled");
+  });
+
 });
