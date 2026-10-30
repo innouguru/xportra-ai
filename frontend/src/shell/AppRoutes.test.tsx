@@ -239,7 +239,7 @@ describe("authenticated routes", () => {
 
   it("redirects the unqualified legacy workspace route to the canonical shipment", async () => {
     sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
-    renderAt("/workspace", { token: "test-token" });
+    renderAt("/workspace", { token: "test-token" }, EXPORTER_ME);
     expect(await screen.findByRole("heading", { name: "Shipment workspace" })).toBeInTheDocument();
     expect(screen.getByLabelText("Current route")).toHaveTextContent(
       `/shipments/${STALE_RECORD.case_id}`,
@@ -258,8 +258,10 @@ describe("authenticated routes", () => {
 
   it("ends the session on sign-out and clears session-scoped workspace state", async () => {
     sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));
-    renderAt("/workspace", { token: "test-token" });
-    expect(screen.getByRole("navigation", { name: "Primary" })).toHaveTextContent("View Shipments");
+    renderAt("/workspace", { token: "test-token" }, EXPORTER_ME);
+    await waitFor(() =>
+      expect(screen.getByRole("navigation", { name: "Primary" })).toHaveTextContent("View Shipments"),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Account" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Sign out" }));
     // Returned to the public sign-in surface, no workspace navigation.

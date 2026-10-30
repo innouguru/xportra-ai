@@ -37,6 +37,16 @@ const STAFF_IDENTITY: Identity = {
   staff_permissions: ["grant_manage"],
 };
 
+const STAFF_ONLY_IDENTITY: Identity = {
+  ...DEFAULT_IDENTITY,
+  display_name: "Sam Regulator",
+  email: "sam@example.test",
+  organization_id: null,
+  organization_name: null,
+  role: null,
+  staff_permissions: ["grant_manage"],
+};
+
 function stubFetchIdentity(identity: Identity) {
   vi.stubGlobal(
     "fetch",
@@ -117,8 +127,16 @@ describe("authenticated shell navigation", () => {
   it("shows Dashboard, View Shipments, and Regulatory Ingestion to authorized staff", async () => {
     renderShell("/dashboard", "test-token", STAFF_IDENTITY);
     const primary = screen.getByRole("navigation", { name: "Primary" });
-    expect(within(primary).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
-    expect(within(primary).getByRole("link", { name: "View Shipments" })).toHaveAttribute("href", "/shipments");
+    await waitFor(() =>
+      expect(
+        within(primary).getByRole("link", { name: "Dashboard" }),
+      ).toHaveAttribute("href", "/dashboard"),
+    );
+    await waitFor(() =>
+      expect(
+        within(primary).getByRole("link", { name: "View Shipments" }),
+      ).toHaveAttribute("href", "/shipments"),
+    );
     await waitFor(() =>
       expect(
         within(primary).getByRole("link", { name: "Regulatory Ingestion" }),
@@ -128,24 +146,47 @@ describe("authenticated shell navigation", () => {
     expect(links).toHaveLength(3);
   });
 
-  it("hides Regulatory Ingestion from an ordinary authenticated exporter", () => {
+  it("shows only Regulatory Ingestion to dedicated staff without organization membership", async () => {
+    renderShell("/dashboard", "test-token", STAFF_ONLY_IDENTITY);
+    const primary = screen.getByRole("navigation", { name: "Primary" });
+    // Organization-owned destinations are hidden for a staff-only account.
+    expect(within(primary).queryByRole("link", { name: "Dashboard" })).toBeNull();
+    expect(within(primary).queryByRole("link", { name: "View Shipments" })).toBeNull();
+    await waitFor(() =>
+      expect(
+        within(primary).getByRole("link", { name: "Regulatory Ingestion" }),
+      ).toHaveAttribute("href", "/regulatory-ingestion"),
+    );
+    const links = within(primary).getAllByRole("link");
+    expect(links).toHaveLength(1);
+  });
+
+  it("hides Regulatory Ingestion from an ordinary authenticated exporter", async () => {
     renderShell(); // DEFAULT_IDENTITY has staff_permissions: []
     const primary = screen.getByRole("navigation", { name: "Primary" });
-    expect(within(primary).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
-    expect(within(primary).getByRole("link", { name: "View Shipments" })).toHaveAttribute("href", "/shipments");
+    await waitFor(() =>
+      expect(
+        within(primary).getByRole("link", { name: "Dashboard" }),
+      ).toHaveAttribute("href", "/dashboard"),
+    );
+    await waitFor(() =>
+      expect(
+        within(primary).getByRole("link", { name: "View Shipments" }),
+      ).toHaveAttribute("href", "/shipments"),
+    );
     expect(within(primary).queryByRole("link", { name: "Regulatory Ingestion" })).toBeNull();
     const links = within(primary).getAllByRole("link");
     expect(links).toHaveLength(2);
   });
 
-  it("hides Regulatory Ingestion while authorization state is unknown or unavailable", () => {
+  it("hides organization navigation and Regulatory Ingestion while authorization state is unknown or unavailable", () => {
     // Fetch never resolves: identity stays in a non-ready state, so the
-    // shell fails closed and does not reveal the staff entry point.
+    // shell fails closed and reveals neither org navigation nor staff entry.
     stubFetchReject();
     renderShell("/dashboard", "test-token", null);
     const primary = screen.getByRole("navigation", { name: "Primary" });
-    expect(within(primary).getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/dashboard");
-    expect(within(primary).getByRole("link", { name: "View Shipments" })).toHaveAttribute("href", "/shipments");
+    expect(within(primary).queryByRole("link", { name: "Dashboard" })).toBeNull();
+    expect(within(primary).queryByRole("link", { name: "View Shipments" })).toBeNull();
     expect(within(primary).queryByRole("link", { name: "Regulatory Ingestion" })).toBeNull();
   });
 
@@ -156,9 +197,11 @@ describe("authenticated shell navigation", () => {
     }
   });
 
-  it("communicates the active destination with aria-current", () => {
+  it("communicates the active destination with aria-current", async () => {
     renderShell("/shipments");
-    expect(screen.getByRole("link", { name: "View Shipments" })).toHaveAttribute("aria-current", "page");
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "View Shipments" })).toHaveAttribute("aria-current", "page"),
+    );
     expect(screen.getByRole("link", { name: "Dashboard" })).not.toHaveAttribute("aria-current");
   });
 
@@ -170,7 +213,7 @@ describe("authenticated shell navigation", () => {
 });
 
 describe("sidebar collapse", () => {
-  it("collapses and expands with accessible labels intact", () => {
+  it("collapses and expands with accessible labels intact", async () => {
     renderShell();
     const sidebar = screen.getByRole("complementary", { name: "Application" });
     expect(sidebar.className).not.toMatch(/xb-sidebar--collapsed/);
@@ -180,8 +223,12 @@ describe("sidebar collapse", () => {
     fireEvent.click(toggle);
 
     expect(sidebar.className).toMatch(/xb-sidebar--collapsed/);
-    expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View Shipments" })).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "Dashboard" })).toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "View Shipments" })).toBeInTheDocument(),
+    );
     expect(window.localStorage.getItem("xportra.shell.sidebar.v1")).toBe("collapsed");
 
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
@@ -389,9 +436,12 @@ describe("mobile drawer", () => {
     expect(document.activeElement).toBe(close);
   });
 
-  it("closes when a destination is chosen", () => {
+  it("closes when a destination is chosen", async () => {
     openDrawer();
     const dialog = screen.getByRole("dialog", { name: "Application navigation" });
+    await waitFor(() =>
+      expect(within(dialog).getByRole("link", { name: "Dashboard" })).toBeInTheDocument(),
+    );
     fireEvent.click(within(dialog).getByRole("link", { name: "Dashboard" }));
     expect(screen.queryByRole("dialog", { name: "Application navigation" })).toBeNull();
   });

@@ -324,8 +324,10 @@ function SidebarBody({
 }) {
   const { identity, status } = useIdentity();
   const organization = identity?.organization_name ?? null;
+  const hasOrganization = identity?.organization_id != null;
   const staff = hasStaffAccess(identity, status);
-  const navItems = staff ? [...NAV_ITEMS, STAFF_NAV_ITEM] : [...NAV_ITEMS];
+  const orgNavItems = hasOrganization ? NAV_ITEMS : [];
+  const navItems = staff ? [...orgNavItems, STAFF_NAV_ITEM] : [...orgNavItems];
   return (
     <>
       <div className="xb-sidebar__brand">
