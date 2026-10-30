@@ -7,6 +7,7 @@
  * supersession, freshness, publication, or exporter applicability.
  *
  * Covered routes (all require global staff grants server-side):
+ * - POST  /regulatory/sources                       (GRANT_MANAGE)
  * - GET  /regulatory/sources                       (GRANT_MANAGE)
  * - GET  /regulatory/sources/{id}                  (GRANT_MANAGE)
  * - GET  /regulatory/sources/{id}/artifacts        (GRANT_MANAGE)
@@ -41,6 +42,27 @@ export interface RegulatorySource {
   created_at: string;
   updated_at: string;
 }
+
+/** Payload for registering a new regulatory source. */
+export interface RegulatorySourceCreateRequest {
+  authority_id: string;
+  jurisdiction: string;
+  title: string;
+  version?: string | null;
+  status?: string;
+  effective_date?: string | null;
+  publication_date?: string | null;
+  source_url?: string | null;
+}
+
+/** Valid source statuses recognized by the backend. */
+export const REGULATORY_SOURCE_STATUSES = [
+  "draft",
+  "active",
+  "superseded",
+  "withdrawn",
+  "archived",
+] as const;
 
 export interface RegulatoryArtifact {
   id: string;
@@ -161,6 +183,16 @@ export function listRegulatorySources(
   credentials: AuthCredentials,
 ): Promise<{ items: RegulatorySource[]; total: number }> {
   return apiFetch("/regulatory/sources", credentials);
+}
+
+export function registerRegulatorySource(
+  credentials: AuthCredentials,
+  payload: RegulatorySourceCreateRequest,
+): Promise<RegulatorySource> {
+  return apiFetch("/regulatory/sources", credentials, {
+    method: "POST",
+    body: payload,
+  });
 }
 
 export function getRegulatorySource(

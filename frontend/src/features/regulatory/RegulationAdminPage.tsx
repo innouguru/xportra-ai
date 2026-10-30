@@ -2,6 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { userFacingErrorMessage } from "../../api/client";
 import type { AuthCredentials } from "../../api/client";
 import {
+  registerRegulatorySource,
+  type RegulatorySourceCreateRequest,
+  REGULATORY_SOURCE_STATUSES,
   getRegulatoryCandidate,
   getCandidateStageA,
   getCandidateStageB,
@@ -75,6 +78,10 @@ export function RegulationAdminPage() {
   const [listError, setListError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
+  const [registerOpen, setRegisterOpen] = useState(false);
+  const [registerPending, setRegisterPending] = useState(false);
+  const [registerError, setRegisterError] = useState<string | null>(null);
+  const [registerSuccess, setRegisterSuccess] = useState<string | null>(null);
 
   const loadSources = useCallback(async () => {
     setLoading(true);
@@ -88,6 +95,38 @@ export function RegulationAdminPage() {
       setLoading(false);
     }
   }, [auth]);
+
+  const registerSource = useCallback(
+    async (payload: RegulatorySourceCreateRequest) => {
+      setRegisterError(null);
+      setRegisterSuccess(null);
+      setRegisterPending(true);
+      try {
+        const source = await registerRegulatorySource(
+          auth as AuthCredentials,
+          payload,
+        );
+        setRegisterSuccess(`Source “${source.title}” registered.`);
+        // Optimistically add the new source so it appears immediately.
+        setSources((prev) =>
+          prev === null ? [source] : [...prev, source],
+        );
+        // Refresh to converge with the server. If the refresh fails, the
+        // registration success message is retained — we do not falsely
+        // report registration failure.
+        try {
+          await loadSources();
+        } catch {
+          // Refresh failure is not registration failure.
+        }
+      } catch (caught) {
+        setRegisterError(userFacingErrorMessage(caught));
+      } finally {
+        setRegisterPending(false);
+      }
+    },
+    [auth, loadSources],
+  );
 
   useEffect(() => {
     void loadSources();
@@ -104,7 +143,27 @@ export function RegulationAdminPage() {
           authority. Nothing on this page publishes a requirement or marks it
           exporter-applicable.
         </p>
+        <button
+          type="button"
+          className="primary-button"
+          onClick={() => setRegisterOpen((open) => !open)}
+          disabled={registerPending}
+        >
+          {registerOpen ? "Hide registration form" : "Register source"}
+        </button>
       </header>
+
+      {registerSuccess ? (
+        <p className="success-message" role="status">
+          {registerSuccess}
+        </p>
+      ) : null}
+      {registerError ? (
+        <p role="alert" className="ledger-reason">{registerError}</p>
+      ) : null}
+      {registerOpen ? (
+        <RegisterSourceForm onRegister={registerSource} />
+      ) : null}
 
       {loading ? <LoadingState text="Loading regulatory sources…" /> : null}
       {listError ? (
@@ -804,4 +863,177 @@ export function CandidateReview({
 /** Small marker used so tests can assert history sections exist. */
 function CollapsibleList({ title, entries }: { title: string; entries: number }) {
   return <p className="eyebrow">{`${title} (${entries} recorded)`}</p>;
+}
+
+function RegisterSourceForm({
+  onRegister,
+}: {
+  onRegister: (payload: RegulatorySourceCreateRequest) => void;
+}) {
+  type SourceStatus = (typeof REGULATORY_SOURCE_STATUSES)[number];
+
+  const [authorityId, setAuthorityId] = useState("");
+  const [jurisdiction, setJurisdiction] = useState("");
+  const [title, setTitle] = useState("");
+  const [version, setVersion] = useState("");
+  const [status, setStatus] = useState<SourceStatus>("draft");
+  const [effectiveDate, setEffectiveDate] = useState("");
+  const [publicationDate, setPublicationDate] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+
+    if (!title.trim()) {
+      setError("Title is required.");
+      return;
+    }
+    if (!jurisdiction.trim()) {
+      setError("Jurisdiction is required.");
+      return;
+    }
+    if (!authorityId.trim()) {
+      setError("Authority ID is required.");
+      return;
+    }
+
+    setPending(true);
+    try {
+      await onRegister({
+        authority_id: authorityId.trim(),
+        jurisdiction: jurisdiction.trim(),
+        title: title.trim(),
+        version: version.trim() || undefined,
+        status,
+        effective_date: effectiveDate || undefined,
+        publication_date: publicationDate || undefined,
+        source_url: sourceUrl.trim() || undefined,
+      });
+      setAuthorityId("");
+      setJurisdiction("");
+      setTitle("");
+      setVersion("");
+      setStatus("draft");
+      setEffectiveDate("");
+      setPublicationDate("");
+      setSourceUrl("");
+    } catch (caught) {
+      setError(userFacingErrorMessage(caught));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <section aria-label="Register regulatory source">
+      <h2>Register regulatory source</h2>
+      <form className="form" onSubmit={submit}>
+        <fieldset>
+          <div className="form-row">
+            <label htmlFor="register-source-authority-id">
+              Authority ID (required)
+            </label>
+            <input
+              id="register-source-authority-id"
+              type="text"
+              value={authorityId}
+              onChange={(event) => setAuthorityId(event.target.value)}
+              placeholder="e.g. 00000000-0000-0000-0000-000000000001"
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="register-source-jurisdiction">
+              Jurisdiction (required)
+            </label>
+            <input
+              id="register-source-jurisdiction"
+              type="text"
+              value={jurisdiction}
+              onChange={(event) => setJurisdiction(event.target.value)}
+              placeholder="e.g. NG"
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="register-source-title">Title (required)</label>
+            <input
+              id="register-source-title"
+              type="text"
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="e.g. Regulation (EU) 2019/1793"
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="register-source-version">Version</label>
+            <input
+              id="register-source-version"
+              type="text"
+              value={version}
+              maxLength={100}
+              onChange={(event) => setVersion(event.target.value)}
+              placeholder="e.g. 1.0"
+            />
+            <p className="hint">Maximum 100 characters.</p>
+          </div>
+          <div className="form-row">
+            <label htmlFor="register-source-status">Status</label>
+            <select
+              id="register-source-status"
+              value={status}
+              onChange={(event) =>
+                setStatus(event.target.value as SourceStatus)
+              }
+            >
+              {REGULATORY_SOURCE_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-row">
+            <label htmlFor="register-source-effective-date">Effective date</label>
+            <input
+              id="register-source-effective-date"
+              type="date"
+              value={effectiveDate}
+              onChange={(event) => setEffectiveDate(event.target.value)}
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="register-source-publication-date">
+              Publication date
+            </label>
+            <input
+              id="register-source-publication-date"
+              type="date"
+              value={publicationDate}
+              onChange={(event) => setPublicationDate(event.target.value)}
+            />
+          </div>
+          <div className="form-row">
+            <label htmlFor="register-source-source-url">Source URL</label>
+            <input
+              id="register-source-source-url"
+              type="url"
+              value={sourceUrl}
+              maxLength={2048}
+              onChange={(event) => setSourceUrl(event.target.value)}
+              placeholder="e.g. https://eur-lex.example/regulation"
+            />
+            <p className="hint">
+              Stored as metadata only; never fetched by the server.
+            </p>
+          </div>
+        </fieldset>
+        {error ? <p role="alert" className="ledger-reason">{error}</p> : null}
+        <button type="submit" className="primary-button" disabled={pending}>
+          {pending ? "Registering…" : "Register source"}
+        </button>
+      </form>
+    </section>
+  );
 }

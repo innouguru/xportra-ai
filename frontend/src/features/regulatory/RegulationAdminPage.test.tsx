@@ -10,6 +10,14 @@ afterEach(() => {
   sessionStorage.clear();
 });
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((onResolve) => {
+    resolve = onResolve;
+  });
+  return { promise, resolve };
+}
+
 const CREDENTIALS = {
   devTenantId: "22222222-2222-2222-2222-222222222222",
 };
@@ -79,6 +87,23 @@ const PENDING_FLAG = {
   updated_at: "2026-01-04T00:00:00Z",
 };
 
+const NEW_SOURCE = {
+  id: "88888888-8888-8888-8888-888888888888",
+  authority_id: "99999999-9999-9999-9999-999999999999",
+  jurisdiction: "NG",
+  title: "National Agency for Food and Drug Administration and Control Act",
+  version: "2023.1",
+  status: "draft",
+  effective_date: "2023-01-01",
+  publication_date: null,
+  source_url: "https://nafdac.gov.ng/act-2023",
+  retrieval_timestamp: null,
+  supersedes_source_id: null,
+  superseded_by_source_id: null,
+  created_at: "2026-01-05T00:00:00Z",
+  updated_at: "2026-01-05T00:00:00Z",
+};
+
 /**
  * Route fetch stubs by suffix so every page section receives a
  * deterministic payload. Unmatched URLs fail loudly via 500, keeping
@@ -98,6 +123,9 @@ function stubRegulatoryBackend(options: {
       });
 
     if (url.endsWith("/regulatory/sources")) {
+      if ((init as RequestInit | undefined)?.method === "POST") {
+        return respond(NEW_SOURCE, 201);
+      }
       const status = options.listStatus ?? 200;
       return respond(options.listBody ?? { items: [SOURCE], total: 1 }, status);
     }
@@ -336,5 +364,277 @@ describe("RegulationAdminPage", () => {
       String(url).endsWith("/stage-a") && (init as RequestInit).method === "POST",
     );
     expect(stageAPosts.length).toBe(0);
+  });
+
+  it("shows the Register source button and opens the registration form", async () => {
+    vi.stubGlobal("fetch", stubRegulatoryBackend({}));
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    expect(screen.getByRole("button", { name: "Register source" })).toBeTruthy();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    expect(screen.getByLabelText("Authority ID (required)")).toBeTruthy();
+    expect(screen.getByLabelText("Jurisdiction (required)")).toBeTruthy();
+    expect(screen.getByLabelText("Title (required)")).toBeTruthy();
+  });
+
+  it("prevents invalid submission when required fields are empty", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    expect(
+      await screen.findByText("Title is required."),
+    ).toBeTruthy();
+    // No POST call was made.
+    expect(
+      fetchStub.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/regulatory/sources") &&
+          (init as RequestInit).method === "POST",
+      ).length,
+    ).toBe(0);
+  });
+
+  it("submits a valid registration with the expected payload", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await user.click(screen.getByLabelText("Authority ID (required)"));
+    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Test Source");
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(
+        fetchStub.mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith("/regulatory/sources") &&
+            (init as RequestInit).method === "POST",
+        ),
+      ).toBe(true);
+    });
+    const postCall = fetchStub.mock.calls.find(
+      ([url, init]) =>
+        String(url).endsWith("/regulatory/sources") &&
+        (init as RequestInit).method === "POST",
+    );
+    expect(postCall).toBeTruthy();
+    const body = JSON.parse(
+      String((postCall as unknown as [string, RequestInit])[1].body),
+    );
+    expect(body).toEqual({
+      authority_id: "00000000-0000-0000-0000-000000000001",
+      jurisdiction: "NG",
+      status: "draft",
+      title: "Test Source",
+    });
+  });
+
+  it("prevents duplicate submissions while registration is pending", async () => {
+    const pendingPost = deferred<Response>();
+    const fetchStub = stubRegulatoryBackend({});
+    const stub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (
+        String(url).endsWith("/regulatory/sources") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      ) {
+        return pendingPost.promise;
+      }
+      return (fetchStub as (i: string | Request, r?: RequestInit) => Promise<Response>)(input, init);
+    });
+    vi.stubGlobal("fetch", stub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await user.click(screen.getByLabelText("Authority ID (required)"));
+    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Test Source");
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Registering…" })).toHaveAttribute("disabled");
+    });
+    // A second click while pending must not create a second POST.
+    await user.click(screen.getByRole("button", { name: "Registering…" }));
+    await waitFor(() => {
+      expect(
+        stub.mock.calls.filter(
+          ([url, init]) =>
+            String(url).endsWith("/regulatory/sources") &&
+            (init as RequestInit).method === "POST",
+        ).length,
+      ).toBe(1);
+    });
+    pendingPost.resolve(
+      new Response(JSON.stringify(NEW_SOURCE), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByText(`Source “${NEW_SOURCE.title}” registered.`)).toBeTruthy();
+    });
+  });
+
+  it("displays API validation errors appropriately", async () => {
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (
+        String(url).endsWith("/regulatory/sources") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            error: { code: "invalid_input", message: "invalid source status: bogus" },
+          }),
+          { status: 422 },
+        );
+      }
+      return new Response(JSON.stringify({ items: [SOURCE], total: 1 }), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Bad Status Source");
+    await user.click(screen.getByLabelText("Authority ID (required)"));
+    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText("invalid source status: bogus"),
+      ).toBeTruthy();
+    });
+  });
+
+  it("handles authorization failure for registration", async () => {
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (
+        String(url).endsWith("/regulatory/sources") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            error: { code: "permission_denied", message: "Permission denied." },
+          }),
+          { status: 403 },
+        );
+      }
+      if (url.endsWith("/regulatory/sources")) {
+        return new Response(JSON.stringify({ items: [SOURCE], total: 1 }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: { code: "unexpected_error", message: "unrouted" } }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Unauthorized Source");
+    await user.click(screen.getByLabelText("Authority ID (required)"));
+    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText("Your role does not allow this action. Contact a workspace owner."),
+      ).toBeTruthy();
+    });
+  });
+
+  it("reports registration success even if the list refresh fails", async () => {
+    let getSourcesCalls = 0;
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (
+        String(url).endsWith("/regulatory/sources") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      ) {
+        return new Response(JSON.stringify(NEW_SOURCE), { status: 201 });
+      }
+      if (url.endsWith("/regulatory/sources")) {
+        getSourcesCalls++;
+        if (getSourcesCalls === 1) {
+          return new Response(JSON.stringify({ items: [SOURCE], total: 1 }), { status: 200 });
+        }
+        return new Response(
+          JSON.stringify({ error: { code: "server_error", message: "down" } }),
+          { status: 500 },
+        );
+      }
+      return new Response(JSON.stringify({ error: { code: "unexpected_error", message: "unrouted" } }), { status: 500 });
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await user.click(screen.getByLabelText("Authority ID (required)"));
+    await user.keyboard("{selectAll}00000000-0000-0000-0000-000000000001");
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Refresh-Fail Source");
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByText(`Source “${NEW_SOURCE.title}” registered.`)).toBeTruthy();
+    });
+    // The optimistic addition should be visible even though the refresh failed.
+    expect(screen.getByText(NEW_SOURCE.title)).toBeTruthy();
   });
 });
