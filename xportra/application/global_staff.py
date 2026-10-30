@@ -75,6 +75,20 @@ class GlobalStaffGrantService:
         self._require_valid_permission(permission)
         return self._grants.get(user_id, permission)
 
+    def active_permissions(self, user_id: UUID) -> list[str]:
+        """Return the active global staff permission names held by the user.
+
+        Read-only convenience for the ``GET /me`` identity endpoint: the
+        shell uses it to decide whether to surface staff navigation.
+        Unknown permission names present in the store are filtered out so
+        the response only ever carries recognized staff permissions.
+        """
+        return [
+            row["permission"]
+            for row in self._grants.list_active_for_user(user_id)
+            if row["permission"] in _GLOBAL_STAFF_PERMISSIONS
+        ]
+
     # ---------------------------------------------------------------- mutations
 
     def grant(

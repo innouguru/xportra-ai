@@ -1,18 +1,22 @@
 """Current-account identity read for the authenticated shell.
 
-``GET /me`` returns the authenticated person's display name, email, and
-the organization they are working under, resolved server-side from the
-verified Supabase session and the user's active tenant membership.
+``GET /me`` returns the authenticated person's display name, email, the
+organization they are working under, and the active global staff
+permissions resolved server-side from the verified Supabase session,
+the user's active tenant membership, and the grant store.
 
 Every request is authenticated. The current user is resolved exclusively
 from the trusted JWT subject (``users.supabase_uid`` -> ``users.id``);
 the request never accepts a user id or tenant id as proof of access.
 Tenant isolation is enforced because only memberships belonging to the
 authenticated user are ever returned, and no arbitrary organization is
-selected when the user holds multiple active memberships.
+selected when the user holds multiple active memberships. Global staff
+permissions are never implied by authentication or tenant membership
+and are read only from the grant store.
 """
 
 from typing import Annotated
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Header
@@ -25,6 +29,9 @@ from xportra.persistence.repositories import (
     UserRepository,
     UserTenantMembershipRepository,
 )
+from xportra.application.global_staff import GlobalStaffGrantService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["identity"])
 
@@ -114,6 +121,21 @@ def current_identity(
             organization_name = selected.get("tenant_legal_name")
             role = selected.get("role")
 
+    # Global staff permissions are read server-side from the grant store;
+    # never derived from authentication, organization membership, or
+    # contact details. Fail closed on any grant-store problem: staff
+    # navigation stays hidden when the caller's grants cannot be read,
+    # while the rest of the identity response still renders the shell.
+    staff_permissions: list[str] = []
+    if user.get("status") == "active":
+        try:
+            staff_permissions = GlobalStaffGrantService(database).active_permissions(user["id"])
+        except Exception:  # noqa: BLE001 - visibility must fail closed
+            logger.warning(
+                "Staff permission lookup failed for user %s; failing closed",
+                user["id"],
+            )
+
     return IdentityResponse(
         user_id=user["id"],
         display_name=user.get("display_name") or "",
@@ -121,4 +143,5 @@ def current_identity(
         organization_id=organization_id,
         organization_name=organization_name,
         role=role,
+        staff_permissions=staff_permissions,
     )

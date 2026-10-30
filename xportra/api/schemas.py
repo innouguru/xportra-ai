@@ -709,6 +709,12 @@ class IdentityResponse(BaseModel):
     organization_id: UUID | None = None
     organization_name: str | None = None
     role: str | None = None
+    #: Active global staff permission names held by the caller, resolved
+    #: server-side from the grant store. Empty by default so the response
+    #: fails closed: the frontend may surface staff navigation only when
+    #: a recognized permission is present here. Tenant roles never imply
+    #: global staff permissions.
+    staff_permissions: list[str] = []
 
 
 #: Regulatory source intake schemas (Phase 4D.10 Task 3).
@@ -1186,6 +1192,62 @@ class RegulatoryStageBReviewHistoryResponse(BaseModel):
 
 class RegulatoryStageBReviewHistoryListResponse(BaseModel):
     items: list[RegulatoryStageBReviewHistoryResponse]
+    limit: int
+    offset: int
+    total: int
+
+
+#: Regulatory catalog schemas (exporter-facing, Phase 4D.10 Task 7).
+#: The catalog exposes only published requirements that have been
+#: evaluated as applicable to the requesting organization's scope.
+
+
+class CatalogSourceReference(BaseModel):
+    """Source metadata visible in the catalog (read-only, no internals)."""
+
+    source_id: UUID | None
+    source_title: str | None
+    source_jurisdiction: str | None
+    source_version: str | None
+    source_status: str | None
+
+
+class CatalogCitationReference(BaseModel):
+    """Citation metadata for traceability to the source document."""
+
+    normalized_document_id: UUID | None
+    source_location: dict[str, Any] | None
+    position: int | None
+    parser_version: str | None
+
+
+class CatalogApplicability(BaseModel):
+    """Applicability determination for the requested scope."""
+
+    outcome: str
+    reason: str | None
+    context_fingerprint: str | None
+
+
+class CatalogRequirementItem(BaseModel):
+    """One published, applicable requirement visible in the exporter catalog."""
+
+    requirement_id: UUID
+    requirement_text: str
+    requirement_type: str
+    stage_a_status: str
+    stage_b_status: str
+    stage_b_pilot_scope: str | None
+    published_at: datetime | None
+    source: CatalogSourceReference
+    citation: CatalogCitationReference
+    applicability: CatalogApplicability
+
+
+class CatalogRequirementsResponse(BaseModel):
+    """Paginated catalog response: published, applicable requirements."""
+
+    items: list[CatalogRequirementItem]
     limit: int
     offset: int
     total: int

@@ -2182,6 +2182,19 @@ class GlobalStaffGrantRepository:
             (user_id, permission),
         )
 
+    def list_active_for_user(self, user_id: UUID) -> list[Row]:
+        """Active grant rows for one user (current-state read path), used by
+        ``GET /me`` to expose which global staff permissions the caller holds."""
+        return _fetch_all(
+            self._database,
+            """
+            SELECT permission FROM xportra.global_staff_grants
+            WHERE user_id = %s AND status = 'active'
+            ORDER BY permission
+            """,
+            (user_id,),
+        )
+
     def list_for_user(self, user_id: UUID) -> list[Row]:
         return _fetch_all(
             self._database,
