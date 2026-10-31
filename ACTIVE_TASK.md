@@ -1,10 +1,21 @@
 # ACTIVE_TASK.md — Current Active Task
 
-**Active task:** Phase 4D — Regulatory Ingestion Execution Path — Milestone 2
-(worker-driven durable ingestion from pending job to candidate persistence).
+**Active task:** None.
 
-**Status:** Complete — committed as 12ddfc2 (fix: regulatory publication status
-transition and cross-tenant fail-closed).
+**Status:** Complete — Phase 4D regulatory administration milestones M1–M8
+(backend) finished 2026-10-31, committed as `aaa6b9a` (M3/M6 manual
+candidates through publication gates), `49629dc` (M4 bounded retries +
+staff retry control), `4749488` (M5 wording correction), `e137cd5` (M7
+source withdrawal), and `3131417` (M8 end-to-end PostgreSQL integration
+gate with ADR-0022 + migration 033 for artifact-optional registration
+jobs). Task record moved to
+`tasks/completed/phase-4d-regulatory-admin-backend-milestone-1.md`.
+No push was performed. Remaining deferred scope: frontend wiring for the
+retry button, wording-correction field, and withdrawal action (backend
+endpoints exist and are tested); exporter-facing catalog release workflow
+(`xportra/api/catalog.py` remains untracked, unverified, and NOT
+committed); production migrations 030–033 application at deployment time.
+
 
 **Authorization basis:** Explicitly assigned by user tasking. The existing
 bootstrap task (initial `grant_manage` provisioning under `XPA-GSA-INIT-001`)

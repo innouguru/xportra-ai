@@ -1,7 +1,84 @@
 # CURRENT_STATE.md — Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-10-29
+> Updated: 2026-10-31
+
+> **Phase 4D regulatory administration milestones M1–M8 are COMPLETE**
+> (backend, repository-only; no deployment, no production database access,
+> no pushes).
+>
+> Committed milestones (branch `main`, on top of `652d2b4`):
+> - `aaa6b9a` — M3/M6: manual recovery candidates (`extraction_outcome`
+>   `manual` with `manual_entry` + reviewer attribution) pass the same
+>   publication-eligibility, eligible-list, and provenance gates as
+>   extracted candidates; duplicate `"eligible"` key removed from the
+>   publish response; `document_version`→`source_version` fix.
+> - `49629dc` — M4: bounded ingestion retries (migration 031:
+>   `regulatory_ingestion_jobs.retry_count INTEGER NOT NULL DEFAULT 0`
+>   CHECK ≥ 0; `MAX_RETRY_ATTEMPTS = 5`, terminal `failed` beyond the
+>   bound), staff retry endpoint
+>   `POST /regulatory/ingestion-jobs/{job_id}/retry` (GRANT_MANAGE,
+>   creates the next attempt row for terminal jobs; prior attempts
+>   immutable), and the worker lease-recovery SQL corrected to pass its
+>   timeout as a bound parameter (`make_interval(secs => %s)`, replacing
+>   malformed string-spliced SQL).
+> - `4749488` — M5: Stage A wording correction (migration 032:
+>   append-only `xportra.regulatory_requirement_wording_corrections` with
+>   mutation-rejection triggers mirroring migration 024;
+>   `original_text`/`corrected_text`/rationale/reviewer retained
+>   verbatim). `verify_stage_a(..., corrected_requirement_text=...)`:
+>   correction only with a `verified` decision, non-empty text that
+>   differs from the candidate wording, refused on Stage-B-approved
+>   candidates (corrected wording requires fresh Stage B); correction and
+>   decision are atomic. `GET /regulatory/candidates/{id}/wording-corrections`
+>   returns the append-only history. ADR-0021 accepted (retry/wording/
+>   withdrawal).
+> - `e137cd5` — M7: source withdrawal
+>   `POST /regulatory/sources/{source_id}/withdrawal` (GRANT_MANAGE) —
+>   sets the source `withdrawn` atomically and raises pending
+>   `withdrawal` governance flags for every linked requirement; pending
+>   flags close Stage A and Stage B and publication eligibility refuses
+>   inactive sources. Duplicate withdrawal refused.
+> - `3131417` — M8: end-to-end PostgreSQL integration gate
+>   `tests/integration/test_regulatory_full_workflow_postgresql.py`
+>   against the isolated local `xportra_test` (only; skipped without
+>   `DATABASE_URL`): registration → inline text artifact → ingestion
+>   job → extraction → Stage A with wording correction → Stage B
+>   (different reviewer; same-person refused) → eligibility →
+>   publication, plus the manual recovery path to publication, plus the
+>   M7 withdrawal closure of every gate. 3/3 pass.
+>
+> Defect fixed (ADR-0022 + migrations 033): `register_source` created its
+> durable placeholder ingestion job with `artifact_id=None`, but
+> migration 018 declared `regulatory_ingestion_jobs.artifact_id NOT NULL`
+> — source registration was unreachable against any real database (unit
+> fakes masked it). Migration 033 makes `artifact_id` nullable (artifact
+> -bound job semantics unchanged); the job repository `create` now
+> accepts the legacy `status='pending'` keyword and rejects other values.
+> The local test database also lacked migration 030 (`published_at`); it
+> was applied to `xportra_test` locally. Note for production later:
+> migrations 030–033 must be applied in order when deployment is
+> authorized.
+>
+> Verification state for this work:
+> - Regulatory unit suites: 273 passed (focused -k "regulatory or
+>   stage_a or stage_b", excluding the corrupt untracked
+>   `tests/unit/test_regulatory_catalog.py` fragment).
+> - Migration 032 triggers verified live on `xportra_test`
+>   (UPDATE/DELETE on wording corrections rejected by the append-only
+>   triggers).
+> - E2E suite: 3/3 pass with
+>   `DATABASE_URL=postgresql://postgres@localhost:5432/xportra_test`.
+> - Unrelated preserved working-tree changes remain untouched and
+>   uncommitted (`tests/unit/test_global_staff.py`,
+>   `tests/unit/test_identity_api.py`, `xportra/api/app.py` catalog
+>   wiring referencing the untracked, unverified `xportra/api/catalog.py`;
+>   corrupt untracked `tests/unit/test_regulatory_catalog.py`).
+> - No push was performed. Frontend single-round-trip wiring for
+>   retry-button / wording-correction field / withdrawal was deferred
+>   (backend-only scope); frontend work needs separate authorization.
+>
+> Prior state (2026-10-29) follows for continuity.
 >
 > Regulatory ingestion-to-EvidenceDocument linkage implemented locally
 > (`regulatory_ingestion_evidence_linkage_service.py` + focused tests 6/6 pass);
