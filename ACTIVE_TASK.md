@@ -10,11 +10,15 @@ source withdrawal), and `3131417` (M8 end-to-end PostgreSQL integration
 gate with ADR-0022 + migration 033 for artifact-optional registration
 jobs). Task record moved to
 `tasks/completed/phase-4d-regulatory-admin-backend-milestone-1.md`.
-No push was performed. Remaining deferred scope: frontend wiring for the
-retry button, wording-correction field, and withdrawal action (backend
-endpoints exist and are tested); exporter-facing catalog release workflow
-(`xportra/api/catalog.py` remains untracked, unverified, and NOT
-committed); production migrations 030–033 application at deployment time.
+No push was performed. Frontend wiring for retry (M4), wording correction (M5),
+and withdrawal (M7) completed locally and committed as `da9aff7`
+(backend endpoints remain the authoritative contracts; frontend
+implementation uses existing authorization expectations). The exporter-facing
+catalog release workflow (`xportra/api/catalog.py` + service + tests) exists
+and passes focused tests (8/8) but is outside the M1–M8 scope; it remains
+untracked/uncommitted and requires separate authorization (Phase 4D.10
+Task 7). Production migrations 030–033 remain to be applied at deployment
+time.
 
 
 **Authorization basis:** Explicitly assigned by user tasking. The existing

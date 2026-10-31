@@ -4792,3 +4792,18 @@ state.
 - Remaining untracked files are preserved investigation scripts,
   local review artifacts, generated reports, and local tooling files.
   No secrets, credentials, or environment values were committed.
+- - -  
+ # #   2 0 2 6 - 1 0 - 3 1   S e s s i o n      P h a s e   5   F i n a l i z a t i o n  
+ C o m m i t s :   9 7 9 9 1 d d   ( m i g r a t i o n s ) ,   9 c 3 a c d f   ( f i x t u r e   f i x e s ) ,   d 9 e a 8 4 2   ( i n d e n t   f i x ) ,   d a 9 a f f 7   ( f r o n t e n d   M 4 / M 5 / M 7 ) .  
+ V e r i f i c a t i o n :   E 2 E   3 / 3 ,   a s s e s s m e n t   7 / 7 ,   g o v e r n a n c e   3 / 3 ,   s t a g e   A   2 0 / 2 0 ,   s t a g e   B   2 0 / 2 1   ( 1   p r e - e x i s t i n g   U n i q u e V i o l a t i o n ) ,   c a t a l o g   8 / 8 ,   c l e a n   c h a i n   O K .  
+ C a t a l o g   ( c a t a l o g . p y / s e r v i c e / t e s t _ r e g u l a t o r y _ c a t a l o g . p y ) :   c o m p l e t e   b u t   o u t s i d e   M 1 - M 8   s c o p e ;   p r e s e r v e d   u n c o m m i t t e d .  
+ P r e - e x i s t i n g   f a i l u r e s   p r e s e r v e d :   s h i p m e n t / w o r k f l o w / a u t h / i n t a k e   i n t e g r a t i o n ;   f r o n t e n d   v i t e s t   j s d o m   r e f s ;   u n r e l a t e d   t r a c k e d   f i l e s   p r e s e r v e d .  
+  
+ - - -  
+ # #   2 0 2 6 - 1 0 - 3 1      C a t a l o g   A u t h o r i z a t i o n   M i l e s t o n e   ( T a s k   5 )  
+ C o m m i t :   0 6 d 6 b 6 f      e x p o r t e r - f a c i n g   c a t a l o g   e n d p o i n t   ( c a t a l o g . p y ) ,   s e r v i c e   ( r e g u l a t o r y _ c a t a l o g _ s e r v i c e . p y ) ,   t e s t s   ( t e s t _ r e g u l a t o r y _ c a t a l o g . p y :   8 / 8   P A S S ) ,   a n d   a p p   w i r i n g   ( a p p . p y ) .  
+ A u t h o r i z a t i o n   e n f o r c e d :   R E A D _ T E N A N T _ R E S O U R C E   +   M e m b e r C o n t e x t   ( s e r v e r - s i d e   m e m b e r s h i p ) ,   f a i l - c l o s e d   5 0 3   w h e n   s e r v i c e s   u n i n i t i a l i z e d ,   4 0 3   w h e n   p e r m i s s i o n   d e n i e d .  
+ P u b l i c a t i o n / a p p l i c a b i l i t y   r u l e s   e n f o r c e d :   p u b l i s h e d   s t a t u s ,   v e r i f i e d   s t a g e   A ,   a p p r o v e d   s t a g e   B ,   a c t i v e   s o u r c e ,   n o   p e n d i n g   g o v e r n a n c e   f l a g s ,   d u r a b l e   e v a l u a t e d   a p p l i c a b i l i t y   r e c o r d   o n l y .  
+ I s o l a t i o n :   t e n a n t - s c o p e d   a p p l i c a b i l i t y   f i n g e r p r i n t ;   n o   c r o s s - t e n a n t   l e a k a g e .   N o   a u t o m a t i c   p u b l i c a t i o n .   N o   f a k e   r e q u i r e m e n t s .  
+ R e m a i n i n g   a u t h o r i z a t i o n   g a p   ( r e q u i r e s   p r o d u c t - o w n e r   d e c i s i o n ) :   w h e t h e r   R E A D _ T E N A N T _ R E S O U R C E   i s   s u f f i c i e n t   f o r   e x p o r t e r - f a c i n g   a c c e s s   o r   w h e t h e r   a   d e d i c a t e d   R E A D _ E X P O R T E R _ C A T A L O G   p e r m i s s i o n   /   o r g a n i z a t i o n - l e v e l   a u t h o r i z a t i o n   i s   r e q u i r e d .   C a t a l o g   p r e s e r v e d   u n c o m m i t t e d   u n t i l   a u t h o r i z a t i o n   i s   r e s o l v e d ;   n o   p r o d u c t i o n   g r a n t s   m o d i f i e d .  
+ 
