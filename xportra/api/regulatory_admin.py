@@ -17,6 +17,9 @@ from xportra.application.regulatory_candidate_extraction_service import (
 from xportra.application.regulatory_governance_service import (
     RegulatoryGovernanceService,
 )
+from xportra.application.regulatory_ingestion_service import (
+    RegulatoryIngestionService,
+)
 from xportra.application.regulatory_source_intake_service import (
     RegulatorySourceIntakeService,
 )
@@ -127,6 +130,21 @@ def _text_entry_service(services: Any = Depends(get_services)) -> RegulatorySour
 
 TextEntryServiceDependency = Annotated[
     RegulatorySourceIntakeService, Depends(_text_entry_service)
+]
+
+
+def _ingestion_service(services: Any = Depends(get_services)) -> RegulatoryIngestionService:
+    database = getattr(services, "database", None)
+    if database is None:
+        raise APIError(
+            503, "application_not_ready",
+            "Application services are not initialized",
+        )
+    return RegulatoryIngestionService(database)
+
+
+IngestionServiceDependency = Annotated[
+    RegulatoryIngestionService, Depends(_ingestion_service)
 ]
 
 
@@ -568,6 +586,30 @@ def list_jobs(
         "offset": offset,
         "total": total,
     }
+
+
+@router.post(
+    "/regulatory/ingestion-jobs/{job_id}/retry",
+    response_model=RegulatoryIngestionJobResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def retry_ingestion_job(
+    job_id: UUID,
+    service: IngestionServiceDependency,
+    actor_id: GlobalStaffDependency,
+):
+    """Record a new bounded, authorized retry attempt for a failed job.
+
+    Requires an active ``GRANT_MANAGE`` global staff grant. Only a
+    terminally ``failed`` job can be retried; ``retryable`` jobs are
+    reclaimed automatically by the durable PostgreSQL-backed worker.
+    The retry is recorded as a NEW attempt row linked to the same
+    immutable artifact, so prior attempts remain visible history.
+    Retries are bounded per artifact; the bound is reported as a
+    validation rejection once reached.
+    """
+    retried = service.retry_job(job_id, actor_user_id=actor_id)
+    return _job_response(retried)
 
 
 @router.post(

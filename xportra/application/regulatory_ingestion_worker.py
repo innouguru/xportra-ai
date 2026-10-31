@@ -95,26 +95,32 @@ class RegulatoryIngestionWorker:
         return self._grants.is_granted(self._actor_id, GRANT_MANAGE)
 
     def _recover_expired_lease(self) -> int:
-        """Reset claimed/processing jobs that exceeded lease timeout."""
+        """Reset claimed/processing jobs whose lease (lease timeout after
+        ``started_at``) has expired. Executed at worker startup so a
+        crashed worker's in-flight jobs become retryable again instead of
+        being wedged forever. Uses ``make_interval`` with a bound
+        parameter so the timeout is passed as data, not string-spliced.
+        """
         if not self._is_authorized():
             return 0
-        # Minimal recovery: select expired claimed/processing, reset to retryable.
-        # A full recovery mechanism requires explicit lease tracking (future work).
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT id FROM xportra.regulatory_ingestion_jobs WHERE status IN ('claimed', 'processing') AND started_at < now() - interval '%s seconds'",
-                    (f"{LEASE_TIMEOUT_SECONDS}",),
+                    """
+                    UPDATE xportra.regulatory_ingestion_jobs
+                    SET status = 'retryable',
+                        completed_at = NULL,
+                        error_details = 'lease_expired_recovery',
+                        updated_at = now()
+                    WHERE status IN ('claimed', 'processing')
+                      AND started_at IS NOT NULL
+                      AND started_at < now() - make_interval(secs => %s)
+                    RETURNING id
+                    """,
+                    (LEASE_TIMEOUT_SECONDS,),
                 )
-                expired_ids = [row[0] for row in cursor.fetchall()]
-                reset_count = 0
-                for job_id in expired_ids:
-                    cursor.execute(
-                        "UPDATE xportra.regulatory_ingestion_jobs SET status = 'retryable', completed_at = NULL, error_details = 'lease_expired_recovery' WHERE id = %s",
-                        (job_id,),
-                    )
-                    reset_count += 1
-                return reset_count
+                expired_rows = cursor.fetchall()
+                return len(expired_rows)
 
     def _poll_cycle(self) -> None:
         if not self._is_authorized():

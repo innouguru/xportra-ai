@@ -329,6 +329,7 @@ class FakeIngestionService:
         self.claimed_job_id: UUID | None = None
         self.failed_job_id: UUID | None = None
         self.failed_error: str | None = None
+        self.fail_calls: list[dict] = []
 
     def complete_job(self, job_id, actor_user_id=None):
         self.completed_job_id = job_id
@@ -346,6 +347,11 @@ class FakeIngestionService:
                  actor_user_id=None):
         self.failed_job_id = job_id
         self.failed_error = error_details
+        self.fail_calls.append({
+            "job_id": job_id,
+            "error_details": error_details,
+            "make_retryable": make_retryable,
+        })
         if self.job_repo is not None:
             return self.job_repo.fail(
                 job_id, error_details=error_details,
@@ -602,6 +608,45 @@ class RegulatoryCandidateExtractionTests(TestCase):
         self.assertIsNotNone(factory.job_repo.failed_error)
         # No candidates created
         self.assertEqual(len(factory.requirement_repo.requirements), 0)
+
+    def test_failed_extraction_within_bound_stays_retryable(self):
+        # A first failure of a fresh attempt is retryable by the worker.
+        factory = ServiceFactory(parser=FakeParser(should_fail=True))
+        factory.job_repo.jobs[JOB]["retry_count"] = 0
+        service = factory.service()
+        result = service.extract_candidates(
+            actor_user_id=ACTOR,
+            source_id=SOURCE,
+            artifact_id=ARTIFACT,
+            job_id=JOB,
+        )
+        self.assertEqual(result["outcome"], EXTRACTION_OUTCOME_FAILED)
+        self.assertEqual(
+            factory.ingestion_service.fail_calls[-1]["make_retryable"], True
+        )
+
+    def test_failed_extraction_beyond_retry_bound_is_terminal(self):
+        # Bounded retries: once an attempt's durable retry_count has
+        # reached MAX_RETRY_ATTEMPTS, the next failure is terminal —
+        # the job is marked 'failed', no longer 'retryable', and only
+        # the authorized staff retry control can record a new attempt.
+        from xportra.application.regulatory_ingestion_service import (
+            MAX_RETRY_ATTEMPTS,
+        )
+        factory = ServiceFactory(parser=FakeParser(should_fail=True))
+        factory.job_repo.jobs[JOB]["retry_count"] = MAX_RETRY_ATTEMPTS
+        service = factory.service()
+        result = service.extract_candidates(
+            actor_user_id=ACTOR,
+            source_id=SOURCE,
+            artifact_id=ARTIFACT,
+            job_id=JOB,
+        )
+        self.assertEqual(result["outcome"], EXTRACTION_OUTCOME_FAILED)
+        self.assertEqual(
+            factory.ingestion_service.fail_calls[-1]["make_retryable"], False
+        )
+        self.assertEqual(factory.job_repo.jobs[JOB]["status"], "failed")
 
     def test_empty_extraction_records_failed_outcome(self):
         factory = ServiceFactory(

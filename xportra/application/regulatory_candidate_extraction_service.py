@@ -25,7 +25,10 @@ from xportra.application.errors import (
     InfrastructureError,
 )
 from xportra.application.global_staff import GlobalStaffGrantService, GRANT_MANAGE
-from xportra.application.regulatory_ingestion_service import RegulatoryIngestionService
+from xportra.application.regulatory_ingestion_service import (
+    MAX_RETRY_ATTEMPTS,
+    RegulatoryIngestionService,
+)
 from xportra.domain.ingestion import (
     ArtifactNormalizationService,
     ArtifactParseError,
@@ -409,11 +412,19 @@ class RegulatoryCandidateExtractionService:
         actor_user_id: UUID,
         error_details: str,
     ) -> None:
+        # Bounded retries: a persistently failing attempt stays retryable
+        # up to MAX_RETRY_ATTEMPTS retryable-failure cycles (tracked by
+        # the durable retry_count column); after the bound the failure is
+        # terminal and only an authorized staff retry control can record
+        # a new attempt. Prior attempts remain immutable history.
         try:
+            job = self._job_repo.get(job_id) or {}
+            retry_count = int(job.get("retry_count") or 0)
+            make_retryable = retry_count + 1 <= MAX_RETRY_ATTEMPTS
             self._ingestion.fail_job(
                 job_id,
                 error_details=error_details,
-                make_retryable=True,
+                make_retryable=make_retryable,
                 actor_user_id=actor_user_id,
             )
         except Exception:

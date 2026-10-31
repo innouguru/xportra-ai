@@ -8,6 +8,7 @@ skipped when DATABASE_URL is absent.
 """
 from __future__ import annotations
 
+import inspect
 from unittest import TestCase
 from uuid import UUID
 
@@ -86,6 +87,26 @@ class TestWorkerCrashRecoveryContract(TestCase):
         db = FakeDB()
         worker = RegulatoryIngestionWorker(db)
         self.assertTrue(hasattr(worker, "_recover_expired_lease"))
+
+    def test_expired_lease_recovery_respects_authorization(self):
+        db = FakeDB()
+        worker = RegulatoryIngestionWorker(db)
+        worker._grants = FakeGrantRepo({})
+        self.assertEqual(worker._recover_expired_lease(), 0)
+
+    def test_expired_lease_recovery_uses_bound_parameter_sql(self):
+        # Regression: the earlier implementation spliced the timeout into
+        # a Postgres ``interval '%s seconds'`` literal, which is a mis-
+        # nested string substitution (invalid once parameters are bound)
+        # and would fail lease recovery silently. The recovery SQL must
+        # now pass the timeout as a bound parameter via make_interval.
+        from xportra.application.regulatory_ingestion_worker import (
+            RegulatoryIngestionWorker as Worker,
+        )
+        source = inspect.getsource(Worker._recover_expired_lease)
+        self.assertNotIn("interval '%s", source)
+        self.assertIn("make_interval", source)
+        self.assertIn("(LEASE_TIMEOUT_SECONDS,)", source)
 
 
 class FakeExtractionService:

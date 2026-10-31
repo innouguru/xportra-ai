@@ -2425,13 +2425,13 @@ class RegulatoryIngestionJobRepository:
     def __init__(self, database) -> None:
         self._database = database
 
-    def create(self, artifact_id, source_id, actor_user_id=None, audit_ref=None, parser_version="v1"):
+    def create(self, artifact_id, source_id, actor_user_id=None, audit_ref=None, parser_version="v1", attempt_number=None):
         from .database import Database
         return _insert(
             self._database,
             "regulatory ingestion job creation",
-            "INSERT INTO xportra.regulatory_ingestion_jobs (artifact_id, source_id, status, actor_user_id, audit_ref, parser_version) VALUES (%s, %s, 'pending', %s, %s, %s) RETURNING *",
-            (artifact_id, source_id, actor_user_id, audit_ref, parser_version),
+            "INSERT INTO xportra.regulatory_ingestion_jobs (artifact_id, source_id, status, actor_user_id, audit_ref, parser_version, attempt_number) VALUES (%s, %s, 'pending', %s, %s, %s, %s) RETURNING *",
+            (artifact_id, source_id, actor_user_id, audit_ref, parser_version, attempt_number if attempt_number is not None else 1),
         )
 
     def get(self, job_id):
@@ -2439,6 +2439,14 @@ class RegulatoryIngestionJobRepository:
 
     def get_by_artifact_attempt(self, artifact_id, attempt_number):
         return _fetch_one(self._database, "SELECT * FROM xportra.regulatory_ingestion_jobs WHERE artifact_id = %s AND attempt_number = %s", (artifact_id, attempt_number))
+
+    def max_attempts_for_artifact(self, artifact_id):
+        row = _fetch_one(
+            self._database,
+            "SELECT COALESCE(MAX(attempt_number), 0) AS max_attempt FROM xportra.regulatory_ingestion_jobs WHERE artifact_id = %s",
+            (artifact_id,),
+        )
+        return int(row["max_attempt"]) if row is not None else 0
 
     def list_for_artifact(self, artifact_id):
         return _fetch_all(self._database, "SELECT * FROM xportra.regulatory_ingestion_jobs WHERE artifact_id = %s ORDER BY attempt_number, created_at", (artifact_id,))
@@ -2472,10 +2480,17 @@ class RegulatoryIngestionJobRepository:
         from psycopg.errors import IntegrityError
         from .errors import PersistenceIntegrityError
         next_status = "retryable" if make_retryable else "failed"
+        # Bounded-retry accounting: each retryable failure increments the
+        # per-attempt retry counter; terminal failures leave it unchanged
+        # so the authorized retry endpoint can distinguish a fresh attempt.
+        if make_retryable:
+            update_sql = "UPDATE xportra.regulatory_ingestion_jobs SET status = 'retryable', completed_at = now(), error_details = %s, actor_user_id = COALESCE(%s, actor_user_id), retry_count = retry_count + 1 WHERE id = %s AND status IN ('claimed', 'processing', 'pending') RETURNING *"
+        else:
+            update_sql = "UPDATE xportra.regulatory_ingestion_jobs SET status = 'failed', completed_at = now(), error_details = %s, actor_user_id = COALESCE(%s, actor_user_id) WHERE id = %s AND status IN ('claimed', 'processing', 'pending') RETURNING *"
         try:
             with self._database.transaction() as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute(f"UPDATE xportra.regulatory_ingestion_jobs SET status = '{next_status}', completed_at = now(), error_details = %s, actor_user_id = COALESCE(%s, actor_user_id) WHERE id = %s AND status IN ('claimed', 'processing', 'pending') RETURNING *", (error_details, actor_user_id, job_id))
+                    cursor.execute(update_sql, (error_details, actor_user_id, job_id))
                     return cursor.fetchone()
         except IntegrityError as cause:
             raise PersistenceIntegrityError("regulatory ingestion job fail", cause) from cause
