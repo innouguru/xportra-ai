@@ -54,6 +54,10 @@ CREATE TABLE IF NOT EXISTS xportra.shipments (
 CREATE INDEX IF NOT EXISTS shipments_tenant_case_idx
     ON xportra.shipments (tenant_id, case_id);
 
+-- Idempotent trigger application: CREATE TRIGGER has no IF NOT EXISTS,
+-- and integration-test fixtures re-apply this migration on databases
+-- where the chains already ran.
+DROP TRIGGER IF EXISTS shipments_set_updated_at ON xportra.shipments;
 CREATE TRIGGER shipments_set_updated_at
     BEFORE UPDATE ON xportra.shipments
     FOR EACH ROW EXECUTE FUNCTION xportra.set_updated_at();

@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS xportra.compliance_workflows (
 -- tenant-scoped identity lookup, fully covered by the
 -- composite primary key.
 
+-- Idempotent trigger application: CREATE TRIGGER has no IF NOT EXISTS,
+-- and test fixtures re-apply this migration on databases where the
+-- chain already ran.
+DROP TRIGGER IF EXISTS compliance_workflows_set_updated_at
+    ON xportra.compliance_workflows;
 CREATE TRIGGER compliance_workflows_set_updated_at
     BEFORE UPDATE ON xportra.compliance_workflows
     FOR EACH ROW EXECUTE FUNCTION xportra.set_updated_at();

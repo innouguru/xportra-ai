@@ -44,6 +44,11 @@ CREATE INDEX IF NOT EXISTS compliance_analysis_reports_tenant_case_idx
 CREATE INDEX IF NOT EXISTS compliance_analysis_reports_tenant_workflow_idx
     ON xportra.compliance_analysis_reports (tenant_id, workflow_id);
 
+-- Idempotent trigger application: CREATE TRIGGER has no IF NOT EXISTS,
+-- and test fixtures re-apply this migration on databases where the
+-- chain already ran.
+DROP TRIGGER IF EXISTS compliance_analysis_reports_set_updated_at
+    ON xportra.compliance_analysis_reports;
 CREATE TRIGGER compliance_analysis_reports_set_updated_at
     BEFORE UPDATE ON xportra.compliance_analysis_reports
     FOR EACH ROW EXECUTE FUNCTION xportra.set_updated_at();
@@ -88,6 +93,8 @@ CREATE INDEX IF NOT EXISTS compliance_analyses_tenant_report_idx
 CREATE INDEX IF NOT EXISTS compliance_analyses_tenant_requirement_idx
     ON xportra.compliance_analyses (tenant_id, requirement_id);
 
+DROP TRIGGER IF EXISTS compliance_analyses_set_updated_at
+    ON xportra.compliance_analyses;
 CREATE TRIGGER compliance_analyses_set_updated_at
     BEFORE UPDATE ON xportra.compliance_analyses
     FOR EACH ROW EXECUTE FUNCTION xportra.set_updated_at();
@@ -136,6 +143,8 @@ CREATE TABLE IF NOT EXISTS xportra.compliance_analysis_traces (
 CREATE INDEX IF NOT EXISTS compliance_analysis_traces_tenant_report_idx
     ON xportra.compliance_analysis_traces (tenant_id, report_id, position);
 
+DROP TRIGGER IF EXISTS compliance_analysis_traces_set_updated_at
+    ON xportra.compliance_analysis_traces;
 CREATE TRIGGER compliance_analysis_traces_set_updated_at
     BEFORE UPDATE ON xportra.compliance_analysis_traces
     FOR EACH ROW EXECUTE FUNCTION xportra.set_updated_at();
@@ -163,6 +172,8 @@ CREATE TABLE IF NOT EXISTS xportra.compliance_workflow_rounds (
 CREATE INDEX IF NOT EXISTS compliance_workflow_rounds_tenant_workflow_idx
     ON xportra.compliance_workflow_rounds (tenant_id, workflow_id, round_index);
 
+DROP TRIGGER IF EXISTS compliance_workflow_rounds_set_updated_at
+    ON xportra.compliance_workflow_rounds;
 CREATE TRIGGER compliance_workflow_rounds_set_updated_at
     BEFORE UPDATE ON xportra.compliance_workflow_rounds
     FOR EACH ROW EXECUTE FUNCTION xportra.set_updated_at();
@@ -189,6 +200,8 @@ CREATE TABLE IF NOT EXISTS xportra.final_assessment_packages (
 CREATE INDEX IF NOT EXISTS final_assessment_packages_tenant_workflow_idx
     ON xportra.final_assessment_packages (tenant_id, workflow_id);
 
+DROP TRIGGER IF EXISTS final_assessment_packages_set_updated_at
+    ON xportra.final_assessment_packages;
 CREATE TRIGGER final_assessment_packages_set_updated_at
     BEFORE UPDATE ON xportra.final_assessment_packages
     FOR EACH ROW EXECUTE FUNCTION xportra.set_updated_at();
