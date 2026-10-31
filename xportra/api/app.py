@@ -15,6 +15,7 @@ from .evidence_uploads import router as evidence_uploads_router
 from .health import router as health_router
 from .identity import router as identity_router
 from .organizations import router as organizations_router
+from .catalog import router as catalog_router
 from .regulatory_admin import router as regulatory_admin_router
 from .router import router
 from .runtime import (
@@ -158,6 +159,7 @@ def create_app(services: ApplicationServices | None = None) -> FastAPI:
     application.include_router(conversations_router)
     application.include_router(evidence_uploads_router)
     application.include_router(regulatory_admin_router)
+    application.include_router(catalog_router)
     application.include_router(organizations_router)
     application.include_router(identity_router)
     # Liveness probe: unauthenticated and dependency-free by
