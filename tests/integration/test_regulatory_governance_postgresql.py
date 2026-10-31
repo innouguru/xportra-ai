@@ -21,8 +21,8 @@ from xportra.persistence.repositories import (
 )
 from xportra.persistence.tenant import TenantContext
 
-    SOURCE_ID = UUID("dddddd04-0000-0000-0000-000000000004")
-    AUTHORITY_ID = UUID("cccccc04-0000-0000-0000-000000000003")
+SOURCE_ID = UUID("dddddd04-0000-0000-0000-000000000004")
+AUTHORITY_ID = UUID("cccccc04-0000-0000-0000-000000000003")
 ACTOR = UUID("aaaaaa07-0000-0000-0000-000000000001")
 
 REQUIRED_TABLES = ("regulatory_review_flags",)
