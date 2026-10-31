@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { noteEvidencePending, provideInformation } from "../../api/workflows";
+import { fetchShipmentDetail } from "../../api/shipments";
+import { fetchCatalogRequirements, type CatalogRequirementItem } from "../../api/catalog";
 import { useAuth } from "../../app/AuthContext";
 import { useWorkflow } from "../../app/WorkflowContext";
 import {
@@ -11,9 +13,6 @@ import {
   LoadingState,
 } from "../../components/StatusBits";
 import { isTerminalState, workflowStateLabel } from "../../lib/workflow";
-import type { CatalogRequirementItem } from "../../api/regulatory";
-import { apiFetch } from "../../api/client";
-import type { AuthCredentials } from "../../api/client";
 
 /**
  * Screen 2 — Shipment information.
@@ -29,6 +28,19 @@ export function ShipmentInfoPage() {
   const [error, setError] = useState<unknown>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [savedAction, setSavedAction] = useState<string | null>(null);
+
+  // Regulatory catalog state (component scope)
+  const [regulatoryRequirements, setRegulatoryRequirements] = useState<{
+    items: CatalogRequirementItem[];
+    total: number;
+    limit: number;
+    offset: number;
+  } | null>(null);
+  const [regulatoryLoading, setRegulatoryLoading] = useState(false);
+  const [regulatoryError, setRegulatoryError] = useState<unknown>(null);
+
+  // Shipment detail state (authoritative source for product/origin/destination)
+  const [shipmentLoading, setShipmentLoading] = useState(false);
 
   if (!record) {
     return (
@@ -57,78 +69,181 @@ export function ShipmentInfoPage() {
     } finally {
       setPendingAction(null);
     }
-
-    // Fetch regulatory requirements when a shipment record is available
-    if (record) {
-      fetchRegulatoryRequirements(auth);
-    }
   };
 
-  // Fetch regulatory requirements for the current shipment's scope
-  const fetchRegulatoryRequirements = async (credentials: AuthCredentials) => {
-    if (!record) return;
+  // Fetch shipment detail and regulatory requirements when record changes
+  useEffect(() => {
+    let cancelled = false;
 
-    const product = record.profile.product.trim();
-    const origin = record.profile.origin.trim();
-    const destination = record.profile.destination.trim();
-
-    // Fail closed when essential scope information is missing
-    if (!product || !origin || !destination) {
-      setRegulatoryRequirements({
-        items: [],
-        total: 0,
-        limit: 20,
-        offset: 0,
-      });
-      setRegulatoryError(
-        new Error(
-          "Shipment requires product, origin country, and destination country to determine applicable regulatory requirements. Please ensure these fields are completed."
-        )
-      );
-      return;
-    }
-
-    setRegulatoryLoading(true);
-    setRegulatoryError(null);
-
-    try {
-      const response = await apiFetch<{
-        items: CatalogRequirementItem[];
-        total: number;
-        limit: number;
-        offset: number;
-      }>("/catalog/requirements", credentials, {
-        method: "GET",
-        body: {
-          product,
-          origin_country: origin,
-          destination_country: destination,
-          limit: 20,
-          offset: 0,
-        },
-      });
-
-      setRegulatoryRequirements(response);
-    } catch (err) {
-      setRegulatoryError(err);
+    const loadShipmentAndCatalog = async () => {
       setRegulatoryRequirements(null);
-    } finally {
+      setRegulatoryError(null);
       setRegulatoryLoading(false);
+
+      if (!record.shipment_id) {
+        setRegulatoryError(
+          new Error(
+            "Shipment requires product, origin country, and destination country to determine applicable regulatory requirements. Please ensure these fields are completed."
+          )
+        );
+        setRegulatoryRequirements({ items: [], total: 0, limit: 20, offset: 0 });
+        return;
+      }
+
+      setShipmentLoading(true);
+      try {
+        const entry = await fetchShipmentDetail(auth, record.shipment_id);
+        if (cancelled) return;
+        // entry used for scope below
+
+        if (!entry) {
+          setRegulatoryError(new Error("Shipment not found or not accessible."));
+          setRegulatoryRequirements({ items: [], total: 0, limit: 20, offset: 0 });
+          return;
+        }
+
+        const product = entry.profile.product.trim();
+        const origin = entry.profile.origin.trim();
+        const destination = entry.profile.destination.trim();
+
+        if (!product || !origin || !destination) {
+          setRegulatoryRequirements({ items: [], total: 0, limit: 20, offset: 0 });
+          setRegulatoryError(
+            new Error(
+              "Shipment requires product, origin country, and destination country to determine applicable regulatory requirements. Please ensure these fields are completed."
+            )
+          );
+          return;
+        }
+
+        setRegulatoryLoading(true);
+        setRegulatoryError(null);
+
+        try {
+          const response = await fetchCatalogRequirements(auth, {
+            product,
+            origin_country: origin,
+            destination_country: destination,
+            limit: 20,
+            offset: 0,
+          });
+          if (cancelled) return;
+          setRegulatoryRequirements(response);
+        } catch (err) {
+          if (cancelled) return;
+          setRegulatoryError(err);
+          setRegulatoryRequirements(null);
+        } finally {
+          if (!cancelled) setRegulatoryLoading(false);
+        }
+      } catch (err) {
+        if (cancelled) return;
+        setRegulatoryError(err);
+        setRegulatoryRequirements(null);
+        setRegulatoryLoading(false);
+      } finally {
+        if (!cancelled) setShipmentLoading(false);
+      }
+    };
+
+    loadShipmentAndCatalog();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [record.shipment_id, auth.token, auth.devTenantId]);
+
+  const renderRegulatoryRequirementsSection = () => {
+    const items: CatalogRequirementItem[] = regulatoryRequirements?.items ?? [];
+    const total = regulatoryRequirements?.total ?? 0;
+
+    const allApplicable = items.every(
+      (item: CatalogRequirementItem) => item.applicability.outcome === "applicable"
+    );
+    const hasUnknownApplicability = items.some(
+      (item: CatalogRequirementItem) => item.applicability.outcome !== "applicable" && item.applicability.outcome !== "not_applicable"
+    );
+
+    const applicabilityStatus = total === 0
+      ? "No requirements found for this shipment's scope"
+      : hasUnknownApplicability
+      ? `Some requirements have unverified applicability. ${total} requirement${total !== 1 ? "s" : ""} returned, but applicability is not confirmed for all.`
+      : allApplicable
+      ? `${total} requirement${total !== 1 ? "s" : ""} applicable to this shipment's scope`
+      : `${total} requirement${total !== 1 ? "s" : ""} returned, but not all are applicable to this shipment's scope`;
+
+    if (shipmentLoading || regulatoryLoading) {
+      return (
+        <div className="xb-requirements-section">
+          <h2>Regulatory Requirements</h2>
+          <LoadingState text="Loading regulatory requirements…" />
+        </div>
+      );
     }
+
+    if (regulatoryError) {
+      return (
+        <div className="xb-requirements-section">
+          <h2>Regulatory Requirements</h2>
+          <ErrorNotice error={regulatoryError} />
+        </div>
+      );
+    }
+
+    if (items.length === 0) {
+      return (
+        <div className="xb-requirements-section">
+          <h2>Regulatory Requirements</h2>
+          <EmptyState
+            title="No regulatory requirements"
+            body={applicabilityStatus}
+            action={
+              <p className="muted">No published requirements are applicable to this shipment's product, origin, and destination scope.</p>
+            }
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="xb-requirements-section">
+        <h2>Regulatory Requirements</h2>
+        <p className="muted">{applicabilityStatus}</p>
+        <ol className="xb-requirements-list">
+          {items.map((item: CatalogRequirementItem) => (
+            <li key={item.requirement_id} className="xb-requirement-item">
+              <div className="xb-requirement-header">
+                <h3 className="xb-requirement-title">{item.requirement_text}</h3>
+                <div className="xb-requirement-meta">
+                  <span className="xb-source-reference">
+                    Source: {item.source.source_title}
+                  </span>
+                  <span className="xb-jurisdiction">
+                    {item.source.source_jurisdiction}
+                  </span>
+                  <span className="xb-applicability-badge">
+                    {item.applicability.outcome === "applicable" ? "Applicable" : item.applicability.outcome}
+                  </span>
+                </div>
+              </div>
+              <p className="xb-requirement-description">
+                {item.requirement_text}
+              </p>
+              <div className="xb-requirement-scope">
+                <span>Product: {item.requirement_type || "—"}</span>
+                <span>Origin: {item.applicability.context_fingerprint || "—"}</span>
+                <span>Destination: {item.stage_b_pilot_scope || "—"}</span>
+              </div>
+              <div className="xb-requirement-citation">
+                Citation: {item.citation.normalized_document_id ? "Available" : "—"}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+    );
   };
 
-  // Regulatory requirements state
-  const [regulatoryRequirements, setRegulatoryRequirements] = useState<
-    | {
-        items: CatalogRequirementItem[];
-        total: number;
-        limit: number;
-        offset: number;
-      }
-    | null
-  >(null);
-  const [regulatoryLoading, setRegulatoryLoading] = useState(false);
-  const [regulatoryError, setRegulatoryError] = useState<unknown>(null);
 
   const busy = pendingAction !== null;
   const closed = isTerminalState(record.state);
@@ -202,102 +317,10 @@ export function ShipmentInfoPage() {
             Continue to requirements
           </Link>
         </div>
-{renderRegulatoryRequirementsSection()}
+
         {busy ? <LoadingState text="Updating workflow…" /> : null}
       </section>
+      {renderRegulatoryRequirementsSection()}
     </div>
-    );
-  }
-  
-  // Render the regulatory requirements section
-  const renderRegulatoryRequirementsSection = () => {
-    const { items, total } = regulatoryRequirements ?? {};
-    
-    // Determine if applicability is verified
-    const allApplicable = items.every(
-      (item) => item.applicability.outcome === "applicable"
-    );
-    const hasUnknownApplicability = items.some(
-      (item) => item.applicability.outcome !== "applicable" && item.applicability.outcome !== "not_applicable"
-    );
-    
-    // If there are items with unknown applicability, communicate that
-    const applicabilityStatus = total === 0
-      ? "No requirements found for this shipment's scope"
-      : hasUnknownApplicability
-      ? `Some requirements have unverified applicability. ${total} requirement${total !== 1 ? "s" : ""} returned, but applicability is not confirmed for all.`
-      : allApplicable
-      ? `${total} requirement${total !== 1 ? "s" : ""} applicable to this shipment's scope`
-      : `${total} requirement${total !== 1 ? "s" : ""} returned, but not all are applicable to this shipment's scope`;
-    
-    if (regulatoryLoading) {
-      return (
-        <div className="xb-requirements-section">
-          <h2>Regulatory Requirements</h2>
-          <LoadingState text="Loading regulatory requirements…" />
-        </div>
-      );
-    }
-    
-    if (regulatoryError) {
-      return (
-        <div className="xb-requirements-section">
-          <h2>Regulatory Requirements</h2>
-          <ErrorNotice error={regulatoryError} />
-        </div>
-      );
-    }
-    
-    if (!items || items.length === 0) {
-      return (
-        <div className="xb-requirements-section">
-          <h2>Regulatory Requirements</h2>
-          <EmptyState
-            title="No regulatory requirements"
-            body={applicabilityStatus}
-            action={
-              <p className="muted">No published requirements are applicable to this shipment's product, origin, and destination scope.</p>
-            }
-          />
-        </div>
-      );
-    }
-    
-    return (
-      <div className="xb-requirements-section">
-        <h2>Regulatory Requirements</h2>
-        <p className="muted">{applicabilityStatus}</p>
-        <ol className="xb-requirements-list">
-          {items.map((item) => (
-            <li key={item.requirement_id} className="xb-requirement-item">
-              <div className="xb-requirement-header">
-                <h3 className="xb-requirement-title">{item.requirement_text}</h3>
-                <div className="xb-requirement-meta">
-                  <span className="xb-source-reference">
-                    Source: {item.source.source_title}
-                  </span>
-                  <span className="xb-jurisdiction">
-                    {item.source.source_jurisdiction}
-                  </span>
-                  <span className="xb-applicability-badge">
-                    {item.applicability.outcome === "applicable" ? "Applicable" : item.applicability.outcome}
-                  </span>
-                </div>
-              </div>
-              <p className="xb-requirement-description">
-                {item.requirement_text}
-              </p>
-              <div className="xb-requirement-scope">
-                <span>Product: {item.requirement_type || "—"}</span>
-                <span>Origin: {item.applicability.context_fingerprint || "—"}</span>
-                <span>Destination: {item.stage_b_pilot_scope || "—"}</span>
-              </div>
-              <div className="xb-requirement-citation">
-                Citation: {item.citation.normalized_document_id ? "Available" : "—"}
-              </div>
-            </li>
-          ))}
-        </ol>
-      </div>
-    );
-  };
+  );
+}
