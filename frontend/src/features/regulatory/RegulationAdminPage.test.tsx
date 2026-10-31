@@ -8,7 +8,9 @@ import * as regulatoryApi from "../../api/regulatory";
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  sessionStorage.clear();
+  if (typeof sessionStorage !== "undefined" && sessionStorage.clear) {
+    sessionStorage.clear();
+  }
   vi.restoreAllMocks();
 });
 
