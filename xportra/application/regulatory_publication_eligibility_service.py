@@ -30,11 +30,16 @@ from xportra.persistence.repositories import (
 )
 from xportra.persistence.tenant import TenantContext
 
+EXTRACTION_OUTCOME_SUCCEEDED = "succeeded"
+EXTRACTION_OUTCOME_MANUAL = "manual"
+
 
 class RegulatoryPublicationEligibilityService:
-    """Eligibility gate: verified + approved + current + no pending flags + succeeded extraction.
-    Also provides a controlled publish operation that re-evaluates eligibility
-    at the time of publication and records an auditable outcome.
+    """Eligibility gate: verified + approved + current + no pending flags +
+    succeeded extraction (or approved manual recovery entry with reviewer
+    attribution). Also provides a controlled publish operation that
+    re-evaluates eligibility at the time of publication and records an
+    auditable outcome.
     """
 
     def __init__(
@@ -67,7 +72,9 @@ class RegulatoryPublicationEligibilityService:
 
         Eligibility rules (all must hold; fail-closed on missing/inconsistent state):
         - `status == 'extracted'` (not rejected or archived).
-        - `extraction_outcome == 'succeeded'` (failed/partial/manual excluded).
+        - `extraction_outcome` is `succeeded` (extraction pipeline) or
+          `manual` (approved manual recovery entry with reviewer
+          attribution). Failed and partial outcomes are always excluded.
         - `stage_a_status == 'verified'`.
         - `stage_b_status == 'approved'`.
         - Source is active: `regulatory_sources.status` not superseded/withdrawn/archived.
@@ -149,11 +156,30 @@ class RegulatoryPublicationEligibilityService:
                 f"requirement status is '{row.get('status')}', expected 'extracted'"
             )
 
-        # 2. extraction_outcome must be 'succeeded'
-        if row.get("extraction_outcome") != "succeeded":
+        # 2. extraction_outcome must be succeeded (extraction pipeline) or
+        #    manual (manual recovery entry with reviewer attribution).
+        #    Failed and partial outcomes can never be eligible.
+        extraction_outcome = row.get("extraction_outcome")
+        if extraction_outcome == EXTRACTION_OUTCOME_SUCCEEDED:
+            pass
+        elif extraction_outcome == EXTRACTION_OUTCOME_MANUAL:
+            # Manual recovery entries must carry reviewer attribution and
+            # the manual_entry marker; a manual candidate without explicit
+            # attribution is treated as unattributed state (fail closed).
+            if not row.get("manual_entry"):
+                reasons.append(
+                    "manual extraction outcome is recorded without the "
+                    "manual_entry marker"
+                )
+            if not row.get("reviewer_user_id"):
+                reasons.append(
+                    "manual candidate has no reviewer attribution "
+                    "(provenance incomplete)"
+                )
+        else:
             reasons.append(
-                f"extraction outcome is '{row.get('extraction_outcome')}', "
-                "expected 'succeeded'"
+                f"extraction outcome is '{extraction_outcome}', "
+                "expected 'succeeded' or 'manual'"
             )
 
         # 3. stage_a_status must be 'verified'
@@ -201,32 +227,39 @@ class RegulatoryPublicationEligibilityService:
         if not norm_doc_id:
             reasons.append("missing normalized document (provenance incomplete)")
 
-        # 8. Provenance: ingestion_job_id must reference a completed job
+        # 8. Provenance: for extracted candidates the ingestion_job_id must
+        #    reference a completed job. Manual recovery entries are created
+        #    directly by authorized staff (no ingestion job); their
+        #    provenance is the reviewer attribution + normalized-document
+        #    anchor verified above, so the job check does not apply.
         ingestion_job_id = row.get("ingestion_job_id")
-        if ingestion_job_id is not None:
-            try:
-                job_id = (
-                    UUID(str(ingestion_job_id))
-                    if not isinstance(ingestion_job_id, UUID)
-                    else ingestion_job_id
-                )
-                job = self._job_repo.get(job_id)
-                if job is None:
-                    reasons.append("ingestion job not found")
-                elif job.get("status") != "completed":
-                    reasons.append(
-                        f"ingestion job status is '{job.get('status')}', "
-                        "expected 'completed'"
+        if extraction_outcome != EXTRACTION_OUTCOME_MANUAL:
+            if ingestion_job_id is not None:
+                try:
+                    job_id = (
+                        UUID(str(ingestion_job_id))
+                        if not isinstance(ingestion_job_id, UUID)
+                        else ingestion_job_id
                     )
-            except (ValueError, AttributeError):
-                reasons.append("invalid ingestion job identifier")
-        else:
-            reasons.append("missing ingestion job (provenance incomplete)")
+                    job = self._job_repo.get(job_id)
+                    if job is None:
+                        reasons.append("ingestion job not found")
+                    elif job.get("status") != "completed":
+                        reasons.append(
+                            f"ingestion job status is '{job.get('status')}', "
+                            "expected 'completed'"
+                        )
+                except (ValueError, AttributeError):
+                    reasons.append("invalid ingestion job identifier")
+            else:
+                reasons.append("missing ingestion job (provenance incomplete)")
 
-        # 9. Provenance: parser_version must be non-empty
+        # 9. Provenance: extracted candidates must carry a parser version;
+        #    manual recovery entries are staff-entered and carry no parser.
         parser_version = row.get("parser_version")
-        if not parser_version or not isinstance(parser_version, str) or not parser_version.strip():
-            reasons.append("missing parser version (provenance incomplete)")
+        if extraction_outcome != EXTRACTION_OUTCOME_MANUAL:
+            if not parser_version or not isinstance(parser_version, str) or not parser_version.strip():
+                reasons.append("missing parser version (provenance incomplete)")
 
         # 10. Pilot scope filter: if provided, stage_b_pilot_scope must match
         # (handled at list level; not applicable to single check without filter)
@@ -314,23 +347,34 @@ class RegulatoryPublicationEligibilityService:
     def _verify_provenance(self, row: dict[str, Any]) -> bool:
         # Provenance checks based on repository evidence:
         # - normalized_document_id must exist (referenced by requirement).
-        # - ingestion_job_id must reference a completed job.
-        # - parser_version must be non-empty string.
+        # - For extracted candidates: ingestion_job_id must reference a
+        #   completed job and parser_version must be a non-empty string.
+        # - For manual recovery entries: reviewer attribution must be
+        #   present (no ingestion job or parser exists by design).
         # - source_id must reference an existing active source.
         # Any missing/inconsistent provenance = ineligible.
+        outcome = row.get("extraction_outcome")
         norm_doc_id = row.get("normalized_document_id")
         ingestion_job_id = row.get("ingestion_job_id")
         parser_version = row.get("parser_version")
         source_id = row.get("source_id")
         if not norm_doc_id:
             return False
-        if ingestion_job_id is not None:
+        if outcome == EXTRACTION_OUTCOME_MANUAL:
+            if not row.get("manual_entry") or not row.get("reviewer_user_id"):
+                return False
+        else:
+            if ingestion_job_id is None:
+                return False
             job_id = UUID(str(ingestion_job_id)) if not isinstance(ingestion_job_id, UUID) else ingestion_job_id
             job = self._job_repo.get(job_id)
             if job is None or job.get("status") != "completed":
                 return False
-        if parser_version is not None and (not isinstance(parser_version, str) or not parser_version.strip()):
-            return False
+            if parser_version is None or (
+                not isinstance(parser_version, str)
+                or not parser_version.strip()
+            ):
+                return False
         if source_id is not None:
             source_id_uuid = UUID(str(source_id)) if not isinstance(source_id, UUID) else source_id
             source = self._source_repo.get(source_id_uuid)

@@ -789,9 +789,13 @@ class RegulatoryRequirementRepository:
         """Select only requirements meeting all publication eligibility rules."""
         conditions: list[str] = [
             "r.status = 'extracted'",
-            "r.extraction_outcome = 'succeeded'",
             "r.stage_a_status = 'verified'",
             "r.stage_b_status = 'approved'",
+            # Extraction outcome: successful extraction pipeline OR an
+            # authorized manual recovery entry with reviewer attribution.
+            "(r.extraction_outcome = 'succeeded' OR "
+            "(r.extraction_outcome = 'manual' AND r.manual_entry = TRUE "
+            "AND r.reviewer_user_id IS NOT NULL))",
         ]
         params: list[Any] = []
         if source_filter is not None:

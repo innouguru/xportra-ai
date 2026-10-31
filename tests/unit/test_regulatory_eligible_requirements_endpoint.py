@@ -59,7 +59,16 @@ class FakeRequirementRepo:
         eligible = []
         for row in self.rows.values():
             if row.get("status") != "extracted": continue
-            if row.get("extraction_outcome") != "succeeded": continue
+            outcome = row.get("extraction_outcome")
+            if not (
+                outcome == "succeeded"
+                or (
+                    outcome == "manual"
+                    and row.get("manual_entry")
+                    and row.get("reviewer_user_id") is not None
+                )
+            ):
+                continue
             if row.get("stage_a_status") != "verified": continue
             if row.get("stage_b_status") != "approved": continue
             if source_filter is not None and UUID(row.get("source_id", "")) != source_filter: continue

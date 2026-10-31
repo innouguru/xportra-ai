@@ -69,7 +69,15 @@ class FakeRequirementRepo:
         for row in self.rows.values():
             if row.get("status") != "extracted":
                 continue
-            if row.get("extraction_outcome") != "succeeded":
+            outcome = row.get("extraction_outcome")
+            if not (
+                outcome == "succeeded"
+                or (
+                    outcome == "manual"
+                    and row.get("manual_entry")
+                    and row.get("reviewer_user_id") is not None
+                )
+            ):
                 continue
             if row.get("stage_a_status") != "verified":
                 continue
@@ -470,3 +478,89 @@ class EligibilityTests(TestCase):
             })
         )
         self.assertFalse(service2.is_eligible(REQUIREMENT_ID))
+
+    # --------------------------------------------------- manual recovery entry
+
+    def _manual_row(self, **overrides):
+        row = {
+            "id": REQUIREMENT_ID,
+            "normalized_document_id": UUID("77777777-0000-0000-0000-000000000700"),
+            "source_id": SOURCE_ID,
+            "status": "extracted",
+            "extraction_outcome": "manual",
+            "stage_a_status": "verified",
+            "stage_b_status": "approved",
+            "parser_version": None,
+            "ingestion_job_id": None,
+            "manual_entry": True,
+            "reviewer_user_id": ACTOR,
+            "stage_b_pilot_scope": "sesame-eu-pilot-v1",
+        }
+        row.update(overrides)
+        return row
+
+    def _manual_service(self, **repo_overrides):
+        requirement_repo = repo_overrides.pop(
+            "requirement_repo",
+            FakeRequirementRepo({REQUIREMENT_ID: self._manual_row()}),
+        )
+        overrides = {"requirement_repo": requirement_repo}
+        overrides.update(repo_overrides)
+        return self._service(**overrides)
+
+    def test_manual_candidate_eligible_after_both_reviews(self):
+        # R-4D criterion 20: manual recovery candidates pass the same
+        # Stage A and Stage B gates as extracted candidates. No ingestion
+        # job or parser version exists by design, so those provenance
+        # checks are replaced by reviewer attribution.
+        service = self._manual_service(job_repo=FakeJobRepo(status="failed"))
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertTrue(eligible)
+        self.assertEqual(reasons, [])
+
+    def test_manual_candidate_eligible_in_list_selection(self):
+        service = self._manual_service()
+        tenant = TenantContext(TENANT)
+        eligible = service.get_eligible_requirements(tenant=tenant)
+        self.assertIn(REQUIREMENT_ID, [r.get("id") for r in eligible])
+
+    def test_manual_candidate_without_reviewer_attribution_ineligible(self):
+        service = self._manual_service(
+            requirement_repo=FakeRequirementRepo({
+                REQUIREMENT_ID: self._manual_row(reviewer_user_id=None)
+            })
+        )
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertFalse(eligible)
+        self.assertTrue(any("reviewer attribution" in r for r in reasons))
+
+    def test_manual_candidate_without_manual_entry_marker_ineligible(self):
+        service = self._manual_service(
+            requirement_repo=FakeRequirementRepo({
+                REQUIREMENT_ID: self._manual_row(manual_entry=False)
+            })
+        )
+        eligible, reasons = service.check_eligibility(REQUIREMENT_ID)
+        self.assertFalse(eligible)
+        self.assertTrue(any("manual_entry" in r for r in reasons))
+
+    def test_manual_candidate_missing_normalized_document_ineligible(self):
+        service = self._manual_service(
+            requirement_repo=FakeRequirementRepo({
+                REQUIREMENT_ID: self._manual_row(normalized_document_id=None)
+            })
+        )
+        tenant = TenantContext(TENANT)
+        service._requirement_repo.get_eligible_for_publication = lambda **kw: []
+        eligible = service.get_eligible_requirements(tenant=tenant)
+        self.assertNotIn(REQUIREMENT_ID, [r.get("id") for r in eligible])
+
+    def test_manual_candidate_matches_single_and_list_probance_checks(self):
+        # The list path must agree with the single-requirement check:
+        # an eligible manual candidate appears in both.
+        service = self._manual_service()
+        eligible_row, _ = service.check_eligibility(REQUIREMENT_ID)
+        tenant = TenantContext(TENANT)
+        listed = service.get_eligible_requirements(tenant=tenant)
+        self.assertTrue(eligible_row)
+        self.assertIn(REQUIREMENT_ID, [r.get("id") for r in listed])

@@ -726,9 +726,10 @@ def check_candidate_eligibility(
 
     Eligibility requires Stage A verification (``verified``), Stage B
     approval (``approved``), current active source, no pending governance
-    flags, successful extraction outcome (``succeeded``), and complete
-    provenance. Partial, failed, manual-only, unverified, or stale
-    requirements are ineligible with structured reasons.
+    flags, and a succeeded extraction outcome or an authorized manual
+    recovery entry with reviewer attribution, plus complete provenance.
+    Partial, failed, unattributed, unverified, or stale requirements are
+    ineligible with structured reasons.
     """
     from datetime import datetime, timezone
 
@@ -1067,11 +1068,12 @@ def list_eligible_requirements(
 
     Eligibility requires Stage A verification (``verified``), Stage B
     approval (``approved``), current active source (no supersession,
-    withdrawal, or staleness), no pending governance flags, and
-    successful extraction outcome (``succeeded``). Partial, failed,
-    manual-only, or unverified requirements are excluded. Provenance
-    and citation references are preserved only for eligible items.
-    Caller-supplied approval claims are never accepted.
+    withdrawal, or staleness), no pending governance flags, and a
+    succeeded extraction outcome or an authorized manual recovery entry
+    with reviewer attribution. Partial, failed, or unverified
+    requirements are excluded. Provenance and citation references are
+    preserved only for eligible items. Caller-supplied approval claims
+    are never accepted.
     """
     eligible = service.get_eligible_requirements(
         tenant=None,
@@ -1098,7 +1100,7 @@ def list_eligible_requirements(
                 },
                 source_reference={
                     "source_id": item.get("source_id"),
-                    "source_version": item.get("document_version"),
+                    "source_version": item.get("source_version"),
                     "status": item.get("status"),
                 },
                 source_location=item.get("source_location"),
@@ -1132,9 +1134,10 @@ def publish_candidate(
 
     Eligibility requires: Stage A verification (``verified``), Stage B
     approval (``approved``), current active source, no pending governance
-    flags, successful extraction outcome (``succeeded``), and complete
-    provenance. Partial, failed, manual-only, unverified, or stale
-    requirements are ineligible with structured reasons.
+    flags, and a succeeded extraction outcome or an authorized manual
+    recovery entry with reviewer attribution, plus complete provenance.
+    Partial, failed, unattributed, unverified, or stale requirements are
+    ineligible with structured reasons.
 
     Returns a dict with: requirement_id, eligible, reasons,
     published_at (ISO-8601 datetime), and evaluation rationale.
@@ -1146,5 +1149,4 @@ def publish_candidate(
         "eligible": result["eligible"],
         "reasons": result["reasons"],
         "published_at": result["published_at"].isoformat() if result["published_at"] else None,
-        "eligible": result["eligible"],
     }
