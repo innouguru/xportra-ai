@@ -61,6 +61,21 @@ class AssessmentRegulatoryIntegrationTests(unittest.TestCase):
         """Insert test-owned requirement rows and governance flags."""
         with cls.database.transaction() as conn:
             with conn.cursor() as cur:
+                # The flagged source references this authority; the source
+                # insert below fails on a freshly migrated database unless
+                # the authority row exists first. A unique (name,
+                # jurisdiction) avoids colliding with the shared
+                # "Test Authority" rows other fixtures seed.
+                cur.execute(
+                    """
+                    INSERT INTO xportra.authorities
+                        (id, name, jurisdiction, authority_type, status)
+                    VALUES (%s, 'Flagged Regulation Authority', 'EU',
+                            'government', 'active')
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (UUID("cccccc05-0000-0000-0000-000000000005"),),
+                )
                 # Flagged source
                 cur.execute(
                     """
@@ -72,7 +87,7 @@ class AssessmentRegulatoryIntegrationTests(unittest.TestCase):
                     ON CONFLICT (id) DO NOTHING
                     """,
                     (
-                        FLAGGED_SOURCE_ID, UUID("cccccc04-0000-0000-0000-000000000003"),
+                        FLAGGED_SOURCE_ID, UUID("cccccc05-0000-0000-0000-000000000005"),
                         "EU", "Flagged Regulation", "1.0", "active",
                         "2024-01-01", "2024-01-01", "https://example.com/flagged",
                     ),

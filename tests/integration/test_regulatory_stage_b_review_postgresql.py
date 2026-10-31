@@ -174,19 +174,25 @@ class RegulatoryStageBReviewIntegrationTests(unittest.TestCase):
 
     def _fixture_authority(self):
         repo = AuthorityRepository(self.database)
-        if repo.get(AUTHORITY_ID) is None:
-            with self.database.transaction() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        INSERT INTO xportra.authorities
-                            (id, name, jurisdiction, authority_type, status)
-                        VALUES (%s, %s, %s, 'government', 'active')
-                        ON CONFLICT (id) DO NOTHING
-                        RETURNING id
-                        """,
-                        (AUTHORITY_ID, "Test Authority", "EU"),
-                    )
+        if repo.get(AUTHORITY_ID) is not None:
+            self.authority_id = AUTHORITY_ID
+            return
+        with self.database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO xportra.authorities
+                        (id, name, jurisdiction, authority_type, status)
+                    VALUES (%s, %s, %s, 'government', 'active')
+                    ON CONFLICT (name, jurisdiction) DO UPDATE
+                        SET status = 'active'
+                    RETURNING id
+                    """,
+                    (AUTHORITY_ID, "Test Authority", "EU"),
+                )
+                # Another fixture may already own ("Test Authority", "EU")
+                # under a different id; adopt it for the source insert.
+                self.authority_id = cursor.fetchone()["id"]
 
     def _fixture_user_with_grant(
         self, supabase_uid: UUID, role: str = "owner"
@@ -273,7 +279,7 @@ class RegulatoryStageBReviewIntegrationTests(unittest.TestCase):
                     ON CONFLICT DO NOTHING
                     """,
                     (
-                        SOURCE_ID, AUTHORITY_ID, "EU", "Test Regulation",
+                        SOURCE_ID, self.authority_id, "EU", "Test Regulation",
                         "1.0", "active", "2024-01-01", "2024-01-01",
                         "https://example.com/regulation",
                     ),
