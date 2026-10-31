@@ -61,6 +61,8 @@ from xportra.api.schemas import (
     RegulatorySourceResponse,
     RegulatorySupersessionRequest,
     RegulatorySupersessionResponse,
+    RegulatoryWithdrawalRequest,
+    RegulatoryWithdrawalResponse,
     RegulatoryTextEntryRequest,
     RegulatoryStageAReviewHistoryListResponse,
     RegulatoryStageAReviewHistoryResponse,
@@ -469,6 +471,40 @@ def record_supersession(
         "superseded_by_source_id": result.get("superseded_by_source_id"),
         "status": result.get("status"),
         "updated_at": result.get("updated_at"),
+    }
+
+
+@router.post(
+    "/regulatory/sources/{source_id}/withdrawal",
+    response_model=RegulatoryWithdrawalResponse,
+    status_code=status.HTTP_200_OK,
+)
+def withdraw_source(
+    source_id: UUID,
+    payload: RegulatoryWithdrawalRequest,
+    service: IntakeServiceDependency,
+    actor_id: GlobalStaffDependency,
+):
+    """Withdraw a regulatory source.
+
+    Requires an active ``GRANT_MANAGE`` global staff grant. Sets the
+    source status to ``withdrawn`` and raises a pending ``withdrawal``
+    governance flag for every linked requirement. Pending flags block
+    Stage A verification of linked candidates and publication
+    eligibility refuses sources that are not active, so withdrawn
+    material can never be silently treated as current approval.
+    """
+    result = service.withdraw_source(
+        actor_user_id=actor_id,
+        source_id=source_id,
+        rationale=payload.rationale,
+    )
+    return {
+        "id": result["id"],
+        "source_id": result["source_id"],
+        "status": result["status"],
+        "governance_flags_raised": result["governance_flags_raised"],
+        "updated_at": result["updated_at"],
     }
 
 

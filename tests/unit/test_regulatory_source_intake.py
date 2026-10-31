@@ -941,7 +941,7 @@ class FakeRequirementRepository:
         ]
 
     def create(self, **kwargs):
-        req_id = UUID("44444444-0000-0000-0000-000000000400")
+        req_id = kwargs.get("id", UUID("44444444-0000-0000-0000-000000000400"))
         row = {"id": req_id, **kwargs}
         self.reqs[req_id] = row
         return row
@@ -1269,3 +1269,183 @@ class RegulatorySupersessionTests(TestCase):
         # After rollback, source updates must not persist (verified against real DB in integration).
         # The exception confirms the atomic transaction boundary fails safely.
         service._flag_repo.create_in_transaction = original_create
+
+
+# ---------------------------------------------------------------------------
+# Source withdrawal tests (M7)
+# ---------------------------------------------------------------------------
+
+
+def _make_linked_requirement(factory, requirement_id: UUID, source_id: UUID):
+    return factory.requirements.create(
+        id=requirement_id,
+        normalized_document_id=UUID("77777777-0000-0000-0000-000000000700"),
+        requirement_text="Withdrawal test requirement.",
+        requirement_type="labeling",
+        source_location={},
+        position=0,
+        actor=None,
+        condition_metadata=None,
+        status="extracted",
+        ingestion_job_id=None,
+        extraction_outcome="succeeded",
+        parser_version="v1",
+        manual_entry=False,
+        reviewer_user_id=None,
+        reviewed_at=None,
+        source_id=source_id,
+        stage_a_status="verified",
+        stage_a_reviewer_user_id=None,
+        stage_a_reviewed_at=None,
+        stage_a_rationale=None,
+        stage_b_status="approved",
+        stage_b_reviewer_user_id=None,
+        stage_b_reviewed_at=None,
+        stage_b_rationale=None,
+        stage_b_pilot_scope=None,
+    )
+
+
+class RegulatorySourceWithdrawalTests(TestCase):
+    def test_authorized_withdraw_source(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Withdrawn Regulation", version="1.0",
+        )
+        result = service.withdraw_source(
+            actor_user_id=ACTOR,
+            source_id=source["id"],
+            rationale="Regulation retracted by the issuing authority.",
+        )
+        self.assertEqual(result["source_id"], source["id"])
+        self.assertEqual(result["status"], "withdrawn")
+        self.assertEqual(result["governance_flags_raised"], 0)
+        row = factory.sources.get(source["id"])
+        self.assertEqual(row["status"], "withdrawn")
+
+    def test_unauthorized_withdraw_source_denied(self):
+        factory = ServiceFactory(granted_actor=False)
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Withdrawal attempt.", version="1.0",
+        )
+        with self.assertRaises(PermissionDeniedError):
+            service.withdraw_source(
+                actor_user_id=NON_GRANTED,
+                source_id=source["id"],
+                rationale="Unauthorized withdrawal attempt.",
+            )
+        row = factory.sources.get(source["id"])
+        self.assertNotEqual(row["status"], "withdrawn")
+
+    def test_withdrawal_requires_rationale(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Withdrawal rationale target.", version="1.0",
+        )
+        with self.assertRaises(ApplicationValidationError):
+            service.withdraw_source(
+                actor_user_id=ACTOR,
+                source_id=source["id"],
+                rationale="   ",
+            )
+        row = factory.sources.get(source["id"])
+        self.assertNotEqual(row["status"], "withdrawn")
+
+    def test_withdrawal_missing_source_denied(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        with self.assertRaises(ApplicationNotFoundError):
+            service.withdraw_source(
+                actor_user_id=ACTOR,
+                source_id=UUID("99999999-0000-0000-0000-000000000999"),
+                rationale="Missing source.",
+            )
+
+    def test_withdrawal_of_already_withdrawn_source_denied(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Already withdrawn.", version="1.0",
+        )
+        service.withdraw_source(
+            actor_user_id=ACTOR,
+            source_id=source["id"],
+            rationale="First withdrawal.",
+        )
+        with self.assertRaises(ApplicationValidationError) as ctx:
+            service.withdraw_source(
+                actor_user_id=ACTOR,
+                source_id=source["id"],
+                rationale="Second withdrawal.",
+            )
+        self.assertIn("already withdrawn", str(ctx.exception))
+        # No duplicate flags raised on the refused attempt.
+        flags = factory.flags.get_for_source(source["id"])
+        self.assertEqual(len(flags), 0)
+
+    def test_withdrawal_raises_pending_flags_for_linked_requirements(self):
+        """Every linked requirement receives a pending withdrawal flag."""
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Source with requirements.", version="1.0",
+        )
+        req_a = _make_linked_requirement(
+            factory, UUID("66666666-0000-0000-0000-000000000601"), source["id"],
+        )
+        req_b = _make_linked_requirement(
+            factory, UUID("66666666-0000-0000-0000-000000000602"), source["id"],
+        )
+        result = service.withdraw_source(
+            actor_user_id=ACTOR,
+            source_id=source["id"],
+            rationale="Official retraction.",
+        )
+        self.assertEqual(result["governance_flags_raised"], 2)
+        flags = factory.flags.get_for_source(source["id"])
+        self.assertEqual(len(flags), 2)
+        self.assertEqual(
+            {f["requirement_id"] for f in flags},
+            {req_a["id"], req_b["id"]},
+        )
+        for flag in flags:
+            self.assertEqual(flag["trigger_type"], "withdrawal")
+            self.assertEqual(flag["status"], "pending_review")
+            self.assertEqual(flag["actor_user_id"], ACTOR)
+            self.assertEqual(flag["rationale"], "Official retraction.")
+
+    def test_atomic_withdrawal_rollback_on_flag_failure(self):
+        """If flag creation fails, the status update must roll back."""
+        factory = ServiceFactory()
+        service = factory.service()
+        source = service.register_source(
+            actor_user_id=ACTOR, authority_id=AUTHORITY,
+            jurisdiction="EU", title="Rollback target.", version="1.0",
+        )
+        _make_linked_requirement(
+            factory, UUID("66666666-0000-0000-0000-000000000603"), source["id"],
+        )
+        original_create = service._flag_repo.create_in_transaction
+        def failing_create(*args, **kwargs):
+            raise RuntimeError("simulated flag insert failure")
+        service._flag_repo.create_in_transaction = failing_create
+        try:
+            with self.assertRaises(RuntimeError):
+                service.withdraw_source(
+                    actor_user_id=ACTOR,
+                    source_id=source["id"],
+                    rationale="Rollback test.",
+                )
+        finally:
+            service._flag_repo.create_in_transaction = original_create
+        # No success reported; flags were refused atomically.
+        flags = factory.flags.get_for_source(source["id"])
+        self.assertEqual(len(flags), 0)

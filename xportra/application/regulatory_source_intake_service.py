@@ -26,6 +26,9 @@ from xportra.application.errors import (
     InfrastructureError,
 )
 from xportra.application.global_staff import GlobalStaffGrantService, GRANT_MANAGE
+from xportra.application.regulatory_governance_service import (
+    TRIGGER_TYPE_WITHDRAWAL,
+)
 from xportra.application.regulatory_ingestion_service import RegulatoryIngestionService
 from xportra.persistence.database import Database
 from xportra.persistence.repositories import (
@@ -272,6 +275,66 @@ class RegulatorySourceIntakeService:
             "supersedes_source_id": updated.get("supersedes_source_id"),
             "superseded_by_source_id": updated.get("superseded_by_source_id"),
             "status": updated.get("status"),
+            "updated_at": updated.get("updated_at"),
+        }
+
+    def withdraw_source(
+        self,
+        actor_user_id: UUID,
+        source_id: UUID,
+        rationale: str,
+    ) -> dict[str, Any]:
+        """Withdraw a regulatory source (M7).
+
+        Requires an active ``GRANT_MANAGE`` grant. Sets the source status
+        to ``withdrawn`` atomically and raises a pending
+        ``withdrawal`` governance flag for every requirement linked to the
+        source, so nothing linked to a withdrawn source can be treated as
+        current approval: pending flags block Stage A verification, and
+        publication eligibility already refuses withdrawn sources.
+        Withdrawal is idempotent-restricted: withdrawing an already
+        withdrawn or archived source is refused.
+        """
+        self._require_grant(actor_user_id)
+        if not rationale or not rationale.strip():
+            raise ApplicationValidationError("rationale is required")
+
+        source = self._source_repo.get(source_id)
+        if source is None:
+            raise ApplicationNotFoundError("source not found")
+        if source.get("status") in ("withdrawn", "archived"):
+            raise ApplicationValidationError(
+                f"source already {source.get('status')}"
+            )
+
+        requirements = self._requirement_repo.list_for_source(source_id)
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext(%s)::bigint)",
+                    (f"regulatory_withdrawal_{source_id}",),
+                )
+            self._source_repo.update_source_in_transaction(
+                connection,
+                source_id,
+                status="withdrawn",
+            )
+            for req in requirements:
+                self._flag_repo.create_in_transaction(
+                    connection,
+                    requirement_id=req["id"],
+                    trigger_source_id=source_id,
+                    trigger_type=TRIGGER_TYPE_WITHDRAWAL,
+                    actor_user_id=actor_user_id,
+                    rationale=rationale.strip(),
+                )
+
+        updated = self._source_repo.get(source_id)
+        return {
+            "id": updated["id"],
+            "source_id": updated["id"],
+            "status": updated.get("status"),
+            "governance_flags_raised": len(requirements),
             "updated_at": updated.get("updated_at"),
         }
 

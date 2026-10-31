@@ -800,6 +800,29 @@ class RegulatorySupersessionResponse(BaseModel):
     updated_at: datetime
 
 
+class RegulatoryWithdrawalRequest(APIRequest):
+    """Withdraw a regulatory source (M7).
+
+    ``rationale`` documents why the source is being withdrawn. The
+    withdrawal sets the source status to ``withdrawn`` and raises a
+    pending ``withdrawal`` governance flag for every linked requirement;
+    nothing linked to the source can be published or re-verified while
+    the flags remain pending.
+    """
+
+    rationale: str = Field(min_length=1)
+
+
+class RegulatoryWithdrawalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    source_id: UUID
+    status: str
+    governance_flags_raised: int
+    updated_at: datetime
+
+
 class RegulatoryArtifactUploadRequest(APIRequest):
     """Upload an original regulatory artifact (JSON transport, base64 bytes)."""
 
