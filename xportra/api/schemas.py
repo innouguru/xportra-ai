@@ -1095,10 +1095,18 @@ class RegulatoryStageAReviewRequest(APIRequest):
     Requires the ``STAGE_A_VERIFY`` global staff permission.
     ``stage_a_status`` must be one of: verified, rejected,
     clarification_required. Rationale is mandatory.
+
+    ``corrected_requirement_text`` optionally records a wording
+    correction as part of a ``verified`` decision: the pre-correction
+    wording is preserved verbatim in an append-only history and the
+    operative candidate text is updated atomically with the decision.
+    Corrections are refused when the candidate holds a Stage B approval;
+    corrected wording requires a fresh Stage B review.
     """
 
     stage_a_status: str
     rationale: str = Field(min_length=1)
+    corrected_requirement_text: str | None = None
 
 
 class RegulatoryStageAReviewResponse(BaseModel):
@@ -1116,6 +1124,25 @@ class RegulatoryStageAReviewResponse(BaseModel):
     stage_a_rationale: str | None
     audit_id: UUID
     audit_created_at: datetime
+    wording_correction_id: UUID | None = None
+
+
+class RegulatoryWordingCorrectionResponse(BaseModel):
+    """One append-only wording-correction record (M5)."""
+
+    id: UUID
+    requirement_id: UUID
+    source_id: UUID | None
+    original_text: str
+    corrected_text: str
+    rationale: str
+    reviewer_user_id: UUID
+    created_at: datetime
+
+
+class RegulatoryWordingCorrectionListResponse(BaseModel):
+    items: list[RegulatoryWordingCorrectionResponse]
+    total: int
 
 
 class RegulatoryStageAReviewHistoryResponse(BaseModel):

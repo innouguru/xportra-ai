@@ -931,6 +931,86 @@ class RegulatoryRequirementRepository:
         )
 
 
+    def update_text(
+        self,
+        requirement_id: UUID,
+        requirement_text: str,
+        updated_at: Any,
+    ) -> Row | None:
+        """Update the operative requirement wording (wording correction).
+
+        The pre-correction wording is recorded beforehand in the
+        append-only ``regulatory_requirement_wording_corrections`` table;
+        this update only changes the operative text column.
+        """
+        return _insert(
+            self._database,
+            "regulatory requirement wording correction",
+            """
+            UPDATE xportra.regulatory_requirements
+            SET requirement_text = %s,
+                updated_at = %s
+            WHERE id = %s
+            RETURNING *
+            """,
+            (
+                requirement_text,
+                updated_at,
+                requirement_id,
+            ),
+        )
+
+    def create_wording_correction_in_transaction(
+        self,
+        connection,
+        *,
+        requirement_id: UUID,
+        source_id: UUID | None,
+        original_text: str,
+        corrected_text: str,
+        rationale: str,
+        reviewer_user_id: UUID,
+        created_at: Any,
+    ) -> Row:
+        """Append a wording-correction record inside the caller transaction."""
+        return _insert_in_transaction(
+            connection,
+            "regulatory requirement wording correction record",
+            """
+            INSERT INTO xportra.regulatory_requirement_wording_corrections
+                (requirement_id, source_id, original_text, corrected_text,
+                 rationale, reviewer_user_id, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                requirement_id,
+                source_id,
+                original_text,
+                corrected_text,
+                rationale,
+                reviewer_user_id,
+                created_at,
+                created_at,
+            ),
+        )
+
+    def list_wording_corrections(self, requirement_id: UUID) -> list[Row]:
+        """Return the append-only wording-correction history for a candidate."""
+        return _fetch_all(
+            self._database,
+            """
+            SELECT id, requirement_id, source_id, original_text,
+                   corrected_text, rationale, reviewer_user_id,
+                   created_at, updated_at
+            FROM xportra.regulatory_requirement_wording_corrections
+            WHERE requirement_id = %s
+            ORDER BY created_at DESC, id DESC
+            """,
+            (requirement_id,),
+        )
+
+
     def update_stage_b(
         self,
         requirement_id: UUID,

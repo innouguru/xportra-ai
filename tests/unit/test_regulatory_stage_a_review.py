@@ -125,6 +125,7 @@ class FakeRequirementRepository:
         for r in list(existing or []):
             self.requirements[r["id"]] = dict(r)
         self.fail_update = False
+        self.wording_corrections: list[dict] = []
 
     def get(self, requirement_id: UUID):
         return self.requirements.get(requirement_id)
@@ -149,6 +150,56 @@ class FakeRequirementRepository:
         row["stage_a_rationale"] = rationale
         row["updated_at"] = reviewed_at
         return row
+
+    def update_text(
+        self,
+        requirement_id: UUID,
+        requirement_text: str,
+        updated_at,
+    ) -> dict | None:
+        """Update the operative wording (wording correction)."""
+        if self.fail_update:
+            raise RuntimeError("simulated wording update failure")
+        row = self.requirements.get(requirement_id)
+        if row is None:
+            return None
+        row["requirement_text"] = requirement_text
+        row["updated_at"] = updated_at
+        return row
+
+    def create_wording_correction_in_transaction(
+        self,
+        connection,
+        *,
+        requirement_id: UUID,
+        source_id,
+        original_text: str,
+        corrected_text: str,
+        rationale: str,
+        reviewer_user_id: UUID,
+        created_at,
+    ) -> dict:
+        """Append an immutable wording-correction record."""
+        if self.fail_update:
+            raise RuntimeError("simulated correction record failure")
+        record = {
+            "id": UUID("77777777-0000-0000-0000-000000000700"),
+            "requirement_id": requirement_id,
+            "source_id": source_id,
+            "original_text": original_text,
+            "corrected_text": corrected_text,
+            "rationale": rationale,
+            "reviewer_user_id": reviewer_user_id,
+            "created_at": created_at,
+        }
+        self.wording_corrections.append(dict(record))
+        return dict(record)
+
+    def list_wording_corrections(self, requirement_id: UUID) -> list[dict]:
+        return [
+            r for r in self.wording_corrections
+            if r["requirement_id"] == requirement_id
+        ]
 
     def get_with_provenance(self, requirement_id: UUID) -> dict | None:
         """Return the requirement row with provenance fields (all None for fake)."""
@@ -602,3 +653,197 @@ class RegulatoryStageAReviewTests(TestCase):
         history = service.list_stage_a_decisions(CANDIDATE)
         self.assertIsInstance(history, list)
         self.assertTrue(len(history) >= 1)
+
+
+class WordingCorrectionTests(TestCase):
+    """M5: wording correction as part of a Stage A verification."""
+
+    def test_wording_correction_atomic_with_verified_decision(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        result = service.verify_stage_a(
+            actor_user_id=ACTOR,
+            candidate_id=CANDIDATE,
+            stage_a_status=STAGE_A_STATUS_VERIFIED,
+            rationale="Wording omits the origin-country clause; corrected.",
+            corrected_requirement_text=(
+                "Products shall be labeled with the country of origin."
+            ),
+        )
+        # Decision recorded.
+        self.assertEqual(result["stage_a_status"], STAGE_A_STATUS_VERIFIED)
+        # Correction applied to operative text.
+        self.assertEqual(result["wording_correction_id"],
+                         UUID("77777777-0000-0000-0000-000000000700"))
+        row = service.get_candidate_stage_a(CANDIDATE)
+        self.assertEqual(
+            row["requirement_text"],
+            "Products shall be labeled with the country of origin.",
+        )
+        # Pre-correction wording preserved verbatim in append-only history.
+        corrections = service.list_wording_corrections(CANDIDATE)
+        self.assertEqual(len(corrections), 1)
+        self.assertEqual(
+            corrections[0]["original_text"],
+            "Shall be labeled with origin.",
+        )
+        self.assertEqual(
+            corrections[0]["corrected_text"],
+            "Products shall be labeled with the country of origin.",
+        )
+        self.assertEqual(corrections[0]["reviewer_user_id"], ACTOR)
+        self.assertEqual(
+            corrections[0]["rationale"],
+            "Wording omits the origin-country clause; corrected.",
+        )
+        self.assertEqual(corrections[0]["source_id"], SOURCE)
+
+    def test_wording_correction_requires_verified_decision(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        with self.assertRaises(ApplicationValidationError):
+            service.verify_stage_a(
+                actor_user_id=ACTOR,
+                candidate_id=CANDIDATE,
+                stage_a_status=STAGE_A_STATUS_REJECTED,
+                rationale="Rejecting with a correction is not allowed.",
+                corrected_requirement_text="Some other wording.",
+            )
+        # No correction recorded, operative text unchanged.
+        self.assertEqual(factory.requirements.wording_corrections, [])
+        row = service.get_candidate_stage_a(CANDIDATE)
+        self.assertEqual(row["requirement_text"], "Shall be labeled with origin.")
+
+    def test_wording_correction_empty_text_rejected(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        with self.assertRaises(ApplicationValidationError):
+            service.verify_stage_a(
+                actor_user_id=ACTOR,
+                candidate_id=CANDIDATE,
+                stage_a_status=STAGE_A_STATUS_VERIFIED,
+                rationale="Attempted correction without text.",
+                corrected_requirement_text="   ",
+            )
+        self.assertEqual(factory.requirements.wording_corrections, [])
+
+    def test_wording_correction_same_text_rejected(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        with self.assertRaises(ApplicationValidationError):
+            service.verify_stage_a(
+                actor_user_id=ACTOR,
+                candidate_id=CANDIDATE,
+                stage_a_status=STAGE_A_STATUS_VERIFIED,
+                rationale="No-op correction attempt.",
+                corrected_requirement_text="Shall be labeled with origin.",
+            )
+        self.assertEqual(factory.requirements.wording_corrections, [])
+
+    def test_wording_correction_blocked_when_stage_b_approved(self):
+        """Corrected wording requires a fresh Stage B review (fail-closed)."""
+        factory = ServiceFactory()
+        factory.requirements.requirements[CANDIDATE]["stage_b_status"] = "approved"
+        service = factory.service()
+        with self.assertRaises(ApplicationValidationError):
+            service.verify_stage_a(
+                actor_user_id=ACTOR,
+                candidate_id=CANDIDATE,
+                stage_a_status=STAGE_A_STATUS_VERIFIED,
+                rationale="Correction on an approved candidate.",
+                corrected_requirement_text="Different wording entirely.",
+            )
+        self.assertEqual(factory.requirements.wording_corrections, [])
+        row = service.get_candidate_stage_a(CANDIDATE)
+        self.assertEqual(row["requirement_text"], "Shall be labeled with origin.")
+
+    def test_wording_correction_history_listed_per_candidate(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        service.verify_stage_a(
+            actor_user_id=ACTOR,
+            candidate_id=CANDIDATE,
+            stage_a_status=STAGE_A_STATUS_VERIFIED,
+            rationale="First correction.",
+            corrected_requirement_text="Updated wording.",
+        )
+        # Seed a second candidate and confirm history isolation.
+        other = UUID("66666666-0000-0000-0000-000000000600")
+        factory.requirements.requirements[other] = {
+            "id": other,
+            "source_id": SOURCE,
+            "requirement_text": "Other candidate.",
+            "extraction_outcome": "succeeded",
+            "status": "extracted",
+            "manual_entry": False,
+            "stage_a_status": "pending",
+            "stage_b_status": None,
+        }
+        service.verify_stage_a(
+            actor_user_id=ACTOR,
+            candidate_id=other,
+            stage_a_status=STAGE_A_STATUS_REJECTED,
+            rationale="Rejected; no correction.",
+        )
+        # Second correction on the first candidate.
+        service.verify_stage_a(
+            actor_user_id=ACTOR,
+            candidate_id=CANDIDATE,
+            stage_a_status=STAGE_A_STATUS_VERIFIED,
+            rationale="Second correction.",
+            corrected_requirement_text="Updated wording again.",
+        )
+        corrections = service.list_wording_corrections(CANDIDATE)
+        self.assertEqual(len(corrections), 2)
+        self.assertEqual(
+            [c["corrected_text"] for c in corrections],
+            ["Updated wording.", "Updated wording again."],
+        )
+        # Candidate-level isolation.
+        self.assertEqual(service.list_wording_corrections(other), [])
+
+    def test_unauthorized_wording_correction_denied(self):
+        factory = ServiceFactory(granted_actor=False)
+        service = factory.service()
+        with self.assertRaises(PermissionDeniedError):
+            service.verify_stage_a(
+                actor_user_id=NON_GRANTED,
+                candidate_id=CANDIDATE,
+                stage_a_status=STAGE_A_STATUS_VERIFIED,
+                rationale="Unauthorized correction attempt.",
+                corrected_requirement_text="Unauthorized wording.",
+            )
+        self.assertEqual(factory.requirements.wording_corrections, [])
+        row = service.get_candidate_stage_a(CANDIDATE)
+        self.assertEqual(row["stage_a_status"], "pending")
+        self.assertEqual(row["requirement_text"], "Shall be labeled with origin.")
+
+    def test_wording_correction_failure_does_not_report_success(self):
+        """Persistence failure inside the transaction leaves state unchanged."""
+        factory = ServiceFactory(fail_update=True)
+        service = factory.service()
+        with self.assertRaises(RuntimeError):
+            service.verify_stage_a(
+                actor_user_id=ACTOR,
+                candidate_id=CANDIDATE,
+                stage_a_status=STAGE_A_STATUS_VERIFIED,
+                rationale="Correction under simulated failure.",
+                corrected_requirement_text="Wording that must not persist.",
+            )
+        # No success reported: no correction recorded, operative text
+        # unchanged, Stage A columns untouched (rolled back).
+        self.assertEqual(factory.requirements.wording_corrections, [])
+        row = service.get_candidate_stage_a(CANDIDATE)
+        self.assertEqual(row["stage_a_status"], "pending")
+        self.assertEqual(row["requirement_text"], "Shall be labeled with origin.")
+
+    def test_regression_service_reply_reports_wording_correction_id(self):
+        factory = ServiceFactory()
+        service = factory.service()
+        result = service.verify_stage_a(
+            actor_user_id=ACTOR,
+            candidate_id=CANDIDATE,
+            stage_a_status=STAGE_A_STATUS_VERIFIED,
+            rationale="No correction supplied.",
+        )
+        self.assertIsNone(result["wording_correction_id"])

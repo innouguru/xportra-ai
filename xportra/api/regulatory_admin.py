@@ -66,6 +66,7 @@ from xportra.api.schemas import (
     RegulatoryStageAReviewHistoryResponse,
     RegulatoryStageAReviewRequest,
     RegulatoryStageAReviewResponse,
+    RegulatoryWordingCorrectionListResponse,
     RegulatoryStageBReviewHistoryListResponse,
     RegulatoryStageBReviewHistoryResponse,
     RegulatoryStageBReviewRequest,
@@ -866,12 +867,19 @@ def stage_a_verify(
 
     Valid decisions: verified, rejected, clarification_required.
     A candidate with failed extraction cannot be marked verified.
+
+    ``corrected_requirement_text`` optionally records a wording
+    correction as part of a ``verified`` decision: the pre-correction
+    wording is preserved verbatim in an append-only history and the
+    operative candidate text is updated atomically with the decision.
+    Corrections are refused when the candidate holds a Stage B approval.
     """
     result = service.verify_stage_a(
         actor_user_id=actor_id,
         candidate_id=candidate_id,
         stage_a_status=payload.stage_a_status,
         rationale=payload.rationale,
+        corrected_requirement_text=payload.corrected_requirement_text,
     )
     return {
         "id": result["id"],
@@ -881,6 +889,7 @@ def stage_a_verify(
         "stage_a_reviewer_user_id": result.get("stage_a_reviewer_user_id"),
         "stage_a_reviewed_at": result.get("stage_a_reviewed_at"),
         "stage_a_rationale": result.get("stage_a_rationale"),
+        "wording_correction_id": result.get("wording_correction_id"),
         "audit_id": result["audit_id"],
         "audit_created_at": result["audit_created_at"],
     }
@@ -931,6 +940,42 @@ def list_stage_a_history(
         "limit": limit,
         "offset": offset,
         "total": total,
+    }
+
+
+@router.get(
+    "/regulatory/candidates/{candidate_id}/wording-corrections",
+    response_model=RegulatoryWordingCorrectionListResponse,
+)
+def list_wording_corrections(
+    candidate_id: UUID,
+    service: StageAServiceDependency,
+    actor_id: StageADependency,
+):
+    """Return the append-only wording-correction history for a candidate.
+
+    Each correction preserves the pre-correction wording verbatim
+    alongside the corrected wording, reviewer attribution, and rationale.
+    Historical rows are never updated or deleted; the current operative
+    wording lives on the candidate itself.
+    """
+    items = service.list_wording_corrections(candidate_id)
+    return {
+        "items": [_wording_correction_response(item) for item in items],
+        "total": len(items),
+    }
+
+
+def _wording_correction_response(correction: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": correction["id"],
+        "requirement_id": correction["requirement_id"],
+        "source_id": correction.get("source_id"),
+        "original_text": correction["original_text"],
+        "corrected_text": correction["corrected_text"],
+        "rationale": correction["rationale"],
+        "reviewer_user_id": correction["reviewer_user_id"],
+        "created_at": correction["created_at"],
     }
 
 

@@ -142,6 +142,7 @@ class RegulatoryStageAReviewService:
         candidate_id: UUID,
         stage_a_status: str,
         rationale: str,
+        corrected_requirement_text: str | None = None,
     ) -> dict[str, Any]:
         """Record a Stage A review decision for a candidate.
 
@@ -151,6 +152,18 @@ class RegulatoryStageAReviewService:
         marked ``verified`` — insufficient source evidence blocks
         verification. Manual candidates (``manual_entry == True``) may be
         reviewed but manual entry is not itself proof of verification.
+
+        Wording correction: when ``corrected_requirement_text`` is
+        supplied together with a ``verified`` decision, the operative
+        candidate wording is corrected as part of the reviewer's
+        verification act. The pre-correction wording is recorded
+        verbatim (append-only) in
+        ``regulatory_requirement_wording_corrections`` with the reviewer
+        and rationale — the original wording is never lost. The
+        correction and the decision are committed atomically.
+        Corrections are refused for candidates with a current Stage B
+        approval: corrected wording requires a fresh Stage B
+        applicability review before anything is published.
 
         Records an append-only audit event in
         ``regulatory_stage_a_reviews`` and updates the candidate's
@@ -202,6 +215,32 @@ class RegulatoryStageAReviewService:
                 "candidate with failed extraction cannot be stage-a verified"
             )
 
+        # Wording correction validation (M5): corrections are part of a
+        # Stage A verification, must carry distinct non-empty text, and
+        # invalidate any governing Stage B approval (corrected wording
+        # must be re-approved; fail-closed otherwise).
+        correction_supplied = corrected_requirement_text is not None
+        if correction_supplied:
+            if stage_a_status != STAGE_A_STATUS_VERIFIED:
+                raise ApplicationValidationError(
+                    "wording correction requires a 'verified' Stage A decision"
+                )
+            corrected_text = corrected_requirement_text.strip()
+            if not corrected_text:
+                raise ApplicationValidationError(
+                    "corrected_requirement_text cannot be empty when supplied"
+                )
+            if corrected_text == (row.get("requirement_text") or "").strip():
+                raise ApplicationValidationError(
+                    "corrected_requirement_text must differ from the "
+                    "current candidate wording"
+                )
+            if row.get("stage_b_status") == "approved":
+                raise ApplicationValidationError(
+                    "current wording has a Stage B approval; correcting it "
+                    "requires a fresh Stage B applicability review"
+                )
+
         now = datetime.now(timezone.utc)
 
         # Update candidate Stage A columns (current state) and record
@@ -242,6 +281,28 @@ class RegulatoryStageAReviewService:
             )
             audit_row = cursor.fetchone()
 
+            # Wording correction: record original wording verbatim in the
+            # append-only history, then update the operative text — in the
+            # same transaction so correction and verification are atomic.
+            correction_row = None
+            if correction_supplied:
+                corrected_text = corrected_requirement_text.strip()
+                correction_row = self._requirement_repo.create_wording_correction_in_transaction(
+                    connection,
+                    requirement_id=candidate_id,
+                    source_id=source_id,
+                    original_text=row.get("requirement_text") or "",
+                    corrected_text=corrected_text,
+                    rationale=rationale.strip(),
+                    reviewer_user_id=actor_user_id,
+                    created_at=now,
+                )
+                updated_row = self._requirement_repo.update_text(
+                    candidate_id, corrected_text, now
+                )
+                if updated_row is None:
+                    raise ApplicationNotFoundError("candidate requirement not found")
+
         return {
             "id": updated_row["id"],
             "requirement_id": updated_row["id"],
@@ -250,8 +311,17 @@ class RegulatoryStageAReviewService:
             "stage_a_reviewer_user_id": updated_row["stage_a_reviewer_user_id"],
             "stage_a_reviewed_at": updated_row["stage_a_reviewed_at"],
             "stage_a_rationale": updated_row["stage_a_rationale"],
+            "requirement_text": updated_row.get("requirement_text"),
+            "wording_correction_id": (
+                correction_row["id"] if correction_row is not None else None
+            ),
             "audit_id": audit_row["id"],
             "audit_created_at": audit_row["created_at"],
         }
+
+    def list_wording_corrections(self, requirement_id: UUID) -> list[dict[str, Any]]:
+        """Return the append-only wording-correction history for a candidate."""
+        rows = self._requirement_repo.list_wording_corrections(requirement_id)
+        return [dict(r) for r in rows]
 
     # ---------------------------------------------------------------- internal
