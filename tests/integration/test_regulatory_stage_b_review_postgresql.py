@@ -454,7 +454,7 @@ class RegulatoryStageBReviewIntegrationTests(unittest.TestCase):
 
     def test_stage_a_not_verified_denied(self):
         # Candidate with stage_a_status = 'pending'
-        factory_cand_id = UUID("22222222-0000-0000-0000-000000000200")
+        factory_cand_id = UUID("66666666-0000-0000-0000-000000000600")
         with self.database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
@@ -477,7 +477,7 @@ class RegulatoryStageBReviewIntegrationTests(unittest.TestCase):
                     (
                         factory_cand_id, UUID("44444444-0000-0000-0000-000000000404"),
                         "Stage A not verified candidate.", "labeling",
-                        '{"section_order": 0, "heading": null}', 1,
+                        '{"section_order": 0, "heading": null}', 999,
                         str(self.stage_a_reviewer_id), None,
                         SOURCE_ID,
                     ),
