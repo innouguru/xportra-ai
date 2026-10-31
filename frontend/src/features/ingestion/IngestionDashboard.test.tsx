@@ -121,6 +121,9 @@ function stubRegulatoryBackend(options: {
     if (/\/regulatory\/candidates\/[^/]+\/stage-a\/history$/.test(url)) {
       return respond({ items: [], limit: 50, offset: 0, total: 0 });
     }
+    if (/\/regulatory\/candidates\/[^/]+\/wording-corrections$/.test(url)) {
+      return respond({ items: [], total: 0 });
+    }
     if (/\/regulatory\/candidates\/[^/]+\/stage-a$/.test(url)) {
       return respond({
         id: CANDIDATE.id,
@@ -335,9 +338,9 @@ describe("IngestionDashboard", () => {
     renderDashboard();
     await screen.findByText(SOURCE_A.title);
     await openCandidateReview(user);
-    await user.type(
+    fireEvent.change(
       await screen.findByLabelText(/Rationale \(required\)/, { selector: "#stage-b-rationale" }),
-      "Pilot scope confirmed with the product owner.",
+      { target: { value: "Pilot scope confirmed with the product owner." } },
     );
     await user.click(screen.getByRole("button", { name: "Record Stage B approval" }));
     expect(
@@ -348,9 +351,9 @@ describe("IngestionDashboard", () => {
         ([url, init]) => String(url).endsWith("/stage-b") && (init as RequestInit).method === "POST",
       ).length,
     ).toBe(0);
-    await user.type(
+    fireEvent.change(
       screen.getByLabelText("Pilot scope (required)", { selector: "#stage-b-pilot-scope" }),
-      "sesame EU pilot",
+      { target: { value: "sesame EU pilot" } },
     );
     await user.click(screen.getByRole("button", { name: "Record Stage B approval" }));
     await waitFor(() => {

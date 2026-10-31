@@ -19,9 +19,12 @@ import {
   listRegulatorySources,
   listStageAHistory,
   listStageBHistory,
+  listWordingCorrections,
+  retryRegulatoryIngestionJob,
   submitStageADecision,
   submitStageBDecision,
   uploadRegulatoryArtifact,
+  withdrawRegulatorySource,
   type RegulatoryArtifact,
   type RegulatoryCandidate,
   type RegulatoryGovernanceFlag,
@@ -31,6 +34,7 @@ import {
   type RegulatoryStageAState,
   type RegulatoryStageBHistoryEntry,
   type RegulatoryStageBState,
+  type RegulatoryWordingCorrection,
 } from "../../api/regulatory";
 import { useAuth } from "../../app/AuthContext";
 import {
@@ -262,6 +266,17 @@ function SourceDetail({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState<string | null>(null);
 
+  // M4 — bounded retry for a terminally failed ingestion job.
+  const [retryPendingJobId, setRetryPendingJobId] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [retrySuccess, setRetrySuccess] = useState<string | null>(null);
+
+  // M7 — authorized source withdrawal.
+  const [withdrawRationale, setWithdrawRationale] = useState("");
+  const [withdrawPending, setWithdrawPending] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string | null>(null);
+  const [withdrawSuccess, setWithdrawSuccess] = useState<string | null>(null);
+
   // Sequence guard: when the inspected source changes while a load is in
   // flight, only the most recent request may mutate this section's state.
   // Older responses arrive stale and are discarded instead of overlapping.
@@ -333,6 +348,55 @@ function SourceDetail({
     },
     [auth, sourceId, source?.version, load],
   );
+
+  const handleRetryJob = useCallback(
+    async (jobId: string) => {
+      setRetryPendingJobId(jobId);
+      setRetryError(null);
+      setRetrySuccess(null);
+      try {
+        const retried = await retryRegulatoryIngestionJob(
+          auth as AuthCredentials,
+          jobId,
+        );
+        // The retry is a new attempt row; the ledger reflects it only
+        // after the server-confirmed refresh converges.
+        setRetrySuccess(
+          `Retry recorded: a new ingestion attempt (${retried.attempt_number}) was created for the failed job. The job remains pending until the worker processes it.`,
+        );
+        await load();
+      } catch (caught) {
+        setRetryError(userFacingErrorMessage(caught));
+      } finally {
+        setRetryPendingJobId(null);
+      }
+    },
+    [auth, load],
+  );
+
+  const handleWithdrawSource = useCallback(async () => {
+    if (!withdrawRationale.trim()) {
+      setWithdrawError("A rationale is required to withdraw the source.");
+      return;
+    }
+    setWithdrawPending(true);
+    setWithdrawError(null);
+    setWithdrawSuccess(null);
+    try {
+      const result = await withdrawRegulatorySource(auth as AuthCredentials, sourceId, {
+        rationale: withdrawRationale.trim(),
+      });
+      setWithdrawSuccess(
+        `Source withdrawn as recorded. Status: ${result.status}; ${result.governance_flags_raised} pending withdrawal governance flag(s) raised.`,
+      );
+      setWithdrawRationale("");
+      await load();
+    } catch (caught) {
+      setWithdrawError(userFacingErrorMessage(caught));
+    } finally {
+      setWithdrawPending(false);
+    }
+  }, [auth, sourceId, withdrawRationale, load]);
 
   useEffect(() => {
     void load();
@@ -414,6 +478,63 @@ function SourceDetail({
             </ol>
           ) : null}
 
+          <section aria-label="Withdraw source">
+            <h3>Withdraw source</h3>
+            {source.status === "withdrawn" || source.status === "archived" ? (
+              <p className="muted">
+                This source is already {source.status}. The backend refuses a
+                further withdrawal; nothing is offered here.
+              </p>
+            ) : (
+              <>
+                <p className="muted">
+                  Withdrawing the source sets its status to
+                  {" "}<code>withdrawn</code> and raises a pending withdrawal
+                  governance flag for every linked requirement; nothing linked
+                  to the source can be published or re-verified while the flags
+                  remain pending. The rationale is mandatory and recorded.
+                </p>
+                <form
+                  className="form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleWithdrawSource();
+                  }}
+                >
+                  <fieldset>
+                    <div className="form-row">
+                      <label htmlFor="withdraw-source-rationale">
+                        Withdrawal rationale (required)
+                      </label>
+                      <textarea
+                        id="withdraw-source-rationale"
+                        rows={3}
+                        value={withdrawRationale}
+                        onChange={(event) => setWithdrawRationale(event.target.value)}
+                        placeholder="Why this source is being withdrawn"
+                      />
+                    </div>
+                  </fieldset>
+                  {withdrawError ? (
+                    <p role="alert" className="ledger-reason">{withdrawError}</p>
+                  ) : null}
+                  <div className="form-row">
+                    <button
+                      type="submit"
+                      className="primary-button"
+                      disabled={withdrawPending || loading || !withdrawRationale.trim()}
+                    >
+                      {withdrawPending ? "Withdrawing…" : "Withdraw source"}
+                    </button>
+                  </div>
+                </form>
+                {withdrawSuccess ? (
+                  <p className="success-message" role="status">{withdrawSuccess}</p>
+                ) : null}
+              </>
+            )}
+          </section>
+
           <h3>Ingestion jobs</h3>
           {jobs !== null && jobs.length === 0 ? (
             <p className="muted">No ingestion jobs for this source.</p>
@@ -445,9 +566,29 @@ function SourceDetail({
                   {job.error_details ? (
                     <p className="ledger-reason">Failure details: {job.error_details}</p>
                   ) : null}
+                  {job.status === "failed" ? (
+                    <p className="ledger-actions">
+                      <button
+                        type="button"
+                        className="link-button"
+                        disabled={retryPendingJobId !== null}
+                        onClick={() => void handleRetryJob(job.id)}
+                      >
+                        {retryPendingJobId === job.id
+                          ? "Recording retry…"
+                          : "Retry failed job"}
+                      </button>
+                    </p>
+                  ) : null}
                 </li>
               ))}
             </ol>
+          ) : null}
+          {retryError ? (
+            <p role="alert" className="ledger-reason">{retryError}</p>
+          ) : null}
+          {retrySuccess ? (
+            <p className="success-message" role="status">{retrySuccess}</p>
           ) : null}
 
           <h3>Artifacts</h3>
@@ -630,6 +771,9 @@ export function CandidateReview({
   const [stageB, setStageB] = useState<RegulatoryStageBState | null>(null);
   const [stageBHistory, setStageBHistory] = useState<RegulatoryStageBHistoryEntry[]>([]);
   const [flags, setFlags] = useState<RegulatoryGovernanceFlag[]>([]);
+  const [wordingCorrections, setWordingCorrections] = useState<
+    RegulatoryWordingCorrection[]
+  >([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
 
@@ -637,6 +781,7 @@ export function CandidateReview({
   const [stageARationale, setStageARationale] = useState("");
   const [stageADecision, setStageADecision] =
     useState<"verified" | "rejected" | "clarification_required">("verified");
+  const [stageACorrectedText, setStageACorrectedText] = useState("");
   const [stageAPending, setStageAPending] = useState(false);
   const [stageAError, setStageAError] = useState<string | null>(null);
 
@@ -663,12 +808,14 @@ export function CandidateReview({
         stageBResponse,
         stageBHistoryResponse,
         flagRows,
+        wordingResponse,
       ] = await Promise.all([
         getCandidateStageA(auth, candidateId),
         listStageAHistory(auth, candidateId),
         getCandidateStageB(auth, candidateId),
         listStageBHistory(auth, candidateId),
         listRequirementGovernanceFlags(auth, detail.id),
+        listWordingCorrections(auth, candidateId),
       ]);
       if (token !== loadTokenRef.current) return;
       setCandidate(detail);
@@ -677,6 +824,7 @@ export function CandidateReview({
       setStageB(stageBResponse);
       setStageBHistory(stageBHistoryResponse.items);
       setFlags(flagRows.items);
+      setWordingCorrections(wordingResponse.items);
     } catch (caught) {
       if (token !== loadTokenRef.current) return;
       setError(caught);
@@ -697,14 +845,31 @@ export function CandidateReview({
       setStageAError("A rationale is required for the Stage A decision.");
       return;
     }
+    const correctedText = stageACorrectedText.trim();
+    if (correctedText && stageADecision !== "verified") {
+      setStageAError(
+        "Corrected wording can only be recorded with a verified decision; the recording rules mirror the backend.",
+      );
+      return;
+    }
+    if (correctedText && candidate && correctedText === candidate.requirement_text) {
+      setStageAError(
+        "A wording correction must differ from the currently recorded wording.",
+      );
+      return;
+    }
     setStageAPending(true);
     setStageAError(null);
     try {
       await submitStageADecision(auth, candidateId, {
         stage_a_status: stageADecision,
         rationale: stageARationale.trim(),
+        ...(correctedText
+          ? { corrected_requirement_text: correctedText }
+          : {}),
       });
       setStageARationale("");
+      setStageACorrectedText("");
       await load();
       await onRefresh();
     } catch (caught) {
@@ -850,6 +1015,25 @@ export function CandidateReview({
               {entry.stage_a_status} — {createdAt(entry.reviewed_at)} — {entry.rationale}
             </p>
           ))}
+
+          <h4>Recorded wording corrections</h4>
+          {wordingCorrections.length === 0 ? (
+            <p className="muted">No wording corrections recorded for this candidate.</p>
+          ) : (
+            <ol className="ledger">
+              {wordingCorrections.map((correction) => (
+                <li key={correction.id} className="ledger-row">
+                  <p className="ledger-title">Original: {correction.original_text}</p>
+                  <p className="ledger-title">Corrected: {correction.corrected_text}</p>
+                  <p className="muted">
+                    Recorded {createdAt(correction.created_at)} by{" "}
+                    <Identifier value={correction.reviewer_user_id} short={36} />
+                  </p>
+                  <p className="ledger-reason">Rationale: {correction.rationale}</p>
+                </li>
+              ))}
+            </ol>
+          )}
           <form className="form" onSubmit={recordStageA}>
             <fieldset>
               <legend>Record Stage A verification</legend>
@@ -881,6 +1065,25 @@ export function CandidateReview({
                   onChange={(event) => setStageARationale(event.target.value)}
                   placeholder="Why this source traceability and wording decision"
                 />
+              </div>
+              <div className="form-row">
+                <label htmlFor="stage-a-corrected-wording">
+                  Corrected requirement wording (optional, verified decisions only)
+                </label>
+                <textarea
+                  id="stage-a-corrected-wording"
+                  rows={3}
+                  value={stageACorrectedText}
+                  onChange={(event) => setStageACorrectedText(event.target.value)}
+                  placeholder="Leave empty to record no wording correction"
+                />
+                <p className="hint">
+                  Recording a correction preserves the original wording
+                  append-only; the corrected text becomes the operative
+                  wording. Corrections are refused by the backend once
+                  Stage B has approved the requirement, and they require a
+                  rationale — leave empty to send none.
+                </p>
               </div>
             </fieldset>
             {stageAError ? (

@@ -23,6 +23,9 @@
  * - GET  /regulatory/candidates/{id}/stage-b/history (STAGE_B_APPROVE)
  * - GET  /regulatory/sources/{id}/governance-flags (GRANT_MANAGE)
  * - GET  /regulatory/requirements/{id}/governance-flags (GRANT_MANAGE)
+ * - POST /regulatory/ingestion-jobs/{id}/retry     (GRANT_MANAGE)
+ * - GET  /regulatory/candidates/{id}/wording-corrections (STAGE_A_VERIFY)
+ * - POST /regulatory/sources/{id}/withdrawal       (GRANT_MANAGE)
  */
 
 import { apiFetch, type AuthCredentials } from "./client";
@@ -189,6 +192,31 @@ export interface RegulatoryGovernanceFlag {
   updated_at: string;
 }
 
+/**
+ * One append-only wording correction (M5). The original AI-extracted
+ * wording is preserved verbatim; the corrected text becomes the
+ * operative candidate wording.
+ */
+export interface RegulatoryWordingCorrection {
+  id: string;
+  requirement_id: string;
+  source_id: string | null;
+  original_text: string;
+  corrected_text: string;
+  rationale: string;
+  reviewer_user_id: string;
+  created_at: string;
+}
+
+/** Result of withdrawing a regulatory source (M7). */
+export interface RegulatoryWithdrawalResult {
+  id: string;
+  source_id: string;
+  status: string;
+  governance_flags_raised: number;
+  updated_at: string;
+}
+
 export function listRegulatorySources(
   credentials: AuthCredentials,
 ): Promise<{ items: RegulatorySource[]; total: number }> {
@@ -282,10 +310,50 @@ export function submitStageADecision(
   payload: {
     stage_a_status: "verified" | "rejected" | "clarification_required";
     rationale: string;
+    /**
+     * Optional recorded wording correction (M5). Only permissible with
+     * a ``verified`` decision; the backend preserves the original
+     * wording append-only and refuses corrections once Stage B has
+     * approved the requirement.
+     */
+    corrected_requirement_text?: string | null;
   },
 ): Promise<RegulatoryStageAState> {
   return apiFetch(
     `/regulatory/candidates/${encodeURIComponent(candidateId)}/stage-a`,
+    credentials,
+    { method: "POST", body: payload },
+  );
+}
+
+export function listWordingCorrections(
+  credentials: AuthCredentials,
+  candidateId: string,
+): Promise<{ items: RegulatoryWordingCorrection[]; total: number }> {
+  return apiFetch(
+    `/regulatory/candidates/${encodeURIComponent(candidateId)}/wording-corrections`,
+    credentials,
+  );
+}
+
+export function retryRegulatoryIngestionJob(
+  credentials: AuthCredentials,
+  jobId: string,
+): Promise<RegulatoryIngestionJob> {
+  return apiFetch(
+    `/regulatory/ingestion-jobs/${encodeURIComponent(jobId)}/retry`,
+    credentials,
+    { method: "POST" },
+  );
+}
+
+export function withdrawRegulatorySource(
+  credentials: AuthCredentials,
+  sourceId: string,
+  payload: { rationale: string },
+): Promise<RegulatoryWithdrawalResult> {
+  return apiFetch(
+    `/regulatory/sources/${encodeURIComponent(sourceId)}/withdrawal`,
     credentials,
     { method: "POST", body: payload },
   );

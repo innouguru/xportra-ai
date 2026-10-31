@@ -56,6 +56,27 @@ const FAILED_JOB = {
   updated_at: "2026-01-02T00:05:00Z",
 };
 
+/** The new attempt row the backend returns for an authorized retry (M4). */
+const RETRIED_JOB = {
+  ...FAILED_JOB,
+  id: "41414141-4141-4141-4141-414141414141",
+  status: "pending",
+  attempt_number: 2,
+  started_at: null,
+  completed_at: null,
+  error_details: null,
+  updated_at: "2026-01-06T00:00:00Z",
+};
+
+/** Withdrawal result as the backend records it (M7). */
+const WITHDRAWAL_RESULT = {
+  id: "42424242-4242-4242-4242-424242424242",
+  source_id: SOURCE.id,
+  status: "withdrawn",
+  governance_flags_raised: 1,
+  updated_at: "2026-01-06T00:00:00Z",
+};
+
 const CANDIDATE = {
   id: "33333333-3333-3333-3333-333333333333",
   source_id: SOURCE.id,
@@ -87,6 +108,19 @@ const PENDING_FLAG = {
   rationale: "Source superseded by a newer version.",
   created_at: "2026-01-04T00:00:00Z",
   updated_at: "2026-01-04T00:00:00Z",
+};
+
+/** One append-only wording correction (M5). */
+const WORDING_CORRECTION = {
+  id: "43434343-4343-4343-4343-434343434343",
+  requirement_id: CANDIDATE.id,
+  source_id: SOURCE.id,
+  original_text: CANDIDATE.requirement_text,
+  corrected_text:
+    "All cocoa exports require a phytosanitary certificate issued within 14 days.",
+  rationale: "Extraction dropped the validity window for the certificate.",
+  reviewer_user_id: CREDENTIALS.devTenantId,
+  created_at: "2026-01-05T01:00:00Z",
 };
 
 const NEW_SOURCE = {
@@ -202,6 +236,15 @@ function stubRegulatoryBackend(options: {
     }
     if (/\/regulatory\/sources\/[^/]+$/.test(url)) {
       return respond(SOURCE);
+    }
+    if (/\/regulatory\/candidates\/[^/]+\/wording-corrections$/.test(url)) {
+      return respond({ items: [], total: 0 });
+    }
+    if (/\/regulatory\/ingestion-jobs\/[^/]+\/retry$/.test(url)) {
+      return respond(RETRIED_JOB, 201);
+    }
+    if (/\/regulatory\/sources\/[^/]+\/withdrawal$/.test(url)) {
+      return respond(WITHDRAWAL_RESULT, 200);
     }
     return respond({ error: { code: "unexpected_error", message: "unrouted" } }, 500);
   });
@@ -1159,5 +1202,294 @@ describe("RegulationAdminPage", () => {
           (init as RequestInit).method === "POST",
       ).length,
     ).toBe(0);
+  });
+
+  it("records an authorized retry for a terminally failed ingestion job", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    const jobsCallsBefore = fetchStub.mock.calls.filter(([url]) =>
+      String(url).endsWith(`/regulatory/sources/${SOURCE.id}/ingestion-jobs`),
+    ).length;
+    await user.click(await screen.findByRole("button", { name: "Retry failed job" }));
+    await waitFor(() => {
+      expect(
+        fetchStub.mock.calls.some(([url, init]) =>
+          String(url).endsWith(`/regulatory/ingestion-jobs/${FAILED_JOB.id}/retry`) &&
+          (init as RequestInit).method === "POST",
+        ),
+      ).toBe(true);
+    });
+    // The success message reports the new attempt as recorded, never
+    // as already ingested — the worker still has to process it.
+    expect(
+      await screen.findByText(/Retry recorded: a new ingestion attempt \(2\)/),
+    ).toBeTruthy();
+    await waitFor(() => {
+      const jobsCallsAfter = fetchStub.mock.calls.filter(([url]) =>
+        String(url).endsWith(`/regulatory/sources/${SOURCE.id}/ingestion-jobs`),
+      ).length;
+      expect(jobsCallsAfter).toBeGreaterThan(jobsCallsBefore);
+    });
+  });
+
+  it("offers the retry action only for terminally failed jobs", async () => {
+    const jobsUrl = `/regulatory/sources/${SOURCE.id}/ingestion-jobs`;
+    const completedJob = {
+      ...FAILED_JOB,
+      id: "45454545-4545-4545-4545-454545454545",
+      status: "completed",
+      attempt_number: 1,
+      error_details: null,
+    };
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (String(url).endsWith(jobsUrl)) {
+        return new Response(
+          JSON.stringify({ items: [completedJob], limit: 50, offset: 0, total: 1 }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return stubRegulatoryBackend({})(input, init);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    expect(
+      await screen.findAllByText("Regulation (EU) 2019/1793"),
+    ).toBeTruthy();
+    expect(
+      fetchStub.mock.calls.some(([url]) => String(url).endsWith(jobsUrl)),
+    ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Retry failed job" })).toBeNull();
+  });
+
+  it("records a wording correction together with a verified Stage A decision", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    await user.click(await screen.findByRole("button", { name: "Review candidate" }));
+    const rationale = await screen.findByLabelText("Rationale (required)", {
+      selector: "#stage-a-rationale",
+    });
+    fireEvent.change(rationale, {
+      target: { value: "Wording did not match the artifact scan." },
+    });
+    const corrected = screen.getByLabelText(
+      "Corrected requirement wording (optional, verified decisions only)",
+    );
+    fireEvent.change(corrected, {
+      target: {
+        value:
+          "All cocoa exports require a phytosanitary certificate issued within 14 days.",
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "Record Stage A verification" }));
+    await waitFor(() => {
+      expect(
+        fetchStub.mock.calls.some(([url, init]) =>
+          String(url).endsWith(`/regulatory/candidates/${CANDIDATE.id}/stage-a`) &&
+          (init as RequestInit).method === "POST",
+        ),
+      ).toBe(true);
+    });
+    const stageACall = fetchStub.mock.calls.find(([url, init]) =>
+      String(url).endsWith(`/regulatory/candidates/${CANDIDATE.id}/stage-a`) &&
+      (init as RequestInit).method === "POST",
+    );
+    const body = JSON.parse(
+      String((stageACall as unknown as [string, RequestInit])[1].body),
+    );
+    expect(body).toEqual({
+      stage_a_status: "verified",
+      rationale: "Wording did not match the artifact scan.",
+      corrected_requirement_text:
+        "All cocoa exports require a phytosanitary certificate issued within 14 days.",
+    });
+  });
+
+  it("does not send corrected wording with a non-verified decision", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    await user.click(await screen.findByRole("button", { name: "Review candidate" }));
+    fireEvent.change(
+      document.getElementById("stage-a-decision") as HTMLSelectElement,
+      { target: { value: "rejected" } },
+    );
+    const rationale = await screen.findByLabelText("Rationale (required)", {
+      selector: "#stage-a-rationale",
+    });
+    fireEvent.change(rationale, {
+      target: { value: "Traceability could not be confirmed." },
+    });
+    const corrected = screen.getByLabelText(
+      "Corrected requirement wording (optional, verified decisions only)",
+    );
+    fireEvent.change(corrected, {
+      target: {
+        value: "Wording that would not be allowed to accompany a rejection.",
+      },
+    });
+    await user.click(screen.getByRole("button", { name: "Record Stage A verification" }));
+    expect(
+      await screen.findByText(
+        /Corrected wording can only be recorded with a verified decision/,
+      ),
+    ).toBeTruthy();
+    expect(
+      fetchStub.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/stage-a") &&
+          (init as RequestInit).method === "POST",
+      ).length,
+    ).toBe(0);
+  });
+
+  it("lists recorded wording corrections append-only", async () => {
+    const correctionsUrl = `/regulatory/candidates/${CANDIDATE.id}/wording-corrections`;
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (String(url).endsWith(correctionsUrl)) {
+        return new Response(
+          JSON.stringify({ items: [WORDING_CORRECTION], total: 1 }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return stubRegulatoryBackend({})(input, init);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    await user.click(await screen.findByRole("button", { name: "Review candidate" }));
+    // Both wordings are shown verbatim: the preserved original and the
+    // operative corrected text.
+    expect(
+      await screen.findByText(
+        "Original: All cocoa exports require a phytosanitary certificate.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Corrected: All cocoa exports require a phytosanitary certificate issued within 14 days.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Rationale: Extraction dropped the validity window for the certificate.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("withdraws a source with a mandatory rationale and records flags raised", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    const rationale = await screen.findByLabelText("Withdrawal rationale (required)");
+    fireEvent.change(rationale, {
+      target: { value: "Authority retracted the regulation." },
+    });
+    await user.click(screen.getByRole("button", { name: "Withdraw source" }));
+    await waitFor(() => {
+      expect(
+        fetchStub.mock.calls.some(([url, init]) =>
+          String(url).endsWith(`/regulatory/sources/${SOURCE.id}/withdrawal`) &&
+          (init as RequestInit).method === "POST",
+        ),
+      ).toBe(true);
+    });
+    const withdrawalCall = fetchStub.mock.calls.find(([url, init]) =>
+      String(url).endsWith(`/regulatory/sources/${SOURCE.id}/withdrawal`) &&
+      (init as RequestInit).method === "POST",
+    );
+    expect(
+      JSON.parse(String((withdrawalCall as unknown as [string, RequestInit])[1].body)),
+    ).toEqual({ rationale: "Authority retracted the regulation." });
+    // The result is reported exactly as the backend records it: status
+    // and governance flags raised, never as a fabricated retraction.
+    expect(
+      await screen.findByText(
+        /Source withdrawn as recorded\. Status: withdrawn; 1 pending withdrawal governance flag/,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("requires a rationale before withdrawal", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    const withdrawButton = (await screen.findByRole("button", {
+      name: "Withdraw source",
+    })) as HTMLButtonElement;
+    // No rationale, no withdrawal: the action is not even sendable.
+    expect(withdrawButton.disabled).toBe(true);
+    expect(
+      fetchStub.mock.calls.filter(
+        ([url, init]) =>
+          String(url).endsWith("/withdrawal") &&
+          (init as RequestInit).method === "POST",
+      ).length,
+    ).toBe(0);
+  });
+
+  it("does not offer withdrawal for an already withdrawn source", async () => {
+    const sourceUrl = `/regulatory/sources/${SOURCE.id}`;
+    const withdrawnSource = { ...SOURCE, status: "withdrawn" };
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (String(url).endsWith(sourceUrl)) {
+        return new Response(JSON.stringify(withdrawnSource), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return stubRegulatoryBackend({})(input, init);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Inspect source" }));
+    expect(
+      await screen.findByText(
+        /already withdrawn\. The backend refuses a further withdrawal/,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Withdraw source" })).toBeNull();
   });
 });
