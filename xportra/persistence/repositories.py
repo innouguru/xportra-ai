@@ -2505,8 +2505,10 @@ class RegulatoryIngestionJobRepository:
     def __init__(self, database) -> None:
         self._database = database
 
-    def create(self, artifact_id, source_id, actor_user_id=None, audit_ref=None, parser_version="v1", attempt_number=None):
+    def create(self, artifact_id, source_id, actor_user_id=None, audit_ref=None, parser_version="v1", attempt_number=None, status=None):
         from .database import Database
+        if status not in (None, "pending"):
+            raise ValueError("ingestion jobs are always created in 'pending' state")
         return _insert(
             self._database,
             "regulatory ingestion job creation",
