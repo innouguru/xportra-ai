@@ -4,7 +4,11 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
+import logging
+
 from psycopg.errors import IntegrityError
+
+logger = logging.getLogger(__name__)
 from psycopg.types.json import Jsonb
 
 from .database import Database
@@ -60,6 +64,22 @@ def _insert_in_transaction(
                 raise RuntimeError(f"{operation} did not return a row")
             return row
     except IntegrityError as cause:
+        pgcode = getattr(cause, "pgcode", None)
+        if not isinstance(pgcode, str):
+            pgcode = getattr(cause, "sqlstate", None)
+        diag = getattr(cause, "diag", None)
+        constraint_name = getattr(diag, "constraint_name", None) if diag is not None else None
+        logger.error(
+            "regulatory_source_registration_db_integrity_failure",
+            extra={
+                "operation": operation,
+                "exception_class": type(cause).__name__,
+                "pgcode": pgcode,
+                "constraint_name": constraint_name,
+                "transaction_rolled_back": True,
+            },
+            exc_info=True,
+        )
         raise PersistenceIntegrityError(operation, cause) from cause
 
 
