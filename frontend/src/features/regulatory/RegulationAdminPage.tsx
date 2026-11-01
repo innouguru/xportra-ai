@@ -95,6 +95,7 @@ export function RegulationAdminPage() {
   const [registerPending, setRegisterPending] = useState(false);
   const [registerError, setRegisterError] = useState<string | null>(null);
   const [registerSuccess, setRegisterSuccess] = useState<string | null>(null);
+  const [registerSourceId, setRegisterSourceId] = useState<string | null>(null);
 
   const loadSources = useCallback(async () => {
     setLoading(true);
@@ -110,7 +111,7 @@ export function RegulationAdminPage() {
   }, [auth]);
 
   const registerSource = useCallback(
-    async (payload: RegulatorySourceCreateRequest) => {
+    async (payload: RegulatorySourceCreateRequest): Promise<boolean> => {
       setRegisterError(null);
       setRegisterSuccess(null);
       setRegisterPending(true);
@@ -119,7 +120,8 @@ export function RegulationAdminPage() {
           auth as AuthCredentials,
           payload,
         );
-        setRegisterSuccess(`Source “${source.title}” registered.`);
+        setRegisterSuccess(`Source “${source.title}” registered — ID: ${source.id}.`);
+        setRegisterSourceId(source.id);
         // Optimistically add the new source so it appears immediately.
         setSources((prev) =>
           prev === null ? [source] : [...prev, source],
@@ -132,8 +134,10 @@ export function RegulationAdminPage() {
         } catch {
           // Refresh failure is not registration failure.
         }
+        return true;
       } catch (caught) {
         setRegisterError(userFacingErrorMessage(caught));
+        return false;
       } finally {
         setRegisterPending(false);
       }
@@ -167,9 +171,25 @@ export function RegulationAdminPage() {
       </header>
 
       {registerSuccess ? (
-        <p className="success-message" role="status">
-          {registerSuccess}
-        </p>
+        <section className="success-card" aria-label="Registration confirmed">
+          <p className="success-message" role="status">{registerSuccess}</p>
+          {registerSourceId ? (
+            <>
+              <p className="muted">Source ID: {registerSourceId}</p>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => {
+                  setSelectedSourceId(registerSourceId);
+                  setRegisterOpen(false);
+                }}
+                disabled={registerPending}
+              >
+                Continue to document upload
+              </button>
+            </>
+          ) : null}
+        </section>
       ) : null}
       {registerError ? (
         <p role="alert" className="ledger-reason">{registerError}</p>
@@ -1195,7 +1215,7 @@ function RegisterSourceForm({
   onRegister,
 }: {
   auth: AuthCredentials;
-  onRegister: (payload: RegulatorySourceCreateRequest) => void;
+  onRegister: (payload: RegulatorySourceCreateRequest) => Promise<boolean>;
 }) {
   type SourceStatus = (typeof REGULATORY_SOURCE_STATUSES)[number];
 
@@ -1270,7 +1290,7 @@ function RegisterSourceForm({
 
     setPending(true);
     try {
-      await onRegister({
+      const ok = await onRegister({
         authority_id: authorityId.trim(),
         jurisdiction: jurisdiction.trim(),
         title: title.trim(),
@@ -1280,6 +1300,9 @@ function RegisterSourceForm({
         publication_date: publicationDate || undefined,
         source_url: sourceUrl.trim() || undefined,
       });
+      if (!ok) {
+        return;
+      }
       setAuthorityId("");
       setJurisdiction("");
       setTitle("");

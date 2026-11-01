@@ -6,7 +6,7 @@ const sessionMock = {
   removeItem(key: string) { delete this._store[key]; },
   clear() { this._store = {}; },
 };
-(global as any).sessionStorage = sessionMock;
-(globalThis as any).sessionStorage = sessionMock;
+Object.defineProperty(global, "sessionStorage", { value: sessionMock, writable: true });
+Object.defineProperty(globalThis, "sessionStorage", { value: sessionMock, writable: true });
 
 import "@testing-library/jest-dom/vitest";

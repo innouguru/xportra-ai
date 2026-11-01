@@ -619,7 +619,171 @@ describe("RegulationAdminPage", () => {
       }),
     );
     await waitFor(() => {
-      expect(screen.getByText(`Source “${NEW_SOURCE.title}” registered.`)).toBeTruthy();
+      expect(screen.getByText(`Source “${NEW_SOURCE.title}” registered — ID: ${NEW_SOURCE.id}.`)).toBeTruthy();
+    });
+  });
+
+  it("shows the registered source ID and offers a continue-to-document-upload action", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+      AUTHORITY_B,
+    ]);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(document.getElementById("register-source-authority-id")).toBeTruthy();
+    });
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: "99999999-9999-9999-9999-999999999999" },
+    });
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Test Source");
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(`Source “${NEW_SOURCE.title}” registered — ID: ${NEW_SOURCE.id}.`),
+      ).toBeTruthy();
+    });
+    // The new source's identifying information is visible.
+    expect(screen.getAllByText(new RegExp(NEW_SOURCE.id)).length).toBeGreaterThanOrEqual(1);
+    // A clear action to continue to document upload is offered.
+    expect(
+      screen.getByRole("button", { name: "Continue to document upload" }),
+    ).toBeTruthy();
+  });
+
+  it("preserves form input and shows a safe error when registration fails", async () => {
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (url.endsWith("/regulatory/authorities")) {
+        return new Response(JSON.stringify([AUTHORITY_A, AUTHORITY_B]), {
+          status: 200,
+        });
+      }
+      if (
+        String(url).endsWith("/regulatory/sources") &&
+        (init as RequestInit | undefined)?.method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({ error: { code: "server_error", message: "registration failed" } }),
+          { status: 500 },
+        );
+      }
+      if (url.endsWith("/regulatory/sources")) {
+        return new Response(JSON.stringify({ items: [], total: 0 }), {
+          status: 200,
+        });
+      }
+      return new Response(
+        JSON.stringify({ error: { code: "unexpected_error", message: "unrouted" } }),
+        { status: 500 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+      AUTHORITY_B,
+    ]);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("No regulatory sources registered")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(document.getElementById("register-source-authority-id")).toBeTruthy();
+    });
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: "99999999-9999-9999-9999-999999999999" },
+    });
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Failed Source");
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByText("registration failed")).toBeTruthy();
+    });
+    // Form inputs are preserved so the user can correct and resubmit.
+    expect(
+      (document.getElementById("register-source-jurisdiction") as HTMLInputElement).value,
+    ).toBe("NG");
+    expect(
+      (document.getElementById("register-source-title") as HTMLInputElement).value,
+    ).toBe("Failed Source");
+    // No success state is shown.
+    expect(screen.queryByText(/registered — ID:/)).toBeNull();
+  });
+
+  it("continues to document upload for the newly registered source using the existing source detail", async () => {
+    const fetchStub = stubRegulatoryBackend({});
+    vi.stubGlobal("fetch", fetchStub);
+    vi.spyOn(regulatoryApi, "listRegulatoryAuthorities").mockResolvedValue([
+      AUTHORITY_A,
+      AUTHORITY_B,
+    ]);
+    const user = userEvent.setup();
+    renderAdmin();
+    await waitFor(() => {
+      expect(screen.getByText("Regulation (EU) 2019/1793")).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Register regulatory source" })).toBeTruthy();
+    });
+    await waitFor(() => {
+      expect(document.getElementById("register-source-authority-id")).toBeTruthy();
+    });
+    const authoritySelect = document.getElementById(
+      "register-source-authority-id",
+    ) as HTMLSelectElement;
+    fireEvent.change(authoritySelect, {
+      target: { value: "99999999-9999-9999-9999-999999999999" },
+    });
+    await user.click(screen.getByLabelText("Jurisdiction (required)"));
+    await user.keyboard("{selectAll}NG");
+    await user.click(screen.getByLabelText("Title (required)"));
+    await user.keyboard("{selectAll}Test Source");
+    await user.click(screen.getByRole("button", { name: "Register source" }));
+    await waitFor(() => {
+      expect(
+        screen.getByText(`Source “${NEW_SOURCE.title}” registered — ID: ${NEW_SOURCE.id}.`),
+      ).toBeTruthy();
+    });
+    await user.click(screen.getByRole("button", { name: "Continue to document upload" }));
+    // The existing source detail is reused (no competing workflow) for the
+    // newly registered source ID, exposing the document upload section.
+    expect(
+      fetchStub.mock.calls.some(([url]) =>
+        String(url).includes(`/regulatory/sources/${NEW_SOURCE.id}`),
+      ),
+    ).toBe(true);
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", {
+          name: "Upload original regulatory document",
+        }),
+      ).toBeTruthy();
     });
   });
 
@@ -791,7 +955,7 @@ describe("RegulationAdminPage", () => {
     await user.keyboard("{selectAll}Refresh-Fail Source");
     await user.click(screen.getByRole("button", { name: "Register source" }));
     await waitFor(() => {
-      expect(screen.getByText(`Source “${NEW_SOURCE.title}” registered.`)).toBeTruthy();
+      expect(screen.getByText(`Source “${NEW_SOURCE.title}” registered — ID: ${NEW_SOURCE.id}.`)).toBeTruthy();
     });
     // The optimistic addition should be visible even though the refresh failed.
     expect(screen.getByText(NEW_SOURCE.title)).toBeTruthy();
