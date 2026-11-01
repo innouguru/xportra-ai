@@ -122,6 +122,17 @@ None added. Existing migrations 018–029 already support the requirement. The
   bootstrap is NOT re-executed and no production grants are created/revoked.
 - Documented as unresolved verification rather than guessed.
 
+## Backend: PersistenceIntegrityError diagnostics (completed 2026-11-01)
+
+Added a specific handler for `PersistenceIntegrityError` in `xportra/api/errors.py` so database integrity failures no longer surface as generic HTTP 500:
+
+Files changed:
+- `xportra/api/errors.py` — registered `PersistenceIntegrityError` handler; logs SQLSTATE, constraint name, operation, and exception class server-side; maps `23505` → 409 `integrity_conflict`, `23503`/`23502`/`23514` → 400 `integrity_violation`, unknown → 500 `internal_error`; client-safe (no DB details leaked).
+- `tests/unit/test_api_errors.py` — 11 new focused tests (all pass).
+
+Risk noted separately: source and placeholder-job creation remain in separate transactions; a failed job insert can leave a committed source without its job. Atomicity refactor is out of scope for this task.
+
+
 ## Milestone 3 — Stage A/B Review APIs and Publication Eligibility (2026-10-29)
 
 **Verdict:** IMPLEMENTED AND VERIFIED.

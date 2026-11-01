@@ -4807,3 +4807,28 @@ state.
  I s o l a t i o n :   t e n a n t - s c o p e d   a p p l i c a b i l i t y   f i n g e r p r i n t ;   n o   c r o s s - t e n a n t   l e a k a g e .   N o   a u t o m a t i c   p u b l i c a t i o n .   N o   f a k e   r e q u i r e m e n t s .  
  R e m a i n i n g   a u t h o r i z a t i o n   g a p   ( r e q u i r e s   p r o d u c t - o w n e r   d e c i s i o n ) :   w h e t h e r   R E A D _ T E N A N T _ R E S O U R C E   i s   s u f f i c i e n t   f o r   e x p o r t e r - f a c i n g   a c c e s s   o r   w h e t h e r   a   d e d i c a t e d   R E A D _ E X P O R T E R _ C A T A L O G   p e r m i s s i o n   /   o r g a n i z a t i o n - l e v e l   a u t h o r i z a t i o n   i s   r e q u i r e d .   C a t a l o g   p r e s e r v e d   u n c o m m i t t e d   u n t i l   a u t h o r i z a t i o n   i s   r e s o l v e d ;   n o   p r o d u c t i o n   g r a n t s   m o d i f i e d .  
  
+## Frontend regulatory registration UX fix (RegulationAdminPage)
+
+Adjusted rontend/src/features/regulatory/RegulationAdminPage.tsx so source registration is a confirmed, resumable step:
+- Registration is treated successful only when the API responds (egisterRegulatorySource resolves); egisterSource returns oolean and RegisterSourceForm clears inputs only on 	rue, preserving form input and showing a safe server error on failure.
+- Duplicate POSTs are blocked while pending (submit button disabled); no blind retry of an unknown POST result.
+- On success, a visible confirmation shows the source title and ID (from the API response), plus a `Continue to document upload` button that opens the existing SourceDetail (reused, not a competing workflow) for the actual source ID, exposing the document-upload/ingestion section.
+- Authoritative retrieval: GET /regulatory/sources/{source_id} for status and GET /regulatory/sources/{source_id}/ingestion-jobs for the associated job � no assumed source ID, response shape, or route.
+- rontend/src/test-setup.ts: made the jsdom sessionStorage mock writable so the regulatory page tests run.
+- Added 4 targeted tests (success + ID + continue button, backend failure preserving inputs, continue-to-upload opening source detail) and updated 2 existing success-message assertions.
+
+Verification: focused regulatory page suite 38/38; full frontend suite 624 passed / 1 pre-existing unrelated failure (RegisterPage sessionStorage vs localStorage); 	sc --noEmit and ite build pass (existing chunk advisory). No production records, authorization bypass, constraint weakening, migration, or push/deploy. The earlier HTTP 500 root cause was migration 018's NOT NULL on egulatory_ingestion_jobs.artifact_id; migration 033 (nullable) is already applied, so the current registration path is healthy � no backend change made.
+
+## Backend: PersistenceIntegrityError diagnostics (2026-11-01)
+
+Added a specific handler for `PersistenceIntegrityError` in `xportra/api/errors.py` so database integrity failures no longer surface as generic HTTP 500:
+- Registered `PersistenceIntegrityError` handler alongside `DomainPersistenceError` in `register_exception_handlers()`.
+- The handler logs the original psycopg `IntegrityError` with full traceback server-side: SQLSTATE (`pgcode`), PostgreSQL constraint name (`diag.constraint_name`), database operation, and exception class. Diagnostic details are logged but never returned to clients.
+- Maps known SQLSTATEs to safe HTTP responses: `23505` (unique violation) → HTTP 409 `integrity_conflict`; `23503`/`23502`/`23514` (FK/NOT NULL/CHECK) → HTTP 400 `integrity_violation`; unknown → HTTP 500 `internal_error`.
+- `PersistenceIntegrityError` already uses exception chaining (`raise ... from cause` in `_insert()` and `_insert_in_transaction()`) — original cause preserved via `exc.__cause__` and `exc.cause`.
+- No migration, no deployment configuration change, no database credentials/roles changed.
+- Source and placeholder-job creation remain in separate transactions (reported risk separately); this task only addresses error diagnostics, not atomicity.
+
+Added `tests/unit/test_api_errors.py` — 11 focused tests covering exception chaining, SQLSTATE-based mapping (unique→409, FK/NOT NULL/CHECK→400, unknown→500), server-side logging of diagnostics, and client response safety (no PostgreSQL/SQL/constraint details leaked).
+Verification: new test file 11/11 pass; existing `test_api.py` 10/10 pass; `py_compile` clean on both modified files.
+

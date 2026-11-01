@@ -33,6 +33,7 @@ from xportra.domain.errors import (
     LLMProviderError,
     VectorStoreError,
 )
+from xportra.persistence.errors import PersistenceIntegrityError
 
 from .runtime import is_production_environment
 
@@ -85,6 +86,7 @@ def register_exception_handlers(application) -> None:
     application.add_exception_handler(VectorStoreError, _handle_vector_store)
     application.add_exception_handler(DomainValidationError, _handle_domain_validation)
     application.add_exception_handler(DomainPersistenceError, _handle_persistence)
+    application.add_exception_handler(PersistenceIntegrityError, _handle_persistence_integrity)
     application.add_exception_handler(Exception, _handle_unexpected_error)
 
 
@@ -311,6 +313,68 @@ async def _handle_persistence(
         content={
             "error": {
                 "code": "integrity_error",
+                "message": "The operation violated a data integrity constraint",
+            }
+        },
+    )
+
+
+#: PostgreSQL SQLSTATE codes for integrity violations.
+_UNIQUE_VIOLATION = "23505"
+_FOREIGN_KEY_VIOLATION = "23503"
+_NOT_NULL_VIOLATION = "23502"
+_CHECK_VIOLATION = "23514"
+
+
+async def _handle_persistence_integrity(
+    _request: Request, exc: PersistenceIntegrityError
+) -> JSONResponse:
+    """Map persistence integrity failures to safe HTTP responses.
+
+    The original psycopg ``IntegrityError`` (``exc.cause``) carries
+    SQLSTATE, constraint name, and other diagnostics. These are logged
+    server-side with full traceback but never returned to clients.
+    """
+    cause = exc.cause
+    pgcode = getattr(cause, "pgcode", None)
+    diag = getattr(cause, "diag", None)
+    constraint_name = getattr(diag, "constraint_name", None) if diag is not None else None
+
+    logger.error(
+        "Persistence integrity failure during %s: sqlstate=%s constraint=%s exc_class=%s",
+        exc.operation,
+        pgcode,
+        constraint_name,
+        type(cause).__name__,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
+
+    if pgcode == _UNIQUE_VIOLATION:
+        status_code, code = 409, "integrity_conflict"
+    elif pgcode in (
+        _FOREIGN_KEY_VIOLATION,
+        _NOT_NULL_VIOLATION,
+        _CHECK_VIOLATION,
+    ):
+        status_code, code = 400, "integrity_violation"
+    else:
+        status_code, code = 500, "internal_error"
+
+    if status_code >= 500 and is_production_environment():
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "error": {
+                    "code": code,
+                    "message": code.replace("_", " "),
+                }
+            },
+        )
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "error": {
+                "code": code,
                 "message": "The operation violated a data integrity constraint",
             }
         },
