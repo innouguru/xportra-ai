@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import UUID
 
+from psycopg.errors import IntegrityError
+
 logger = logging.getLogger(__name__)
 
 from xportra.application.errors import (
@@ -34,6 +36,7 @@ from xportra.application.regulatory_governance_service import (
 )
 from xportra.application.regulatory_ingestion_service import RegulatoryIngestionService
 from xportra.persistence.database import Database
+from xportra.persistence.errors import PersistenceIntegrityError
 from xportra.persistence.repositories import (
     AuthorityRepository,
     RegulatoryIngestionJobRepository,
@@ -146,71 +149,101 @@ class RegulatorySourceIntakeService:
         authority = self._authority_repo.get(authority_id)
         if authority is None:
             raise ApplicationNotFoundError("authority not found")
-        with self._database.transaction() as connection:
-            try:
-                source_row = self._source_repo.create_in_transaction(
-                    connection,
-                    authority_id=authority_id,
-                    jurisdiction=jurisdiction,
-                    title=title,
-                    version=version,
-                    status=status,
-                    effective_date=effective_date,
-                    publication_date=publication_date,
-                    source_url=source_url,
-                )
-                logger.info(
-                    "regulatory_source_registration_source_created",
-                    extra={
-                        "operation": "source_creation",
-                        "source_id": str(source_row["id"]),
-                        "actor_user_id": str(actor_user_id),
-                        "authority_id": str(authority_id),
-                    },
-                )
-            except Exception as exc:
-                logger.error(
-                    "regulatory_source_registration_failed",
-                    extra={
-                        "operation": "source_creation",
-                        "exception_class": exc.__class__.__name__,
-                        "exception_message": str(exc),
-                        "transaction_rolled_back": True,
-                    },
-                    exc_info=True,
-                )
+        try:
+            with self._database.transaction() as connection:
+                try:
+                    source_row = self._source_repo.create_in_transaction(
+                        connection,
+                        authority_id=authority_id,
+                        jurisdiction=jurisdiction,
+                        title=title,
+                        version=version,
+                        status=status,
+                        effective_date=effective_date,
+                        publication_date=publication_date,
+                        source_url=source_url,
+                    )
+                    logger.info(
+                        "regulatory_source_registration_source_created",
+                        extra={
+                            "operation": "source_creation",
+                            "source_id": str(source_row["id"]),
+                            "actor_user_id": str(actor_user_id),
+                            "authority_id": str(authority_id),
+                        },
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "regulatory_source_registration_failed",
+                        extra={
+                            "operation": "source_creation",
+                            "exception_class": exc.__class__.__name__,
+                            "exception_message": str(exc),
+                            "transaction_rolled_back": True,
+                        },
+                        exc_info=True,
+                    )
+                    exc._reg_source_already_logged = True
+                    raise
+                try:
+                    # Create the pending ingestion job per Phase 4D.10 (Task 3B contract).
+                    job_row = self._job_repo.create_in_transaction(
+                        connection,
+                        artifact_id=None,
+                        source_id=source_row["id"],
+                        actor_user_id=actor_user_id,
+                        parser_version="v1",
+                        status="pending",
+                    )
+                    logger.info(
+                        "regulatory_source_registration_job_created",
+                        extra={
+                            "operation": "job_creation",
+                            "job_id": str(job_row["id"]),
+                            "source_id": str(source_row["id"]),
+                            "actor_user_id": str(actor_user_id),
+                        },
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "regulatory_source_registration_failed",
+                        extra={
+                            "operation": "job_creation",
+                            "exception_class": exc.__class__.__name__,
+                            "exception_message": str(exc),
+                            "transaction_rolled_back": True,
+                        },
+                        exc_info=True,
+                    )
+                    exc._reg_source_already_logged = True
+                    raise
+        except Exception as exc:
+            # Skip logging if already logged by an inner handler
+            if getattr(exc, "_reg_source_already_logged", False):
                 raise
-            try:
-                # Create the pending ingestion job per Phase 4D.10 (Task 3B contract).
-                job_row = self._job_repo.create_in_transaction(
-                    connection,
-                    artifact_id=None,
-                    source_id=source_row["id"],
-                    actor_user_id=actor_user_id,
-                    parser_version="v1",
-                    status="pending",
-                )
-                logger.info(
-                    "regulatory_source_registration_job_created",
-                    extra={
-                        "operation": "job_creation",
-                        "job_id": str(job_row["id"]),
-                        "source_id": str(source_row["id"]),
-                        "actor_user_id": str(actor_user_id),
-                    },
-                )
-            except Exception as exc:
-                logger.error(
-                    "regulatory_source_registration_failed",
-                    extra={
-                        "operation": "job_creation",
-                        "exception_class": exc.__class__.__name__,
-                        "exception_message": str(exc),
-                        "transaction_rolled_back": True,
-                    },
-                    exc_info=True,
-                )
+            # Skip logging if IntegrityError/PersistenceIntegrityError are
+            # already logged at the repository level.
+            if isinstance(exc, (IntegrityError, PersistenceIntegrityError)):
                 raise
+            pgcode = getattr(exc, "pgcode", None)
+            if not isinstance(pgcode, str):
+                pgcode = getattr(exc, "sqlstate", None)
+            diag = getattr(exc, "diag", None)
+            constraint_name = (
+                getattr(diag, "constraint_name", None) if diag is not None else None
+            )
+            logger.error(
+                "regulatory_source_registration_failed",
+                extra={
+                    "operation": "transaction_boundary",
+                    "exception_class": exc.__class__.__name__,
+                    "pgcode": pgcode,
+                    "constraint_name": constraint_name,
+                    "transaction_rolled_back": None,
+                },
+                exc_info=True,
+            )
+            raise
         return {
             "id": source_row["id"],
             "source_id": source_row["id"],

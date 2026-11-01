@@ -8,6 +8,7 @@ artifact behaviour is covered by integration tests (skipped when
 from __future__ import annotations
 
 from contextlib import contextmanager
+import logging
 from unittest import TestCase
 from uuid import UUID
 
@@ -1463,3 +1464,259 @@ class RegulatorySourceWithdrawalTests(TestCase):
         # No success reported; flags were refused atomically.
         flags = factory.flags.get_for_source(source["id"])
         self.assertEqual(len(flags), 0)
+
+
+class _CapturingHandler(logging.Handler):
+    """Capture log records for structured assertion."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+class TransactionBoundaryDiagnosticsTests(TestCase):
+    """Tests for the outer transaction-boundary diagnostic handler in register_source()."""
+
+    def setUp(self) -> None:
+        self.logger = logging.getLogger("xportra.application.regulatory_source_intake_service")
+        self.handler = _CapturingHandler()
+        self.logger.addHandler(self.handler)
+        self.logger.setLevel(logging.DEBUG)
+
+    def tearDown(self) -> None:
+        self.logger.removeHandler(self.handler)
+
+    def _make_service(self, database: "Database") -> RegulatorySourceIntakeService:
+        return RegulatorySourceIntakeService(
+            database,
+            source_repo=FakeSourceRepository(),
+            artifact_repo=FakeArtifactRepository(),
+            job_repo=FakeJobRepository(),
+            authority_repo=FakeAuthorityRepository({AUTHORITY}),
+            grant_service=type(
+                "FakeGrantService",
+                (),
+                {"is_granted": lambda self, u, p: u == ACTOR},
+            )(),
+            requirement_repo=FakeRequirementRepository(),
+            review_flag_repo=FakeReviewFlagRepository(),
+            storage_service=type(
+                "FakeStorageService",
+                (),
+                {"upload_artifact": lambda *a, **k: None},
+            )(),
+        )
+
+    @staticmethod
+    def _outer_event(records: list[logging.LogRecord]) -> list[logging.LogRecord]:
+        """Return outer transaction_boundary events from captured records."""
+        return [
+            r for r in records
+            if r.getMessage() == "regulatory_source_registration_failed"
+            and getattr(r, "operation", None) == "transaction_boundary"
+        ]
+
+    @staticmethod
+    def _inner_event(records: list[logging.LogRecord], operation: str) -> list[logging.LogRecord]:
+        """Return inner handler events from captured records."""
+        return [
+            r for r in records
+            if r.getMessage() == "regulatory_source_registration_failed"
+            and getattr(r, "operation", None) == operation
+        ]
+
+    def test_transaction_entry_failure_logs_transaction_boundary(self):
+        """Transaction entry failure triggers outer handler with transaction_boundary label."""
+
+        class EntryFailureDatabase(FakeDatabase):
+            def transaction(self):
+                @contextmanager
+                def failing_tx():
+                    raise RuntimeError("simulated connection failure")
+                    yield _FakeConnection()  # unreachable
+                return failing_tx()
+
+        database = EntryFailureDatabase()
+        service = self._make_service(database)
+
+        with self.assertRaises(RuntimeError) as cm:
+            service.register_source(
+                actor_user_id=ACTOR,
+                authority_id=AUTHORITY,
+                jurisdiction="EU",
+                title="Test Source",
+            )
+
+        self.assertEqual(str(cm.exception), "simulated connection failure")
+        outer_events = self._outer_event(self.handler.records)
+        self.assertEqual(len(outer_events), 1, msg="Expected exactly one transaction_boundary event")
+        event = outer_events[0]
+        self.assertEqual(getattr(event, "operation", None), "transaction_boundary")
+        self.assertEqual(getattr(event, "exception_class", None), "RuntimeError")
+        self.assertIsNone(getattr(event, "exception_message", None), "exception_message should not be logged")
+        self.assertIsNone(getattr(event, "transaction_rolled_back", None), "rollback unknown for entry failure")
+        self.assertTrue(getattr(event, "exc_info", None) is not None, "exc_info should be present for traceback")
+
+    def test_transaction_commit_failure_logs_transaction_boundary(self):
+        """Commit failure during context exit triggers outer handler with transaction_boundary label."""
+
+        class CommitFailureDatabase(FakeDatabase):
+            def transaction(self):
+                @contextmanager
+                def failing_commit_tx():
+                    yield _FakeConnection()
+                    raise RuntimeError("simulated commit failure")
+                return failing_commit_tx()
+
+        database = CommitFailureDatabase()
+        service = self._make_service(database)
+
+        with self.assertRaises(RuntimeError) as cm:
+            service.register_source(
+                actor_user_id=ACTOR,
+                authority_id=AUTHORITY,
+                jurisdiction="EU",
+                title="Test Source",
+            )
+
+        self.assertEqual(str(cm.exception), "simulated commit failure")
+        outer_events = self._outer_event(self.handler.records)
+        self.assertEqual(len(outer_events), 1)
+        event = outer_events[0]
+        self.assertEqual(getattr(event, "operation", None), "transaction_boundary")
+        self.assertEqual(getattr(event, "exception_class", None), "RuntimeError")
+        self.assertIsNone(getattr(event, "exception_message", None))
+        self.assertIsNone(getattr(event, "transaction_rolled_back", None), "rollback unknown for commit failure")
+        self.assertTrue(getattr(event, "exc_info", None) is not None)
+
+    def test_transaction_rollback_failure_logs_transaction_boundary(self):
+        """Rollback failure during context exit triggers outer handler with transaction_boundary label."""
+
+        class RollbackFailureDatabase(FakeDatabase):
+            def transaction(self):
+                @contextmanager
+                def failing_rollback_tx():
+                    try:
+                        yield _FakeConnection()
+                    except Exception:
+                        raise RuntimeError("simulated rollback failure")
+                return failing_rollback_tx()
+
+        database = RollbackFailureDatabase()
+        service = self._make_service(database)
+        # Cause source creation to fail, which triggers rollback
+        service._source_repo.fail_create = True
+
+        with self.assertRaises(RuntimeError) as cm:
+            service.register_source(
+                actor_user_id=ACTOR,
+                authority_id=AUTHORITY,
+                jurisdiction="EU",
+                title="Test Source",
+            )
+
+        self.assertEqual(str(cm.exception), "simulated rollback failure")
+        outer_events = self._outer_event(self.handler.records)
+        self.assertEqual(len(outer_events), 1)
+        event = outer_events[0]
+        self.assertEqual(getattr(event, "operation", None), "transaction_boundary")
+        self.assertEqual(getattr(event, "exception_class", None), "RuntimeError")
+        self.assertIsNone(getattr(event, "exception_message", None))
+        self.assertIsNone(getattr(event, "transaction_rolled_back", None), "rollback failed, outcome unknown")
+        self.assertTrue(getattr(event, "exc_info", None) is not None)
+
+    def test_source_insert_failure_no_duplicate_outer_event(self):
+        """Source INSERT failure is logged by inner handler; outer handler skips duplicate."""
+
+        class InsertFailureDatabase(FakeDatabase):
+            pass  # normal transaction behavior
+
+        database = InsertFailureDatabase()
+        service = self._make_service(database)
+        service._source_repo.fail_create = True
+
+        with self.assertRaises(RuntimeError) as cm:
+            service.register_source(
+                actor_user_id=ACTOR,
+                authority_id=AUTHORITY,
+                jurisdiction="EU",
+                title="Test Source",
+            )
+
+        self.assertEqual(str(cm.exception), "simulated source insert failure")
+        # Inner event should exist
+        inner_events = self._inner_event(self.handler.records, "source_creation")
+        self.assertEqual(len(inner_events), 1, msg="Expected exactly one source_creation event")
+        # Outer transaction_boundary event should NOT exist (duplicate suppressed)
+        outer_events = self._outer_event(self.handler.records)
+        self.assertEqual(len(outer_events), 0, msg="Outer handler should not log duplicate for source_creation failure")
+        # Verify inner event has correct fields
+        event = inner_events[0]
+        self.assertEqual(getattr(event, "operation", None), "source_creation")
+        self.assertEqual(getattr(event, "exception_class", None), "RuntimeError")
+        self.assertEqual(getattr(event, "transaction_rolled_back", None), True)
+
+    def test_job_insert_failure_no_duplicate_outer_event(self):
+        """Job INSERT failure is logged by inner handler; outer handler skips duplicate."""
+
+        class InsertFailureDatabase(FakeDatabase):
+            pass
+
+        database = InsertFailureDatabase()
+        service = self._make_service(database)
+        service._job_repo.fail_create = True
+
+        with self.assertRaises(RuntimeError) as cm:
+            service.register_source(
+                actor_user_id=ACTOR,
+                authority_id=AUTHORITY,
+                jurisdiction="EU",
+                title="Test Source",
+            )
+
+        self.assertEqual(str(cm.exception), "simulated job insert failure")
+        # Inner event should exist
+        inner_events = self._inner_event(self.handler.records, "job_creation")
+        self.assertEqual(len(inner_events), 1, msg="Expected exactly one job_creation event")
+        # Outer transaction_boundary event should NOT exist (duplicate suppressed)
+        outer_events = self._outer_event(self.handler.records)
+        self.assertEqual(len(outer_events), 0, msg="Outer handler should not log duplicate for job_creation failure")
+
+    def test_persistence_integrity_error_not_logged_by_outer_handler(self):
+        """PersistenceIntegrityError from repository is skipped by outer handler (already logged)."""
+
+        from psycopg.errors import UniqueViolation
+        from xportra.persistence.errors import PersistenceIntegrityError
+
+        class IntegrityFailureDatabase(FakeDatabase):
+            pass
+
+        database = IntegrityFailureDatabase()
+        service = self._make_service(database)
+
+        # Wrap the source repo's create_in_transaction to raise PersistenceIntegrityError
+        original_create = service._source_repo.create_in_transaction
+        def failing_create(*args, **kwargs):
+            cause = UniqueViolation("duplicate key value violates unique constraint")
+            cause.pgcode = "23505"
+            raise PersistenceIntegrityError("source creation", cause) from cause
+        service._source_repo.create_in_transaction = failing_create
+
+        with self.assertRaises(PersistenceIntegrityError) as cm:
+            service.register_source(
+                actor_user_id=ACTOR,
+                authority_id=AUTHORITY,
+                jurisdiction="EU",
+                title="Test Source",
+            )
+
+        self.assertEqual(cm.exception.operation, "source creation")
+        # Outer handler should NOT log for PersistenceIntegrityError (skipped as already logged at repo level)
+        outer_events = self._outer_event(self.handler.records)
+        self.assertEqual(len(outer_events), 0, msg="Outer handler should skip PersistenceIntegrityError")
+        # Inner handler DOES log (catches all Exceptions); repository also logs at its level
+        inner_events = self._inner_event(self.handler.records, "source_creation")
+        self.assertEqual(len(inner_events), 1, msg="Inner handler logs PersistenceIntegrityError (caught as Exception)")
