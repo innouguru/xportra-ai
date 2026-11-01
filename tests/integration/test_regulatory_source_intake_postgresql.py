@@ -20,6 +20,8 @@ import os
 import unittest
 from uuid import UUID
 
+from psycopg.errors import IntegrityError
+
 from xportra.application.errors import (
     ApplicationNotFoundError,
     ApplicationValidationError,
@@ -33,6 +35,7 @@ from xportra.application.regulatory_source_intake_service import (
 )
 from xportra.api.errors import APIError, PermissionDeniedError
 from xportra.persistence.database import Database, DatabaseSettings
+from xportra.persistence.errors import PersistenceIntegrityError
 from xportra.persistence.repositories import (
     AuthorityRepository,
     RegulatoryIngestionJobRepository,
@@ -304,6 +307,101 @@ class RegulatorySourceIntakeIntegrationTests(unittest.TestCase):
                 title="Test",
             )
 
+    # ---- 1b. Atomic registration ----
+
+    def test_register_source_creates_source_and_job_atomically(self):
+        """Successful registration creates both source and job in one transaction."""
+        self._require_job_table()
+        row = self.service.register_source(
+            actor_user_id=self.actor_id,
+            authority_id=AUTHORITY_ID,
+            jurisdiction="EU",
+            title="Atomic Test Source",
+            version="1.0",
+            status="draft",
+        )
+        self.source_ids.append(row["id"])
+        # Verify source exists
+        source = self.service.get_source(row["id"])
+        self.assertIsNotNone(source)
+        self.assertEqual(source["id"], row["id"])
+        self.assertEqual(source["title"], "Atomic Test Source")
+        # Verify job exists
+        jobs = self.service.list_jobs(row["id"])
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["status"], "pending")
+        self.assertIsNone(jobs[0]["artifact_id"])
+        self.assertEqual(jobs[0]["actor_user_id"], self.actor_id)
+
+    def test_register_source_job_failure_rolls_back_source(self):
+        """Job INSERT failure rolls back the source creation (atomicity)."""
+        self._require_job_table()
+        original_create = self.service._job_repo.create_in_transaction
+
+        def failing_create(*args, **kwargs):
+            raise ValueError("simulated job insert failure")
+
+        self.service._job_repo.create_in_transaction = failing_create
+        try:
+            with self.assertRaises(ValueError):
+                self.service.register_source(
+                    actor_user_id=self.actor_id,
+                    authority_id=AUTHORITY_ID,
+                    jurisdiction="EU",
+                    title="Rollback Test Source",
+                    version="1.0",
+                    status="draft",
+                )
+        finally:
+            self.service._job_repo.create_in_transaction = original_create
+
+        # Verify NO source was committed (rolled back)
+        with self.database.connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT id FROM xportra.regulatory_sources WHERE title = %s",
+                    ("Rollback Test Source",),
+                )
+                self.assertIsNone(cursor.fetchone())
+
+    def test_register_source_fk_violation_rolls_back(self):
+        """Foreign-key violation on actor_user_id leaves neither source nor job."""
+        self._require_job_table()
+        original_create = self.service._job_repo.create_in_transaction
+
+        def failing_create(*args, **kwargs):
+            raise PersistenceIntegrityError(
+                "regulatory ingestion job creation",
+                IntegrityError(
+                    "insert or update on table regulatory_ingestion_jobs violates "
+                    "foreign key constraint regulatory_ingestion_jobs_actor_user_id_fkey"
+                ),
+            )
+
+        self.service._job_repo.create_in_transaction = failing_create
+        try:
+            with self.assertRaises(PersistenceIntegrityError):
+                self.service.register_source(
+                    actor_user_id=self.actor_id,
+                    authority_id=AUTHORITY_ID,
+                    jurisdiction="EU",
+                    title="FK Test Source",
+                    version="1.0",
+                    status="draft",
+                )
+        finally:
+            self.service._job_repo.create_in_transaction = original_create
+
+        # Verify NO source was committed (rolled back)
+        with self.database.connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT id FROM xportra.regulatory_sources WHERE title = %s",
+                    ("FK Test Source",),
+                )
+                self.assertIsNone(cursor.fetchone())
+
+
     # ---- 2. Artifact upload and durable job (requires migration 018) ----
 
     def _require_job_table(self):
@@ -367,7 +465,14 @@ class RegulatorySourceIntakeIntegrationTests(unittest.TestCase):
         self.assertTrue(result2["duplicate"])
         self.assertEqual(result2["artifact"]["id"], result1["artifact"]["id"])
         jobs = self.service.list_jobs(source["id"])
-        self.assertEqual(len(jobs), 1)
+        # One job from registration (artifact_id=None) + one from upload
+        self.assertEqual(len(jobs), 2)
+        job_statuses = {j["status"] for j in jobs}
+        self.assertEqual(job_statuses, {"pending"})
+        # One job has no artifact (registration placeholder), one has artifact (upload)
+        artifact_ids = {j["artifact_id"] for j in jobs}
+        self.assertIn(None, artifact_ids)
+        self.assertTrue(any(aid is not None for aid in artifact_ids))
 
     def test_missing_source_upload_rejected(self):
         self._require_job_table()

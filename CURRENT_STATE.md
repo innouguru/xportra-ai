@@ -4819,6 +4819,18 @@ Adjusted rontend/src/features/regulatory/RegulationAdminPage.tsx so source regi
 
 Verification: focused regulatory page suite 38/38; full frontend suite 624 passed / 1 pre-existing unrelated failure (RegisterPage sessionStorage vs localStorage); 	sc --noEmit and ite build pass (existing chunk advisory). No production records, authorization bypass, constraint weakening, migration, or push/deploy. The earlier HTTP 500 root cause was migration 018's NOT NULL on egulatory_ingestion_jobs.artifact_id; migration 033 (nullable) is already applied, so the current registration path is healthy � no backend change made.
 
+## Backend: Atomic source registration (2026-11-01)
+
+Fixed the consistency defect where `register_source()` created a regulatory source and its placeholder ingestion job in separate database transactions. If job creation failed (e.g., FK violation on `actor_user_id`), the source remained committed without its job — an orphan record.
+
+Files changed:
+- `xportra/persistence/repositories.py` — Added `create_in_transaction()` to `RegulatorySourceRepository` and `RegulatoryIngestionJobRepository`, allowing both INSERTs to execute within a single caller-supplied transaction via `_insert_in_transaction()`.
+- `xportra/application/regulatory_source_intake_service.py` — `register_source()` now wraps both source creation and job creation in one `self._database.transaction()` block. If either INSERT fails, both are rolled back atomically.
+- `tests/unit/test_regulatory_source_intake.py` — Added `create_in_transaction()` to `FakeSourceRepository` and `FakeJobRepository` test doubles.
+- `tests/integration/test_regulatory_source_intake_postgresql.py` — Added 4 atomic registration tests (success, job failure rollback, FK violation rollback, invalid status no-write). All pass against `xportra_test`.
+
+Verification: All 34 existing unit tests pass; all 4 new integration tests pass. Atomicity confirmed: failed registration leaves neither source nor job.
+
 ## Backend: PersistenceIntegrityError diagnostics (2026-11-01)
 
 Added a specific handler for `PersistenceIntegrityError` in `xportra/api/errors.py` so database integrity failures no longer surface as generic HTTP 500:
@@ -4827,8 +4839,6 @@ Added a specific handler for `PersistenceIntegrityError` in `xportra/api/errors.
 - Maps known SQLSTATEs to safe HTTP responses: `23505` (unique violation) → HTTP 409 `integrity_conflict`; `23503`/`23502`/`23514` (FK/NOT NULL/CHECK) → HTTP 400 `integrity_violation`; unknown → HTTP 500 `internal_error`.
 - `PersistenceIntegrityError` already uses exception chaining (`raise ... from cause` in `_insert()` and `_insert_in_transaction()`) — original cause preserved via `exc.__cause__` and `exc.cause`.
 - No migration, no deployment configuration change, no database credentials/roles changed.
-- Source and placeholder-job creation remain in separate transactions (reported risk separately); this task only addresses error diagnostics, not atomicity.
-
-Added `tests/unit/test_api_errors.py` — 11 focused tests covering exception chaining, SQLSTATE-based mapping (unique→409, FK/NOT NULL/CHECK→400, unknown→500), server-side logging of diagnostics, and client response safety (no PostgreSQL/SQL/constraint details leaked).
-Verification: new test file 11/11 pass; existing `test_api.py` 10/10 pass; `py_compile` clean on both modified files.
+- Added `tests/unit/test_api_errors.py` — 11 focused tests covering exception chaining, SQLSTATE-based mapping (unique→409, FK/NOT NULL/CHECK→400, unknown→500), server-side logging of diagnostics, and client response safety (no PostgreSQL/SQL/constraint details leaked).
+- Verification: new test file 11/11 pass; existing `test_api.py` 10/10 pass; `py_compile` clean on both modified files.
 

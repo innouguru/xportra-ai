@@ -279,6 +279,35 @@ class RegulatorySourceRepository:
             ),
         )
 
+    def create_in_transaction(
+        self,
+        connection,
+        authority_id: UUID,
+        jurisdiction: str,
+        title: str,
+        version: str | None = None,
+        status: str = "draft",
+        effective_date: Any | None = None,
+        publication_date: Any | None = None,
+        source_url: str | None = None,
+    ) -> Row:
+        """Create a regulatory source inside the caller's transaction."""
+        return _insert_in_transaction(
+            connection,
+            "regulatory source creation",
+            """
+            INSERT INTO xportra.regulatory_sources
+                (authority_id, jurisdiction, title, version, status,
+                 effective_date, publication_date, source_url, retrieval_timestamp)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+            RETURNING *
+            """,
+            (
+                authority_id, jurisdiction, title, version, status,
+                effective_date, publication_date, source_url,
+            ),
+        )
+
     def update_source(
         self,
         source_id: UUID,
@@ -2511,6 +2540,28 @@ class RegulatoryIngestionJobRepository:
             raise ValueError("ingestion jobs are always created in 'pending' state")
         return _insert(
             self._database,
+            "regulatory ingestion job creation",
+            "INSERT INTO xportra.regulatory_ingestion_jobs (artifact_id, source_id, status, actor_user_id, audit_ref, parser_version, attempt_number) VALUES (%s, %s, 'pending', %s, %s, %s, %s) RETURNING *",
+            (artifact_id, source_id, actor_user_id, audit_ref, parser_version, attempt_number if attempt_number is not None else 1),
+        )
+
+    def create_in_transaction(
+        self,
+        connection,
+        artifact_id,
+        source_id,
+        actor_user_id=None,
+        audit_ref=None,
+        parser_version="v1",
+        attempt_number=None,
+        status=None,
+    ):
+        """Create an ingestion job inside the caller's transaction."""
+        from .database import Database
+        if status not in (None, "pending"):
+            raise ValueError("ingestion jobs are always created in 'pending' state")
+        return _insert_in_transaction(
+            connection,
             "regulatory ingestion job creation",
             "INSERT INTO xportra.regulatory_ingestion_jobs (artifact_id, source_id, status, actor_user_id, audit_ref, parser_version, attempt_number) VALUES (%s, %s, 'pending', %s, %s, %s, %s) RETURNING *",
             (artifact_id, source_id, actor_user_id, audit_ref, parser_version, attempt_number if attempt_number is not None else 1),

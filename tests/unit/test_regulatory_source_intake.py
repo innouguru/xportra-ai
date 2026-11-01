@@ -160,6 +160,13 @@ class FakeSourceRepository:
         self.sources[source_id] = row
         return row
 
+    def create_in_transaction(
+        self,
+        connection,
+        **kwargs,
+    ):
+        return self.create(**kwargs)
+
     def update_source(
         self,
         source_id: UUID,
@@ -276,6 +283,13 @@ class FakeJobRepository:
         }
         self.jobs.append(row)
         return row
+
+    def create_in_transaction(
+        self,
+        connection,
+        **kwargs,
+    ):
+        return self.create(**kwargs)
 
 
 class FakeStorage:

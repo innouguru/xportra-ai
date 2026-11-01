@@ -143,24 +143,27 @@ class RegulatorySourceIntakeService:
         authority = self._authority_repo.get(authority_id)
         if authority is None:
             raise ApplicationNotFoundError("authority not found")
-        source_row = self._source_repo.create(
-            authority_id=authority_id,
-            jurisdiction=jurisdiction,
-            title=title,
-            version=version,
-            status=status,
-            effective_date=effective_date,
-            publication_date=publication_date,
-            source_url=source_url,
-        )
-        # Create the pending ingestion job per Phase 4D.10 (Task 3B contract).
-        job_row = self._job_repo.create(
-            artifact_id=None,
-            source_id=source_row["id"],
-            actor_user_id=actor_user_id,
-            parser_version="v1",
-            status="pending",
-        )
+        with self._database.transaction() as connection:
+            source_row = self._source_repo.create_in_transaction(
+                connection,
+                authority_id=authority_id,
+                jurisdiction=jurisdiction,
+                title=title,
+                version=version,
+                status=status,
+                effective_date=effective_date,
+                publication_date=publication_date,
+                source_url=source_url,
+            )
+            # Create the pending ingestion job per Phase 4D.10 (Task 3B contract).
+            job_row = self._job_repo.create_in_transaction(
+                connection,
+                artifact_id=None,
+                source_id=source_row["id"],
+                actor_user_id=actor_user_id,
+                parser_version="v1",
+                status="pending",
+            )
         return {
             "id": source_row["id"],
             "source_id": source_row["id"],

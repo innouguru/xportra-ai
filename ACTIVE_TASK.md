@@ -133,6 +133,19 @@ Files changed:
 Risk noted separately: source and placeholder-job creation remain in separate transactions; a failed job insert can leave a committed source without its job. Atomicity refactor is out of scope for this task.
 
 
+## Backend: Atomic source registration (completed 2026-11-01)
+
+Fixed the consistency defect where `register_source()` created a source and its placeholder ingestion job in separate database transactions, potentially leaving an orphan source without its job if job creation failed.
+
+Files changed:
+- `xportra/persistence/repositories.py` — Added `create_in_transaction()` to `RegulatorySourceRepository` and `RegulatoryIngestionJobRepository`, allowing both INSERTs to execute within a single caller-supplied transaction via `_insert_in_transaction()`.
+- `xportra/application/regulatory_source_intake_service.py` — `register_source()` now wraps both source creation and job creation in one `self._database.transaction()` block. If either INSERT fails, both are rolled back atomically.
+- `tests/unit/test_regulatory_source_intake.py` — Added `create_in_transaction()` to `FakeSourceRepository` and `FakeJobRepository` test doubles.
+- `tests/integration/test_regulatory_source_intake_postgresql.py` — Added 4 atomic registration tests: successful registration (both records created), job INSERT failure (source rolled back), FK violation on actor_user_id (neither record created), invalid status (no DB writes).
+
+Verification: All 34 existing unit tests pass; all 4 new integration tests pass against `xportra_test`. Atomicity confirmed: failed registration leaves neither source nor job.
+
+
 ## Milestone 3 — Stage A/B Review APIs and Publication Eligibility (2026-10-29)
 
 **Verdict:** IMPLEMENTED AND VERIFIED.

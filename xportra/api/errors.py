@@ -336,7 +336,9 @@ async def _handle_persistence_integrity(
     server-side with full traceback but never returned to clients.
     """
     cause = exc.cause
-    pgcode = getattr(cause, "pgcode", None)
+    pgcode = getattr(cause, "sqlstate", None)
+    if not isinstance(pgcode, str):
+        pgcode = getattr(cause, "pgcode", None)
     diag = getattr(cause, "diag", None)
     constraint_name = getattr(diag, "constraint_name", None) if diag is not None else None
 
