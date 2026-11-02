@@ -183,7 +183,14 @@ class RegulatoryIngestionWorker:
         if reset_count > 0:
             logger.info("Regulatory ingestion worker recovered %d expired lease(s)", reset_count)
         # Start bounded polling loop (asynchronous, non-blocking to request handling).
-        loop = asyncio.get_event_loop()
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            # No event loop available (e.g., in certain test contexts without
+            # an active asyncio runtime). The worker will be started when an
+            # event loop is available; polling is deferred until then.
+            self._poll_task = None
+            return
         self._poll_task = loop.create_task(self._poll_loop())
 
     async def _poll_loop(self) -> None:

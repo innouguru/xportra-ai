@@ -322,9 +322,13 @@ class ProductionSecurityAuditTests(unittest.TestCase):
 
     def test_domain_has_no_io_or_network_surface(self):
         roots = set()
-        opens = []
+        # Use AST-based detection of actual builtin open() calls,
+        # not a naive string check that catches .open() method calls
+        # (e.g. fitz.open()) which are legitimate library usage, not I/O.
+        opens: set[str] = set()
         for path in sorted((ROOT / "xportra" / "domain").glob("*.py")):
-            tree = ast.parse(path.read_text(encoding="utf-8"))
+            text = path.read_text(encoding="utf-8")
+            tree = ast.parse(text)
             for node in ast.walk(tree):
                 if isinstance(node, ast.Import):
                     roots.update(
@@ -332,16 +336,19 @@ class ProductionSecurityAuditTests(unittest.TestCase):
                 elif isinstance(node, ast.ImportFrom) and node.module:
                     if node.level == 0:
                         roots.add(node.module.split(".")[0])
-            text = path.read_text(encoding="utf-8")
-            if "open(" in text:
-                opens.append(path.name)
+            # Detect builtin open() function calls only (not .open() method calls)
+            for node in ast.walk(tree):
+                if (isinstance(node, ast.Call) and
+                        isinstance(node.func, ast.Name) and node.func.id == "open"):
+                    # Get the filename for the report
+                    opens.add(path.name)
         forbidden = {"fastapi", "starlette", "qdrant_client",
                      "openai", "anthropic", "httpx", "requests",
                      "socket", "os", "sys", "subprocess"}
         self.assertTrue(
             roots.isdisjoint(forbidden),
             f"forbidden domain imports: {roots & forbidden}")
-        self.assertEqual(opens, [])
+        self.assertEqual(opens, set())
 
     def test_api_builds_no_infrastructure_transports(self):
         violations = []

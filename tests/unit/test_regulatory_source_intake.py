@@ -1720,3 +1720,42 @@ class TransactionBoundaryDiagnosticsTests(TestCase):
         # Inner handler DOES log (catches all Exceptions); repository also logs at its level
         inner_events = self._inner_event(self.handler.records, "source_creation")
         self.assertEqual(len(inner_events), 1, msg="Inner handler logs PersistenceIntegrityError (caught as Exception)")
+
+
+class ServiceResponseCompatibilityTests(TestCase):
+    """Regression tests for the register_source return dict shape.
+
+    The route handler calls _source_response() on the service's return
+    dict. _source_response() accesses some fields with direct key access
+    (e.g. source["created_at"], source["id"]). If the service omits any
+    of those fields, an unhandled KeyError propagates after the
+    transaction has committed, producing an HTTP 500 that bypasses all
+    diagnostic logging.
+    """
+
+    def test_register_source_return_includes_created_at(self):
+        """register_source return dict must include created_at so that
+        _source_response does not raise KeyError after commit (500).
+        """
+        from xportra.api.regulatory_admin import _source_response
+
+        factory = ServiceFactory()
+        service = factory.service()
+        row = service.register_source(
+            actor_user_id=ACTOR,
+            authority_id=AUTHORITY,
+            jurisdiction="EU",
+            title="Regression Test Source",
+            version="1.0",
+            status="draft",
+        )
+
+        # The service must include created_at (and retrieval_timestamp)
+        # so the route response builder can access them directly.
+        self.assertIn("created_at", row)
+        self.assertIn("retrieval_timestamp", row)
+
+        # _source_response must not raise KeyError.
+        response = _source_response(row)
+        self.assertEqual(response["id"], row["id"])
+        self.assertEqual(response["created_at"], row["created_at"])

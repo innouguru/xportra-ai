@@ -255,8 +255,10 @@ class RegulatorySourceIntakeService:
             "effective_date": source_row.get("effective_date"),
             "publication_date": source_row.get("publication_date"),
             "source_url": source_row.get("source_url"),
+            "retrieval_timestamp": source_row.get("retrieval_timestamp"),
             "supersedes_source_id": source_row.get("supersedes_source_id"),
             "superseded_by_source_id": source_row.get("superseded_by_source_id"),
+            "created_at": source_row.get("created_at"),
             "updated_at": source_row.get("updated_at"),
             "pending_ingestion_job_id": job_row["id"],
         }

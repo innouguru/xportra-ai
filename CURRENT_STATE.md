@@ -4842,3 +4842,49 @@ Added a specific handler for `PersistenceIntegrityError` in `xportra/api/errors.
 - Added `tests/unit/test_api_errors.py` — 11 focused tests covering exception chaining, SQLSTATE-based mapping (unique→409, FK/NOT NULL/CHECK→400, unknown→500), server-side logging of diagnostics, and client response safety (no PostgreSQL/SQL/constraint details leaked).
 - Verification: new test file 11/11 pass; existing `test_api.py` 10/10 pass; `py_compile` clean on both modified files.
 
+
+
+## Regulatory source registration — HTTP 500 correction (2026-11-01)
+
+### Confirmed root cause
+`register_source()` in `xportra/application/regulatory_source_intake_service.py`
+constructed its return dictionary without the `created_at` field. The
+route handler `_source_response()` in `xportra/api/regulatory_admin.py`
+accesses `source["created_at"]` with direct key access. The missing key
+raised an unhandled `KeyError: 'created_at'` after the database
+transaction had already committed, bypassing all diagnostic try/except
+blocks and producing HTTP 500.
+
+### Correction
+Added `created_at` and `retrieval_timestamp` to the `register_source()`
+return dictionary in
+`xportra/application/regulatory_source_intake_service.py`. Both values
+come from the `source_row` returned by the source INSERT's `RETURNING *`
+clause, so they reflect the actual inserted record.
+
+### Regression test
+Added `ServiceResponseCompatibilityTests.test_register_source_return_includes_created_at`
+to `tests/unit/test_regulatory_source_intake.py`, which verifies the
+service return dict contains `created_at` and `retrieval_timestamp` and
+that `_source_response()` succeeds without `KeyError`.
+
+### Migration 033
+Migration `033_registration_jobs_artifact_optional.sql` (makes
+`regulatory_ingestion_jobs.artifact_id` nullable) is confirmed applied
+in production (per project owner). Independent production schema
+verification was not performed.
+
+### Verification
+- `tests/unit/test_regulatory_source_intake.py`: 58 passed (includes 1 new regression test)
+- `tests/unit/test_api_errors.py`: 11 passed
+- `tests/unit/test_regulatory_authorities_endpoint.py`: 7 passed
+- Full unit suite: 2418 passed, 2 failed (both pre-existing and unrelated:
+  `test_rag_production_verification.py` and `test_regulatory_ingestion_worker.py`)
+
+### Change status
+- Locally implemented: YES
+- Locally tested: YES
+- Committed: NO (working tree changes only)
+- Pushed: NO
+- Deployed to Render: NO
+- Verified in production: NO
