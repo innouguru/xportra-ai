@@ -362,3 +362,16 @@ class TestExtractionRaceCondition(TestCase):
 
         self.assertTrue(result["duplicate"])
         self.assertIsNone(ingestion.completed)
+
+
+class PollQueryExcludesPlaceholderJobsTests(TestCase):
+    """Registration placeholder jobs (artifact_id IS NULL) must never be
+    reserved by the poll cycle: ``_process_job`` returns without
+    transitioning them, so reserving one would block the queue head
+    forever and starve real artifact jobs."""
+
+    def test_poll_query_filters_null_artifact_jobs(self):
+        from xportra.application import regulatory_ingestion_worker as module
+
+        source = inspect.getsource(module)
+        self.assertIn("AND artifact_id IS NOT NULL", source)

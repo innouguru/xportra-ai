@@ -686,7 +686,12 @@ def require_global_staff(
     return dependency
 
 
-GlobalStaffDependency = Annotated[UUID, Depends(require_global_staff)]
+#: The factory must be *called*: ``Depends(require_global_staff)`` would hand
+#: FastAPI the factory itself, so the inner checker (JWT verification and
+#: grant lookup) would never run and ``actor_id`` would be a function object.
+#: Tests override this instance, not the factory.
+global_staff_dependency = require_global_staff()
+GlobalStaffDependency = Annotated[UUID, Depends(global_staff_dependency)]
 
 
 def require_stage_a_verify(
@@ -725,7 +730,8 @@ def require_stage_a_verify(
     return dependency
 
 
-StageADependency = Annotated[UUID, Depends(require_stage_a_verify)]
+stage_a_dependency = require_stage_a_verify()
+StageADependency = Annotated[UUID, Depends(stage_a_dependency)]
 
 
 def require_stage_b_approve(
@@ -764,4 +770,5 @@ def require_stage_b_approve(
     return dependency
 
 
-StageBDependency = Annotated[UUID, Depends(require_stage_b_approve)]
+stage_b_dependency = require_stage_b_approve()
+StageBDependency = Annotated[UUID, Depends(stage_b_dependency)]

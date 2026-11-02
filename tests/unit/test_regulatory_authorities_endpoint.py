@@ -18,7 +18,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from xportra.api.app import create_app
-from xportra.api.dependencies import require_global_staff
+from xportra.api.dependencies import global_staff_dependency
 from xportra.api.errors import PermissionDeniedError
 from xportra.api.schemas import AuthorityResponse
 
@@ -96,7 +96,7 @@ def build_app(database, staff_override=None):
     every request test runs inside ``with TestClient(...) as client``.
     """
     app = create_app(services=SimpleNamespace(database=database))
-    app.dependency_overrides[require_global_staff] = (
+    app.dependency_overrides[global_staff_dependency] = (
         staff_override if staff_override is not None else (lambda: ACTOR)
     )
     return app
@@ -145,7 +145,7 @@ class AuthoritiesEndpointTests(TestCase):
         def denied():
             raise PermissionDeniedError()
 
-        app.dependency_overrides[require_global_staff] = denied
+        app.dependency_overrides[global_staff_dependency] = denied
         with TestClient(app) as client:
             response = client.get("/regulatory/authorities")
         self.assertEqual(403, response.status_code)

@@ -138,7 +138,7 @@ class RegulatoryIngestionWorker:
         with self._database.transaction() as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
-                    "SELECT id FROM xportra.regulatory_ingestion_jobs WHERE status IN ('pending', 'retryable') ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED"
+                    "SELECT id FROM xportra.regulatory_ingestion_jobs WHERE status IN ('pending', 'retryable') AND artifact_id IS NOT NULL ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED"
                 )
                 row = cursor.fetchone()
                 if row is None:

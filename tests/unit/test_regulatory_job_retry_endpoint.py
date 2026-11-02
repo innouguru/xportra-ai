@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from xportra.api import regulatory_admin
 from xportra.api.app import create_app
-from xportra.api.dependencies import require_global_staff
+from xportra.api.dependencies import global_staff_dependency
 from xportra.api.errors import PermissionDeniedError
 from xportra.application.errors import (
     ApplicationNotFoundError,
@@ -66,7 +66,7 @@ def build_app(database=None, retry_service=None, staff_override=None):
     app.dependency_overrides[
         regulatory_admin._ingestion_service
     ] = (lambda: retry_service)
-    app.dependency_overrides[require_global_staff] = (
+    app.dependency_overrides[global_staff_dependency] = (
         staff_override if staff_override is not None else (lambda: ACTOR)
     )
     return app

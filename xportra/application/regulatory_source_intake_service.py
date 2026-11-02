@@ -88,16 +88,22 @@ class RegulatorySourceIntakeService:
         self._grant_service = grant_service or GlobalStaffGrantService(database)
         self._requirement_repo = requirement_repo or RegulatoryRequirementRepository(database)
         self._flag_repo = review_flag_repo or RegulatoryReviewFlagRepository(database)
-        if storage_service is not None:
-            self._storage = storage_service
-        else:
+        # Storage is built lazily: registering a source is metadata-only and
+        # must not require object-storage configuration (SUPABASE_URL /
+        # SUPABASE_SERVICE_ROLE_KEY). Only artifact upload needs it.
+        self._storage_service = storage_service
+        self._ingestion = ingestion_service or RegulatoryIngestionService(database)
+
+    @property
+    def _storage(self) -> RegulatorySourceStorageApplicationService:
+        if self._storage_service is None:
             from xportra.application.regulatory_artifact_storage_service import (
                 RegulatorySourceStorageApplicationService,
             )
-            self._storage = RegulatorySourceStorageApplicationService(
+            self._storage_service = RegulatorySourceStorageApplicationService(
                 grant_service=self._grant_service,
             )
-        self._ingestion = ingestion_service or RegulatoryIngestionService(database)
+        return self._storage_service
 
     # ---------------------------------------------------------------- queries
 
