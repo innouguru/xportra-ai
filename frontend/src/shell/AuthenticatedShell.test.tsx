@@ -140,7 +140,7 @@ describe("authenticated shell navigation", () => {
     await waitFor(() =>
       expect(
         within(primary).getByRole("link", { name: "Regulatory Ingestion" }),
-      ).toHaveAttribute("href", "/regulatory-ingestion"),
+      ).toHaveAttribute("href", "/regulatory"),
     );
     const links = within(primary).getAllByRole("link");
     expect(links).toHaveLength(3);
@@ -155,7 +155,7 @@ describe("authenticated shell navigation", () => {
     await waitFor(() =>
       expect(
         within(primary).getByRole("link", { name: "Regulatory Ingestion" }),
-      ).toHaveAttribute("href", "/regulatory-ingestion"),
+      ).toHaveAttribute("href", "/regulatory"),
     );
     const links = within(primary).getAllByRole("link");
     expect(links).toHaveLength(1);

@@ -882,7 +882,10 @@ class RegulatoryIngestionJobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    artifact_id: UUID
+    # ``None`` for the registration record: registering a source creates a
+    # job before any document exists (migration 033 made the column
+    # nullable), and listing a source's jobs must still serialize it.
+    artifact_id: UUID | None
     source_id: UUID
     status: str
     attempt_number: int

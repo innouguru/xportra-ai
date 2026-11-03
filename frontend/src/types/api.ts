@@ -381,6 +381,8 @@ export interface OrganizationRegistrationResult {
  * inferred from authentication, organization membership, or email.
  */
 export const GRANT_MANAGE = "grant_manage";
+export const STAGE_A_VERIFY = "stage_a_verify";
+export const STAGE_B_APPROVE = "stage_b_approve";
 
 /**
  * The authenticated account's identity as returned by ``GET /me``.

@@ -110,6 +110,14 @@ describe("authenticated routes", () => {
     // chrome must still render for a signed-in visitor. ``GET /me``
     // fails, so the staff entry point stays hidden; only the shell
     // chrome and breadcrumb are asserted.
+    renderAt("/regulatory", { token: "test-token" });
+    expect(screen.getByRole("complementary", { name: "Application" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
+      "Regulatory ingestion",
+    );
+  });
+
+  it("sends the legacy /regulatory-ingestion path to /regulatory inside the shell", () => {
     renderAt("/regulatory-ingestion", { token: "test-token" });
     expect(screen.getByRole("complementary", { name: "Application" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
@@ -124,13 +132,13 @@ describe("authenticated routes", () => {
     await waitFor(() => {
       expect(
         screen.getByRole("navigation", { name: "Primary" }).querySelector(
-          'a[href="/regulatory-ingestion"]',
+          'a[href="/regulatory"]',
         ),
       ).not.toBeNull();
     });
     fireEvent.click(
       screen.getByRole("navigation", { name: "Primary" }).querySelector(
-        'a[href="/regulatory-ingestion"]',
+        'a[href="/regulatory"]',
       ) as HTMLAnchorElement,
     );
     await waitFor(() => {
@@ -193,7 +201,7 @@ describe("authenticated routes", () => {
     },
   );
 
-  it.each(["/start", "/settings", "/regulatory-ingestion"])(
+  it.each(["/start", "/settings", "/regulatory", "/regulatory-ingestion"])(
     "protects %s from signed-out visitors",
     (path) => {
     renderAt(path);
@@ -202,8 +210,10 @@ describe("authenticated routes", () => {
     expect(screen.queryByRole("heading", { name: "New shipment" })).toBeNull();
   });
 
-  it("denies an unauthorized exporter direct access to /regulatory-ingestion", async () => {
-    renderAt("/regulatory-ingestion", { token: "test-token" }, EXPORTER_ME);
+  it.each(["/regulatory", "/regulatory/new", "/regulatory-ingestion"])(
+    "denies an unauthorized exporter direct access to %s",
+    async (path) => {
+    renderAt(path, { token: "test-token" }, EXPORTER_ME);
     // The shell chrome renders, but the staff guard fails closed with an
     // in-place access-denied panel once the exporter identity resolves.
     await waitFor(() =>
@@ -213,7 +223,9 @@ describe("authenticated routes", () => {
     expect(screen.getByRole("link", { name: /Return to your dashboard/ })).toHaveAttribute("href", "/dashboard");
     expect(screen.queryByRole("heading", { name: "Your shipments" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Regulatory ingestion" })).toBeNull();
-  });
+    expect(screen.queryByRole("link", { name: "Register source" })).toBeNull();
+    },
+  );
 
   it("does not render workspace navigation for a signed-out visitor with a stale record", async () => {
     sessionStorage.setItem("xportra.workflow-record.v1", JSON.stringify(STALE_RECORD));

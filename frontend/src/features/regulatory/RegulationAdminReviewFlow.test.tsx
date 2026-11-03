@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { fireEvent } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { AuthProvider } from "../../app/AuthContext";
-import { IngestionDashboard } from "./IngestionDashboard";
+import { RegulationAdminPage } from "./RegulationAdminPage";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -170,24 +170,31 @@ function stubRegulatoryBackend(options: {
 
 function renderDashboard() {
   return render(
-    <MemoryRouter initialEntries={["/regulatory-ingestion"]}>
+    <MemoryRouter initialEntries={["/regulatory"]}>
       <AuthProvider initial={CREDENTIALS}>
         <Routes>
-          <Route path="/regulatory-ingestion" element={<IngestionDashboard />} />
+          <Route path="/regulatory/*" element={<RegulationAdminPage />} />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
   );
 }
 
-async function openCandidateReview(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getAllByRole("button", { name: "Inspect source" })[0]);
-  await user.click(await screen.findByRole("button", { name: "Review candidate" }));
+type User = ReturnType<typeof userEvent.setup>;
+
+async function openTab(user: User, name: string) {
+  await user.click(await screen.findByRole("link", { name: new RegExp(`^${name}`) }));
+}
+
+async function openCandidateReview(user: User) {
+  await user.click(screen.getAllByRole("link", { name: "Open source" })[0]);
+  await openTab(user, "Candidates");
+  await user.click(await screen.findByRole("link", { name: "Review candidate" }));
   await screen.findByText("Stage A — source traceability and wording verification");
 }
 
-describe("IngestionDashboard", () => {
-  it("renders sources on the ingestion route and inspects the selected source", async () => {
+describe("Regulatory review flow across several sources", () => {
+  it("renders sources and opens the selected source across its tabs", async () => {
     const fetchStub = stubRegulatoryBackend({});
     vi.stubGlobal("fetch", fetchStub);
     const user = userEvent.setup();
@@ -196,7 +203,7 @@ describe("IngestionDashboard", () => {
       expect(screen.getByText(SOURCE_A.title)).toBeTruthy();
       expect(screen.getByText(SOURCE_B.title)).toBeTruthy();
     });
-    await user.click(screen.getAllByRole("button", { name: "Inspect source" })[0]);
+    await user.click(screen.getAllByRole("link", { name: "Open source" })[0]);
     await waitFor(() => {
       expect(
         fetchStub.mock.calls.some(([url]) =>
@@ -210,9 +217,11 @@ describe("IngestionDashboard", () => {
       ).toBe(true);
     });
     // Job lifecycle state, attempts, and failure details render verbatim.
+    await openTab(user, "Ingestion");
     expect(await screen.findByText("failed")).toBeTruthy();
     expect(screen.getByText(/simulated parser failure/)).toBeTruthy();
-    expect(screen.getByText("Review candidate")).toBeTruthy();
+    await openTab(user, "Candidates");
+    expect(await screen.findByText("Review candidate")).toBeTruthy();
   });
 
   it("surfaces authorization denial as an error instead of a fabricated list", async () => {
@@ -396,21 +405,24 @@ describe("IngestionDashboard", () => {
     const user = userEvent.setup();
     renderDashboard();
     await screen.findByText(SOURCE_A.title);
-    const inspectButtons = screen.getAllByRole("button", { name: "Inspect source" });
-    await user.click(inspectButtons[0]);
-    await user.click(inspectButtons[1]);
+    // Open A (its detail request hangs), go back, then open B.
+    await user.click(screen.getAllByRole("link", { name: "Open source" })[0]);
+    await user.click(await screen.findByRole("link", { name: "Regulatory sources" }));
+    await screen.findByText(SOURCE_B.title);
+    await user.click(screen.getAllByRole("link", { name: "Open source" })[1]);
     expect(await screen.findByRole("heading", { name: SOURCE_B.title })).toBeTruthy();
-    // Resolve the previously selected source's detail late; its response
+    // Resolve the previously opened source's detail late; its response
     // arrives stale and must not replace what is displayed.
-    staleSource.resolve(SOURCE_A as unknown as Response);
+    staleSource.resolve(
+      new Response(JSON.stringify(SOURCE_A), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: SOURCE_B.title })).toBeTruthy();
     });
-    // The stale response for the previously selected source must not
-    // replace the currently displayed source detail.
-    await waitFor(() => {
-      expect(screen.queryByRole("heading", { name: SOURCE_A.title })).toBeNull();
-    });
+    expect(screen.queryByRole("heading", { name: SOURCE_A.title })).toBeNull();
   });
 
   it("shows the empty state when no sources exist", async () => {

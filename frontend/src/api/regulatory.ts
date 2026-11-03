@@ -93,7 +93,8 @@ export interface RegulatoryArtifact {
 
 export interface RegulatoryIngestionJob {
   id: string;
-  artifact_id: string;
+  /** ``null`` for the registration record: no document is attached yet. */
+  artifact_id: string | null;
   source_id: string;
   status: string;
   attempt_number: number;

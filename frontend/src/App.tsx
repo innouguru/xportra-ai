@@ -37,7 +37,6 @@ import { ReportPage } from "./features/assessment/ReportPage";
 import { HistoryPage } from "./features/assessment/HistoryPage";
 import { SettingsPage } from "./features/settings/SettingsPage";
 import { RegulationAdminPage } from "./features/regulatory/RegulationAdminPage";
-import { IngestionDashboard } from "./features/ingestion/IngestionDashboard";
 import { AskPage } from "./features/ask/AskPage";
 
 function LegacyWorkspaceRoute() {
@@ -73,7 +72,7 @@ function LegacyWorkspaceRoute() {
  *   unqualified `/workspace` redirects when a saved case is available.
  *   Workspace routes are gated by `RequireAuth` (unauthenticated visitors
  *   return to `/session`, never to external destinations).
- * - ``/regulatory`` and ``/regulatory-ingestion`` — staff regulatory
+ * - ``/regulatory/*`` (``/regulatory-ingestion`` redirects here) — staff regulatory
  *   administration surfaces (source inspection, ingestion jobs,
  *   candidates, Stage A/B review) gated by ``RequireAuth`` plus the
  *   staff-only ``RequireStaff`` guard, which fails closed unless the
@@ -109,26 +108,21 @@ export function App({ authInitial }: { authInitial?: Partial<AuthCredentials> })
                 }
               />
               <Route
-                path="/regulatory"
-                element={
-                  <RequireAuth>
-                    <AuthenticatedShell crumbs={[{ label: "Regulatory administration" }]}>
-                      <RegulationAdminPage />
-                    </AuthenticatedShell>
-                  </RequireAuth>
-                }
-              />
-              <Route
-                path="/regulatory-ingestion"
+                path="/regulatory/*"
                 element={
                   <RequireAuth>
                     <AuthenticatedShell crumbs={[{ label: "Regulatory ingestion" }]}>
                       <RequireStaff>
-                        <IngestionDashboard />
+                        <RegulationAdminPage />
                       </RequireStaff>
                     </AuthenticatedShell>
                   </RequireAuth>
                 }
+              />
+              {/* Legacy staff entry point: kept so existing bookmarks work. */}
+              <Route
+                path="/regulatory-ingestion/*"
+                element={<Navigate to="/regulatory" replace />}
               />
               <Route
                 path="/shipments"

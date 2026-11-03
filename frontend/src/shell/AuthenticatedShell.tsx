@@ -86,7 +86,7 @@ const NAV_ITEMS = [
 ] as const;
 
 const STAFF_NAV_ITEM = {
-  to: "/regulatory-ingestion",
+  to: "/regulatory",
   label: "Regulatory Ingestion",
   icon: DASHBOARD_ICON,
 } as const;
