@@ -2554,16 +2554,46 @@ class RegulatoryIngestionJobRepository:
     def __init__(self, database) -> None:
         self._database = database
 
+    def update_stage(self, job_id, current_stage, stage_updated_at):
+        from psycopg.errors import IntegrityError
+        from .errors import PersistenceIntegrityError
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE xportra.regulatory_ingestion_jobs SET current_stage = %s, stage_updated_at = %s WHERE id = %s RETURNING *",
+                        (current_stage, stage_updated_at, job_id),
+                    )
+                    row = cursor.fetchone()
+                    if row is None:
+                        raise PersistenceIntegrityError(
+                            "regulatory ingestion job stage update",
+                            None,
+                        )
+                    return row
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError("regulatory ingestion job stage update", cause) from cause
+
     def create(self, artifact_id, source_id, actor_user_id=None, audit_ref=None, parser_version="v1", attempt_number=None, status=None):
         from .database import Database
         if status not in (None, "pending"):
             raise ValueError("ingestion jobs are always created in 'pending' state")
-        return _insert(
+        row = _insert(
             self._database,
             "regulatory ingestion job creation",
             "INSERT INTO xportra.regulatory_ingestion_jobs (artifact_id, source_id, status, actor_user_id, audit_ref, parser_version, attempt_number) VALUES (%s, %s, 'pending', %s, %s, %s, %s) RETURNING *",
             (artifact_id, source_id, actor_user_id, audit_ref, parser_version, attempt_number if attempt_number is not None else 1),
         )
+        # Set initial queued stage for document jobs only; placeholder jobs
+        # (artifact_id IS NULL) remain without a stage to avoid misrepresentation.
+        if artifact_id is not None and row is not None:
+            with self._database.connection() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE xportra.regulatory_ingestion_jobs SET current_stage = 'queued', stage_updated_at = now() WHERE id = %s",
+                        (row["id"],),
+                    )
+        return row
 
     def create_in_transaction(
         self,

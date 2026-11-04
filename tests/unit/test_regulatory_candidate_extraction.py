@@ -119,6 +119,10 @@ class FakeJobRepository:
             self.jobs[job_id]["error_details"] = error_details
         return dict(self.jobs.get(job_id, {}))
 
+    def update_stage(self, job_id, current_stage, stage_updated_at):  # noqa: ARG002
+        # No-op for test fixture; the real repo persists to DB.
+        pass
+
 
 class FakeNormalizationRepository:
     def __init__(self, existing: dict[UUID, dict] | None = None) -> None:

@@ -94,6 +94,27 @@ export function documentJobs(jobs: RegulatoryIngestionJob[]): RegulatoryIngestio
   return jobs.filter((job) => job.artifact_id !== null);
 }
 
+/** Return true if the job is in a terminal state (completed or failed). */
+export function isTerminalJobStatus(status: string): boolean {
+  return status === "completed" || status === "failed";
+}
+
+/** Return true if the job status indicates active processing (pending, claimed,
+ * processing, or retryable). */
+export function isActiveJobStatus(status: string): boolean {
+  return (
+    ["pending", "claimed", "processing", "retryable"].includes(status)
+  );
+}
+
+/** Registration placeholder presentation: a job with no artifact_id is a
+ * registration record, not an active document-ingestion job. It must not be
+ * presented as successful ingestion or as actively processing.
+ */
+export function isRegistrationPlaceholder(job: RegulatoryIngestionJob): boolean {
+  return job.artifact_id === null;
+}
+
 /** The most recent attempt per artifact (highest attempt number). */
 function latestAttempts(jobs: RegulatoryIngestionJob[]): RegulatoryIngestionJob[] {
   const latest = new Map<string, RegulatoryIngestionJob>();

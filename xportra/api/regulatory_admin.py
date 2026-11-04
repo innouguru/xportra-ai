@@ -272,6 +272,8 @@ def _job_response(job: dict[str, Any]) -> dict[str, Any]:
         "completed_at": job.get("completed_at"),
         "error_details": job.get("error_details"),
         "parser_version": job["parser_version"],
+        "current_stage": job.get("current_stage"),
+        "stage_updated_at": job.get("stage_updated_at"),
         "actor_user_id": job.get("actor_user_id"),
         "created_at": job["created_at"],
         "updated_at": job["updated_at"],

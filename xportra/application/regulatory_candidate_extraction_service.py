@@ -146,6 +146,15 @@ class RegulatoryCandidateExtractionService:
 
     # ---------------------------------------------------------------- extraction
 
+    def _update_job_stage(
+        self,
+        job_id: UUID,
+        current_stage: str,
+        stage_updated_at: Any,
+    ) -> None:
+        """Persist the current processing stage and its timestamp."""
+        self._job_repo.update_stage(job_id, current_stage, stage_updated_at)
+
     def extract_candidates(
         self,
         actor_user_id: UUID,
@@ -166,6 +175,15 @@ class RegulatoryCandidateExtractionService:
         """
         self._require_grant(actor_user_id)
 
+        # ------------------------------------------------------------------
+        # Stage: validating_document — verify source, artifact, and job
+        # ------------------------------------------------------------------
+        self._update_job_stage(
+            job_id,
+            "validating_document",
+            datetime.now(timezone.utc),
+        )
+
         # Verify source, artifact, and job exist and are linked.
         source = self._source_repo.get(source_id)
         if source is None:
@@ -177,6 +195,15 @@ class RegulatoryCandidateExtractionService:
         if job is None or job.get("artifact_id") != artifact_id:
             raise ApplicationNotFoundError("ingestion job not found")
 
+        # ------------------------------------------------------------------
+        # Stage: retrieving_artifact — read artifact bytes from storage
+        # ------------------------------------------------------------------
+        self._update_job_stage(
+            job_id,
+            "retrieving_artifact",
+            datetime.now(timezone.utc),
+        )
+
         # Idempotency: if candidates already exist for this artifact's
         # normalized document, return them without re-extracting.
         existing_normalization = self._normalization_repo.get_by_artifact(artifact_id)
@@ -185,6 +212,11 @@ class RegulatoryCandidateExtractionService:
                 existing_normalization["id"]
             )
             if existing:
+                self._update_job_stage(
+                    job_id,
+                    "completed",
+                    datetime.now(timezone.utc),
+                )
                 return {
                     "outcome": EXTRACTION_OUTCOME_SUCCEEDED,
                     "candidate_count": len(existing),
@@ -194,12 +226,19 @@ class RegulatoryCandidateExtractionService:
                     "normalization_id": existing_normalization["id"],
                 }
 
-        # Read original artifact bytes from private storage.
-        artifact_uri = artifact.get("artifact_uri")
+        # ------------------------------------------------------------------
+        # Stage: extracting_text — parse the artifact into normalized text
+        # ------------------------------------------------------------------
+        self._update_job_stage(
+            job_id,
+            "extracting_text",
+            datetime.now(timezone.utc),
+        )
+
         content_type = artifact.get("content_type", "text/plain")
         try:
             content = self._storage.get_artifact(
-                artifact_uri, actor_user_id=actor_user_id
+                artifact.get("artifact_uri"), actor_user_id=actor_user_id
             )
         except Exception as exc:  # noqa: BLE001
             self._mark_job_failed(
@@ -214,7 +253,15 @@ class RegulatoryCandidateExtractionService:
             )
             raise ApplicationNotFoundError("artifact object not found in storage")
 
-        # Parse the artifact into a normalized document representation.
+        # ------------------------------------------------------------------
+        # Stage: extracting_text — parse the artifact into normalized text
+        # ------------------------------------------------------------------
+        self._update_job_stage(
+            job_id,
+            "extracting_text",
+            datetime.now(timezone.utc),
+        )
+
         try:
             parsed = self._parser.parse(
                 artifact_id=artifact_id,
@@ -251,6 +298,15 @@ class RegulatoryCandidateExtractionService:
                 "duplicate": False,
             }
 
+        # ------------------------------------------------------------------
+        # Stage: normalizing_content — normalize the parsed content
+        # ------------------------------------------------------------------
+        self._update_job_stage(
+            job_id,
+            "normalizing_content",
+            datetime.now(timezone.utc),
+        )
+
         # Normalize: persists a normalized document record (idempotent).
         try:
             normalization = self._normalizer.normalize(
@@ -275,7 +331,15 @@ class RegulatoryCandidateExtractionService:
             # Metadata extraction is non-fatal; candidates can still proceed.
             pass
 
-        # Extract candidate requirements from the normalized document.
+        # ------------------------------------------------------------------
+        # Stage: extracting_requirements — extract candidate requirements
+        # ------------------------------------------------------------------
+        self._update_job_stage(
+            job_id,
+            "extracting_requirements",
+            datetime.now(timezone.utc),
+        )
+
         try:
             candidate_records = self._candidate_extractor.extract(normalization)
         except Exception as exc:  # noqa: BLE001
@@ -284,10 +348,19 @@ class RegulatoryCandidateExtractionService:
             )
             raise InfrastructureError("candidate extraction failed") from exc
 
+        # ------------------------------------------------------------------
+        # Stage: saving_candidates — persist extracted candidate requirements
+        # ------------------------------------------------------------------
+        self._update_job_stage(
+            job_id,
+            "saving_candidates",
+            datetime.now(timezone.utc),
+        )
+
         # Persist candidates with provenance and extraction outcome.
         persisted: list[dict[str, Any]] = []
         for record in candidate_records:
-            record["normalized_document_id"] = normalization_id
+            record["normalized_document_id"] = normalization["id"]
             record["source_id"] = source_id
             record["ingestion_job_id"] = job_id
             record["extraction_outcome"] = EXTRACTION_OUTCOME_SUCCEEDED
@@ -309,16 +382,26 @@ class RegulatoryCandidateExtractionService:
         claimed = self._ingestion.claim_job(job_id, actor_user_id=actor_user_id)
         if claimed is None:
             job = self._job_repo.get(job_id)
+            self._update_job_stage(
+                job_id,
+                "completed",
+                datetime.now(timezone.utc),
+            )
             return {
                 "outcome": EXTRACTION_OUTCOME_SUCCEEDED,
                 "candidate_count": len(persisted),
                 "candidates": persisted,
                 "job": job,
                 "duplicate": True,
-                "normalization_id": normalization_id,
+                "normalization_id": normalization["id"],
             }
         self._ingestion.complete_job(job_id, actor_user_id=actor_user_id)
         job = self._job_repo.get(job_id)
+        self._update_job_stage(
+            job_id,
+            "completed",
+            datetime.now(timezone.utc),
+        )
 
         return {
             "outcome": EXTRACTION_OUTCOME_SUCCEEDED,
@@ -326,7 +409,7 @@ class RegulatoryCandidateExtractionService:
             "candidates": persisted,
             "job": job,
             "duplicate": False,
-            "normalization_id": normalization_id,
+            "normalization_id": normalization["id"],
         }
 
     def enter_manual_candidate(
@@ -426,6 +509,13 @@ class RegulatoryCandidateExtractionService:
                 error_details=error_details,
                 make_retryable=make_retryable,
                 actor_user_id=actor_user_id,
+            )
+            # Record that the job failed; the stage reflects what was
+            # in progress when the failure occurred.
+            self._update_job_stage(
+                job_id,
+                "failed",
+                datetime.now(timezone.utc),
             )
         except Exception:
             # Job status update is best-effort; the extraction outcome is

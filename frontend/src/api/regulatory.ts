@@ -102,6 +102,8 @@ export interface RegulatoryIngestionJob {
   completed_at: string | null;
   error_details: string | null;
   parser_version: string;
+  current_stage: string | null;
+  stage_updated_at: string | null;
   actor_user_id: string | null;
   created_at: string;
   updated_at: string;

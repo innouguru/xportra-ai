@@ -197,6 +197,10 @@ class FakeJobRepo:
         self.get_calls.append(job_id)
         return self.jobs.get(job_id)
 
+    def update_stage(self, job_id, current_stage, stage_updated_at):  # noqa: ARG002
+        # No-op for test fixture; the real repo persists to DB.
+        pass
+
 
 class FakeStorageServiceForTest:
     """Minimal storage service double with get_artifact."""
@@ -353,6 +357,10 @@ class TestExtractionRaceCondition(TestCase):
                     return {"id": job, "artifact_id": artifact,
                             "source_id": source, "status": "claimed"}
                 return None
+
+            def update_stage(self, job_id, current_stage, stage_updated_at):  # noqa: ARG002
+                # No-op for test fixture; the real repo persists to DB.
+                pass
 
         class FakeNormalizationRepo:
             def get_by_artifact(self, artifact_id):
