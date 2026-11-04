@@ -1,5 +1,6 @@
 """FastAPI application factory and startup wiring."""
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -28,6 +29,8 @@ from .runtime import (
     validate_app_env,
     validate_production_environment,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class SecurityHeadersMiddleware:
@@ -103,15 +106,25 @@ def create_app(services: ApplicationServices | None = None) -> FastAPI:
             db_for_worker = getattr(application.state.services, "database", None)
             if db_for_worker is not None:
                 worker = RegulatoryIngestionWorker(db_for_worker)
-                if worker._is_authorized():
+                skip_reason = worker.startup_skip_reason()
+                if skip_reason is None:
                     worker.start()
                     application.state.regulatory_ingestion_worker = worker
                 else:
+                    logger.warning(
+                        "Regulatory ingestion worker not started: %s.",
+                        skip_reason,
+                    )
                     application.state.regulatory_ingestion_worker = None
             else:
                 application.state.regulatory_ingestion_worker = None
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             # Worker initialization must never block core routes.
+            logger.warning(
+                "Regulatory ingestion worker initialization failed (%s); "
+                "worker disabled.",
+                type(exc).__name__,
+            )
             application.state.regulatory_ingestion_worker = None
         yield
         # Graceful shutdown.

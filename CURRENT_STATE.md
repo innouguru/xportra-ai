@@ -1,7 +1,17 @@
 # CURRENT_STATE.md — Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-10-31
+> Updated: 2026-11-04
+
+## Current task update (2026-11-04)
+
+The assigned worker regression fix is complete. The polling query's existing
+`artifact_id IS NOT NULL` filter is now covered by selection tests proving
+pending placeholders remain pending, valid jobs are not starved, retryable
+jobs remain selectable, and ordering/locking/`SKIP LOCKED` are preserved.
+FastAPI startup now logs a sanitized reason when the worker actor is missing
+or invalid. Focused worker and startup tests: 40 passed. See
+`tasks/completed/registration-ingestion-worker-artifact-filter.md`.
 
 > **Phase 4D regulatory administration milestones M1–M8 are COMPLETE**
 > (backend, repository-only; no deployment, no production database access,

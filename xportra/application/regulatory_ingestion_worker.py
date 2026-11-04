@@ -90,9 +90,14 @@ class RegulatoryIngestionWorker:
         )
 
     def _is_authorized(self) -> bool:
+        return self.startup_skip_reason() is None
+
+    def startup_skip_reason(self) -> str | None:
         if self._actor_id is None:
-            return False
-        return self._grants.is_granted(self._actor_id, GRANT_MANAGE)
+            return "REGULATORY_WORKER_ACTOR_USER_ID is missing or invalid"
+        if not self._grants.is_granted(self._actor_id, GRANT_MANAGE):
+            return "configured worker actor lacks an active GRANT_MANAGE grant"
+        return None
 
     def _recover_expired_lease(self) -> int:
         """Reset claimed/processing jobs whose lease (lease timeout after
@@ -123,10 +128,9 @@ class RegulatoryIngestionWorker:
                 return len(expired_rows)
 
     def _poll_cycle(self) -> None:
-        if not self._is_authorized():
-            logger.warning(
-                "Regulatory ingestion worker skipped: no configured service identity or active grant_manage grant."
-            )
+        skip_reason = self.startup_skip_reason()
+        if skip_reason is not None:
+            logger.warning("Regulatory ingestion worker skipped: %s.", skip_reason)
             return
         # Reserve one eligible job without changing its status. The
         # extraction service performs the atomic claim

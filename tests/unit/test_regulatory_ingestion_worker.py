@@ -42,6 +42,53 @@ class FakeDB:
         return Ctx()
 
 
+class PollingFakeDB(FakeDB):
+    def __init__(self, jobs):
+        super().__init__()
+        self.jobs = jobs
+        self.poll_sql = None
+
+    def transaction(self):
+        database = self
+
+        class Cursor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def execute(self, query):
+                database.poll_sql = query
+                eligible = [
+                    job
+                    for job in database.jobs
+                    if job["status"] in ("pending", "retryable")
+                ]
+                if "artifact_id IS NOT NULL" in query:
+                    eligible = [
+                        job for job in eligible
+                        if job["artifact_id"] is not None
+                    ]
+                eligible.sort(key=lambda job: job["created_at"])
+                self.row = (eligible[0]["id"],) if eligible else None
+
+            def fetchone(self):
+                return self.row
+
+        class Ctx:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                pass
+
+            def cursor(self):
+                return Cursor()
+
+        return Ctx()
+
+
 class TestWorkerAuthorization(TestCase):
     def test_authorized_worker_can_start(self):
         db = FakeDB()
@@ -365,13 +412,86 @@ class TestExtractionRaceCondition(TestCase):
 
 
 class PollQueryExcludesPlaceholderJobsTests(TestCase):
-    """Registration placeholder jobs (artifact_id IS NULL) must never be
-    reserved by the poll cycle: ``_process_job`` returns without
-    transitioning them, so reserving one would block the queue head
-    forever and starve real artifact jobs."""
+    def setUp(self):
+        self.actor = UUID("aaaaaaaa-0000-0000-0000-000000000001")
+        self.source = UUID("dddddddd-0000-0000-0000-000000000004")
+        self.artifact = UUID("eeeeeeee-0000-0000-0000-000000000005")
+        self.placeholder = UUID("ffffffff-0000-0000-0000-000000000006")
+        self.valid_job = UUID("ffffffff-0000-0000-0000-000000000007")
 
-    def test_poll_query_filters_null_artifact_jobs(self):
-        from xportra.application import regulatory_ingestion_worker as module
+    def _job(self, job_id, artifact_id, status, created_at):
+        return {
+            "id": job_id,
+            "artifact_id": artifact_id,
+            "source_id": self.source,
+            "status": status,
+            "created_at": created_at,
+        }
 
-        source = inspect.getsource(module)
-        self.assertIn("AND artifact_id IS NOT NULL", source)
+    def _poll(self, jobs):
+        database = PollingFakeDB(jobs)
+        job_repo = FakeJobRepo({job["id"]: job for job in jobs})
+        extraction_service = FakeExtractionService()
+        worker = RegulatoryIngestionWorker(
+            database,
+            extraction_service=extraction_service,
+            job_repo=job_repo,
+        )
+        worker._actor_id = self.actor
+        worker._grants = FakeGrantRepo({(self.actor, GRANT_MANAGE): True})
+
+        worker._poll_cycle()
+        return database, job_repo, extraction_service
+
+    def _assert_polling_contract(self, query):
+        self.assertIn("AND artifact_id IS NOT NULL", query)
+        self.assertIn("ORDER BY created_at ASC", query)
+        self.assertIn("LIMIT 1 FOR UPDATE SKIP LOCKED", query)
+        self.assertIn("status IN ('pending', 'retryable')", query)
+
+    def test_pending_registration_placeholder_is_skipped_and_unchanged(self):
+        placeholder = self._job(self.placeholder, None, "pending", 1)
+
+        database, job_repo, extraction_service = self._poll([placeholder])
+
+        self._assert_polling_contract(database.poll_sql)
+        self.assertEqual(extraction_service.calls, [])
+        self.assertEqual(job_repo.get_calls, [])
+        self.assertEqual(placeholder["status"], "pending")
+
+    def test_pending_job_with_artifact_is_selected(self):
+        valid = self._job(self.valid_job, self.artifact, "pending", 1)
+
+        database, _, extraction_service = self._poll([valid])
+
+        self._assert_polling_contract(database.poll_sql)
+        self.assertEqual(
+            [call["job_id"] for call in extraction_service.calls],
+            [self.valid_job],
+        )
+
+    def test_placeholder_cannot_starve_valid_ingestion_job(self):
+        placeholder = self._job(self.placeholder, None, "pending", 1)
+        valid = self._job(self.valid_job, self.artifact, "pending", 2)
+
+        database, _, extraction_service = self._poll([placeholder, valid])
+
+        self._assert_polling_contract(database.poll_sql)
+        self.assertEqual(
+            [call["job_id"] for call in extraction_service.calls],
+            [self.valid_job],
+        )
+        self.assertEqual(placeholder["status"], "pending")
+
+    def test_retryable_artifact_job_remains_selectable(self):
+        retryable = self._job(
+            self.valid_job, self.artifact, "retryable", 1
+        )
+
+        database, _, extraction_service = self._poll([retryable])
+
+        self._assert_polling_contract(database.poll_sql)
+        self.assertEqual(
+            [call["job_id"] for call in extraction_service.calls],
+            [self.valid_job],
+        )

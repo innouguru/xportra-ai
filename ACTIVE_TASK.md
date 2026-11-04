@@ -2,7 +2,12 @@
 
 **Active task:** None.
 
-**Status:** Complete — Phase 4D regulatory administration milestones M1–M8
+**Status:** Complete — the assigned worker polling and startup diagnostic
+fix was verified on 2026-11-04. Task record moved to
+`tasks/completed/registration-ingestion-worker-artifact-filter.md`.
+No push was performed.
+
+Previous task status: Complete — Phase 4D regulatory administration milestones M1–M8
 (backend) finished 2026-10-31, committed as `aaa6b9a` (M3/M6 manual
 candidates through publication gates), `49629dc` (M4 bounded retries +
 staff retry control), `4749488` (M5 wording correction), `e137cd5` (M7

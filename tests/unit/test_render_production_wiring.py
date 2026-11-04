@@ -174,6 +174,25 @@ class HealthEndpointTests(unittest.TestCase):
 
 
 class CoreOnlyCompositionTests(unittest.TestCase):
+    def test_missing_worker_identity_logs_sanitized_startup_diagnostic(self):
+        invalid_value = "sensitive-worker-actor-marker"
+        for configured_value in (None, invalid_value):
+            with self.subTest(configured_value_is_missing=configured_value is None):
+                with patched_env(
+                        APP_ENV=None,
+                        REGULATORY_WORKER_ACTOR_USER_ID=configured_value):
+                    app = create_app(
+                        services=SimpleNamespace(database=object()))
+                    with self.assertLogs(
+                            "xportra.api.app", level="WARNING") as captured:
+                        with TestClient(app):
+                            pass
+
+                message = "\n".join(captured.output)
+                self.assertIn("REGULATORY_WORKER_ACTOR_USER_ID", message)
+                self.assertIn("missing or invalid", message)
+                self.assertNotIn(invalid_value, message)
+
     def test_core_only_composition_leaves_optionals_unwired(self):
         with patched_env(**core_only_env()):
             services = (
