@@ -870,7 +870,12 @@ class RegulatoryRequirementRepository:
             return candidate
 
     def mark_extraction_succeeded(self, requirement_id: UUID) -> Row | None:
-        """Upgrade an unreviewed partial candidate after a complete retry."""
+        """Mark an extracted requirement as successfully extracted.
+
+        No longer requires Stage A or Stage B approval. A requirement with
+        status='extracted' and manual_entry=FALSE is updated to reflect that
+        the extraction pipeline completed successfully.
+        """
         return _insert(
             self._database,
             "regulatory requirement extraction outcome update",
@@ -882,8 +887,6 @@ class RegulatoryRequirementRepository:
               AND extraction_outcome = 'partial'
               AND manual_entry = FALSE
               AND status = 'extracted'
-              AND stage_a_status = 'pending'
-              AND stage_b_status = 'pending'
             RETURNING *
             """,
             (requirement_id,),

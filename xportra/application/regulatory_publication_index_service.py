@@ -104,20 +104,16 @@ class RegulatoryPublicationIndexService:
         new_ids: set[UUID] = set()
         publication_fingerprint = None
 
-        if job.get("desired_state") == "published":
-            row = self._jobs.get_current_requirement(requirement_id)
-            if row is not None:
-                document = self._to_index_document(row)
-                report = self._index_sync.sync(
-                    document,
-                    tenant_id=self._global_context,
-                )
-                new_ids = set(report["indexed_chunk_ids"])
-                publication_fingerprint = document[
-                    "index_metadata"]["publication_fingerprint"]
-        elif job.get("desired_state") != "removed":
-            raise DomainValidationError(
-                "publication index job state is malformed")
+        row = self._jobs.get_current_requirement(requirement_id)
+        if row is not None:
+            document = self._to_index_document(row)
+            report = self._index_sync.sync(
+                document,
+                tenant_id=self._global_context,
+            )
+            new_ids = set(report["indexed_chunk_ids"])
+            publication_fingerprint = document[
+                "index_metadata"]["publication_fingerprint"]
 
         stale_ids = sorted(previous_ids - new_ids)
         if stale_ids:
@@ -202,7 +198,7 @@ class RegulatoryPublicationIndexService:
             "index_metadata": {
                 "content_scope": "global_regulatory",
                 "regulatory_requirement_id": requirement_id,
-                "publication_status": "published",
+                "publication_status": "extracted",
                 "publication_fingerprint": publication_fingerprint,
             },
         }

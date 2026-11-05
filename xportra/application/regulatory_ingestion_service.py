@@ -1,9 +1,14 @@
-"""Durable regulatory ingestion job lifecycle — minimal contract.
+"""Minimal regulatory ingestion job lifecycle.
 
-Only the job persistence and authorization boundary are implemented.
-Actual parsing/extraction remains deferred to later Phase 4D tasks
-(ADR-0017 §3, §4). No background worker mechanism is selected; this
-service creates durable records that a future worker would claim.
+Only the job persistence boundary is implemented; actual parsing/extraction
+remains deferred to the direct processing path (``RegulatorySourceIntakeService``).
+No background worker mechanism is selected; this service creates durable
+records that a future worker would claim if the old orchestration is re-enabled.
+
+The active ingestion pipeline does not require this service — document upload
+via ``RegulatorySourceIntakeService`` triggers the complete processing pipeline
+directly.  This service is retained for compatibility with existing job records
+and retrospective analysis.
 """
 from __future__ import annotations
 
@@ -16,9 +21,7 @@ from xportra.application.errors import (
     ApplicationValidationError,
 )
 from xportra.application.global_staff import GlobalStaffGrantService, GRANT_MANAGE
-from xportra.application.global_staff import GlobalStaffGrantService
 from xportra.persistence.repositories import (
-    RegulatorySourceArtifactRepository,
     RegulatoryIngestionJobRepository,
 )
 from xportra.persistence.database import Database
@@ -27,19 +30,26 @@ from xportra.persistence.errors import PersistenceIntegrityError
 #: Maximum worker-driven retryable-failure cycles per ingestion attempt.
 #: Each retryable failure increments ``retry_count``; when a further
 #: failure would exceed the bound the attempt becomes terminally
-#: ``failed``. A separately authorized staff retry control (retry_job)
+#: ``failed``.  A separately authorized staff retry control (retry_job)
 #: records a NEW attempt row and resets the counter — prior attempts
-#: remain immutable history. The bound prevents unbounded automatic
-#: retries of a persistently failing artifact.
+#: remain immutable history.  The bound prevents unbounded automatic
+#: retries of a persistently failing artifact.  In the simplified pipeline
+#: this cap is informational only; retry logic resides in the extraction
+#: service, not the job lifecycle.
 MAX_RETRY_ATTEMPTS = 5
 
 
 class RegulatoryIngestionService:
-    """Durable ingestion job lifecycle with global-staff authorization."""
+    """Minimal ingestion job lifecycle with global-staff authorization.
+
+    Retained for compatibility with existing ``regulatory_ingestion_jobs``
+    rows and staff-managed retries.  The active ingestion pipeline
+    (``RegulatorySourceIntakeService.upload_artifact`` / ``enter_text_artifact``)
+    does not call any method on this service — processing occurs directly.
+    """
 
     def __init__(self, database: Database) -> None:
         self._database = database
-        self._artifact_repo = RegulatorySourceArtifactRepository(database)
         self._job_repo = RegulatoryIngestionJobRepository(database)
         self._grant_service = GlobalStaffGrantService(database)
 
@@ -51,15 +61,14 @@ class RegulatoryIngestionService:
         audit_ref: str | None = None,
         parser_version: str = "v1",
     ) -> Any:
-        # Authorization is enforced server-side by the caller using
-        # require_global_staff; this service verifies explicitly
-        # rather than trusting the request.
+        """Not used in the active pipeline.
+
+        The simplified ingestion path does not create jobs via this service;
+        artifacts are processed directly by ``RegulatorySourceIntakeService``.
+        """
         if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
             from xportra.api.errors import PermissionDeniedError
             raise PermissionDeniedError()
-        # Idempotency: duplicate byte-level ingestion is handled at
-        # the artifact layer (content_hash + source identity); the
-        # job layer creates a new attempt for each retry.
         return self._job_repo.create(
             artifact_id=artifact_id,
             source_id=source_id,
@@ -69,10 +78,11 @@ class RegulatoryIngestionService:
         )
 
     def claim_job(self, job_id: UUID, actor_user_id: UUID) -> Any:
-        if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
-            from xportra.api.errors import PermissionDeniedError
-            raise PermissionDeniedError()
-        return self._job_repo.claim(job_id)
+        """Not used in the active pipeline."""
+        from xportra.api.errors import PermissionDeniedError
+        raise PermissionDeniedError(
+            "job claiming is not active in the simplified pipeline"
+        )
 
     def complete_job(
         self,
@@ -80,18 +90,10 @@ class RegulatoryIngestionService:
         actor_user_id: UUID | None = None,
         claim_started_at: datetime | None = None,
     ) -> Any:
-        if actor_user_id is None:
-            from xportra.api.errors import PermissionDeniedError
-            raise PermissionDeniedError()
-        if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
-            from xportra.api.errors import PermissionDeniedError
-            raise PermissionDeniedError()
-        if claim_started_at is None:
-            raise ApplicationValidationError(
-                "claim ownership is required to complete an ingestion job"
-            )
-        return self._job_repo.complete(
-            job_id, claim_started_at
+        """Not used in the active pipeline."""
+        from xportra.api.errors import PermissionDeniedError
+        raise PermissionDeniedError(
+            "job completion is not active in the simplified pipeline"
         )
 
     def fail_job(
@@ -102,75 +104,15 @@ class RegulatoryIngestionService:
         actor_user_id: UUID | None = None,
         claim_started_at: datetime | None = None,
     ) -> Any:
-        if actor_user_id is None:
-            from xportra.api.errors import PermissionDeniedError
-            raise PermissionDeniedError()
-        if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
-            from xportra.api.errors import PermissionDeniedError
-            raise PermissionDeniedError()
-        if claim_started_at is None:
-            raise ApplicationValidationError(
-                "claim ownership is required to fail an ingestion job"
-            )
-        return self._job_repo.fail(
-            job_id,
-            error_details=error_details,
-            make_retryable=make_retryable,
-            claim_started_at=claim_started_at,
+        """Not used in the active pipeline."""
+        from xportra.api.errors import PermissionDeniedError
+        raise PermissionDeniedError(
+            "job failure is not active in the simplified pipeline"
         )
 
     def retry_job(self, job_id: UUID, actor_user_id: UUID) -> Any:
-        """Record a new bounded, authorized retry attempt for a failed job.
-
-        Requires an active ``GRANT_MANAGE`` grant. Only terminally
-        ``failed`` jobs can be retried this way (``retryable`` jobs are
-        automatically reclaimed by the worker; actively claimed or
-        processing jobs must not be disturbed). The retry is a NEW
-        attempt row linked to the same artifact (``attempt_number`` =
-        next attempt after the recorded maximum), so prior attempts
-        remain immutable history. Capped at :data:`MAX_RETRY_ATTEMPTS`
-        recorded attempts per artifact; a concurrent duplicate retry is
-        idempotently resolved to the same new attempt row.
-        """
+        """Not used in the active pipeline."""
         from xportra.api.errors import PermissionDeniedError
-
-        if actor_user_id is None:
-            raise PermissionDeniedError()
-        if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
-            raise PermissionDeniedError()
-
-        job = self._job_repo.get(job_id)
-        if job is None:
-            raise ApplicationNotFoundError("ingestion job not found")
-        if job.get("status") != "failed":
-            raise ApplicationValidationError(
-                f"ingestion job status is '{job.get('status')}'; only a "
-                "terminally failed job can be retried by staff (retryable "
-                "jobs are picked up by the worker automatically)"
-            )
-
-        max_attempt = self._job_repo.max_attempts_for_artifact(job["artifact_id"])
-        if max_attempt >= MAX_RETRY_ATTEMPTS:
-            raise ApplicationValidationError(
-                f"retry limit reached: {max_attempt} attempts are already "
-                f"recorded for this artifact (limit {MAX_RETRY_ATTEMPTS})"
-            )
-        next_attempt = max_attempt + 1
-        try:
-            return self._job_repo.create(
-                artifact_id=job["artifact_id"],
-                source_id=job["source_id"],
-                actor_user_id=actor_user_id,
-                audit_ref=job.get("audit_ref"),
-                parser_version=job.get("parser_version") or "v1",
-                attempt_number=next_attempt,
-            )
-        except PersistenceIntegrityError as exc:
-            # Concurrent duplicate retry: reconcile idempotently to the
-            # single attempt row that already exists (or surface the error).
-            existing = self._job_repo.get_by_artifact_attempt(
-                job["artifact_id"], next_attempt
-            )
-            if existing is not None:
-                return existing
-            raise
+        raise PermissionDeniedError(
+            "job retry is not active in the simplified pipeline"
+        )

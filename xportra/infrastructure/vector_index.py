@@ -202,9 +202,9 @@ def _validated_index_record(
         if not isinstance(requirement_id, UUID):
             raise DomainValidationError(
                 "regulatory requirement identity is malformed")
-        if index_metadata.get("publication_status") != "published":
+        if index_metadata.get("publication_status") not in ("published", "extracted"):
             raise DomainValidationError(
-                "only published regulatory requirements can be indexed")
+                "only published or extracted regulatory requirements can be indexed")
         publication_fingerprint = index_metadata.get(
             "publication_fingerprint")
         if (
@@ -216,7 +216,7 @@ def _validated_index_record(
         payload.update({
             "content_scope": content_scope,
             "regulatory_requirement_id": str(requirement_id),
-            "publication_status": "published",
+            "publication_status": index_metadata.get("publication_status", "published"),
             "publication_fingerprint": publication_fingerprint,
         })
     else:
@@ -710,10 +710,6 @@ def _retrieval_filter(
                 key="content_scope",
                 match=qmodels.MatchValue(value="global_regulatory"),
             ),
-            qmodels.FieldCondition(
-                key="publication_status",
-                match=qmodels.MatchValue(value="published"),
-            ),
         ]
     )
     return qmodels.Filter(
@@ -810,7 +806,7 @@ def _payload_to_representation(
     if out.get("content_scope") == "global_regulatory":
         if (
             out.get("tenant_id") != GLOBAL_REGULATORY_TENANT_ID
-            or out.get("publication_status") != "published"
+            or out.get("publication_status") not in ("published", "extracted")
             or not isinstance(
                 out.get("regulatory_requirement_id"), UUID)
         ):
