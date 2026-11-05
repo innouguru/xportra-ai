@@ -28,11 +28,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import threading
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
 from xportra.application.global_staff import GlobalStaffGrantService, GRANT_MANAGE
 from xportra.application.regulatory_candidate_extraction_service import (
+    IngestionClaimLostError,
     RegulatoryCandidateExtractionService,
 )
 from xportra.persistence.database import Database
@@ -76,17 +79,35 @@ class RegulatoryIngestionWorker:
         *,
         extraction_service: Any | None = None,
         job_repo: RegulatoryIngestionJobRepository | None = None,
+        publication_indexer: Any | None = None,
+        llm_client: Any | None = None,
+        llm_configuration: Any | None = None,
     ) -> None:
         self._database = database
         self._jobs = job_repo or RegulatoryIngestionJobRepository(database)
         self._grants = GlobalStaffGrantService(database)
         self._actor_id = _configured_service_actor_user_id()
+        self._llm_client = llm_client
+        self._llm_configuration = llm_configuration
+        self._uses_default_extraction = extraction_service is None
+        self._can_extract = (
+            not self._uses_default_extraction
+            or (
+                self._llm_client is not None
+                and self._llm_configuration is not None
+            )
+        )
+        self._publication_indexer = publication_indexer
         self._running = False
         self._poll_task: asyncio.Task[Any] | None = None
         self._extraction_service_factory = (
             extraction_service
             if extraction_service is not None
-            else lambda db: RegulatoryCandidateExtractionService(db)
+            else lambda db: RegulatoryCandidateExtractionService(
+                db,
+                llm_client=self._llm_client,
+                llm_configuration=self._llm_configuration,
+            )
         )
 
     def _is_authorized(self) -> bool:
@@ -97,6 +118,8 @@ class RegulatoryIngestionWorker:
             return "REGULATORY_WORKER_ACTOR_USER_ID is missing or invalid"
         if not self._grants.is_granted(self._actor_id, GRANT_MANAGE):
             return "configured worker actor lacks an active GRANT_MANAGE grant"
+        if not self._can_extract and self._publication_indexer is None:
+            return "no configured regulatory worker capability is available"
         return None
 
     def _recover_expired_lease(self) -> int:
@@ -116,10 +139,12 @@ class RegulatoryIngestionWorker:
                     SET status = 'retryable',
                         completed_at = NULL,
                         error_details = 'lease_expired_recovery',
+                        current_stage = 'queued',
+                        stage_updated_at = clock_timestamp(),
                         updated_at = now()
                     WHERE status IN ('claimed', 'processing')
-                      AND started_at IS NOT NULL
-                      AND started_at < now() - make_interval(secs => %s)
+                      AND COALESCE(updated_at, started_at) < now()
+                          - make_interval(secs => %s)
                     RETURNING id
                     """,
                     (LEASE_TIMEOUT_SECONDS,),
@@ -132,58 +157,93 @@ class RegulatoryIngestionWorker:
         if skip_reason is not None:
             logger.warning("Regulatory ingestion worker skipped: %s.", skip_reason)
             return
-        # Reserve one eligible job without changing its status. The
-        # extraction service performs the atomic claim
-        # (pending/retryable -> claimed) and drives the job to
-        # completion or failure. Holding a DB lock across the service
-        # call would risk deadlocks, so the reservation transaction is
-        # committed before processing.
-        job_id: UUID | None = None
-        with self._database.transaction() as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT id FROM xportra.regulatory_ingestion_jobs WHERE status IN ('pending', 'retryable') AND artifact_id IS NOT NULL ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED"
+        if self._publication_indexer is not None:
+            try:
+                self._publication_indexer.process_next()
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "Regulatory publication indexing poll failed (%s).",
+                    type(exc).__name__,
                 )
-                row = cursor.fetchone()
-                if row is None:
-                    return
-                job_id = row[0]
-        # Lock released; process outside the transaction.
-        if job_id is not None:
-            self._process_job(job_id)
+        if self._can_extract:
+            claimed_job = self._jobs.claim_next()
+            if claimed_job is not None:
+                self._process_job(claimed_job)
 
-    def _process_job(self, job_id: UUID) -> None:
+    def _process_job(self, claimed_job: dict[str, Any]) -> None:
         if not self._is_authorized():
             return
-        job = self._jobs.get(job_id)
-        if job is None:
+        job_id = claimed_job["id"]
+        if not claimed_job.get("artifact_id"):
             return
-        # Source-registration placeholders have no artifact to process.
-        if not job.get("artifact_id"):
-            return
-        service = self._extraction_service_factory(self._database)
+        stop_heartbeat = threading.Event()
+        heartbeat = threading.Thread(
+            target=self._renew_claim_lease,
+            args=(job_id, claimed_job["started_at"], stop_heartbeat),
+            daemon=True,
+        )
+        heartbeat.start()
         try:
+            service = self._extraction_service_factory(self._database)
             service.extract_candidates(
                 actor_user_id=self._actor_id,
-                source_id=job["source_id"],
-                artifact_id=job["artifact_id"],
+                source_id=claimed_job["source_id"],
+                artifact_id=claimed_job["artifact_id"],
                 job_id=job_id,
+                claim_started_at=claimed_job["started_at"],
+            )
+        except IngestionClaimLostError:
+            logger.info(
+                "Ingestion job %s processing stopped because its claim expired.",
+                job_id,
             )
         except Exception as exc:  # noqa: BLE001
-            # The extraction service marks the job retryable/failed for
-            # recoverable errors; unexpected errors are logged so the
-            # job stays visible for operator inspection rather than
-            # being falsely completed.
-            logger.exception(
-                "Ingestion job %s failed during extraction: %s", job_id, exc
+            logger.error(
+                "Ingestion job %s failed during extraction (%s).",
+                job_id,
+                type(exc).__name__,
             )
+        finally:
+            stop_heartbeat.set()
+            heartbeat.join()
+
+    def _renew_claim_lease(
+        self,
+        job_id: UUID,
+        claim_started_at: datetime,
+        stop_event: threading.Event,
+    ) -> None:
+        interval = max(0.1, min(LEASE_TIMEOUT_SECONDS / 3, 60))
+        while not stop_event.wait(interval):
+            try:
+                if self._jobs.renew_claim(job_id, claim_started_at) is None:
+                    logger.info(
+                        "Ingestion job %s lease renewal stopped because its "
+                        "claim is no longer active.",
+                        job_id,
+                    )
+                    return
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Ingestion job %s lease renewal failed (%s).",
+                    job_id,
+                    type(exc).__name__,
+                )
 
     def start(self) -> None:
         if self._running:
             return
+        skip_reason = self.startup_skip_reason()
+        if skip_reason is not None:
+            logger.warning(
+                "Regulatory ingestion worker startup skipped: %s.",
+                skip_reason,
+            )
+            return
         self._running = True
         # Crash recovery on startup: reset expired claims before polling.
-        reset_count = self._recover_expired_lease()
+        reset_count = (
+            self._recover_expired_lease() if self._can_extract else 0)
         if reset_count > 0:
             logger.info("Regulatory ingestion worker recovered %d expired lease(s)", reset_count)
         # Start bounded polling loop (asynchronous, non-blocking to request handling).

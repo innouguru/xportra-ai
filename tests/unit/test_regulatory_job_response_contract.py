@@ -37,6 +37,8 @@ def _row(job_id, artifact_id):
         "completed_at": None,
         "error_details": None,
         "parser_version": "v1",
+        "current_stage": "queued",
+        "stage_updated_at": "2026-11-02T00:01:00+00:00",
         "actor_user_id": ACTOR,
         "created_at": "2026-11-02T00:00:00+00:00",
         "updated_at": "2026-11-02T00:00:00+00:00",
@@ -74,6 +76,13 @@ class JobResponseContractTests(TestCase):
         by_id = {item["id"]: item for item in body["items"]}
         self.assertIsNone(by_id[str(PLACEHOLDER_ID)]["artifact_id"])
         self.assertEqual(str(ARTIFACT_ID), by_id[str(DOCUMENT_JOB_ID)]["artifact_id"])
+        self.assertEqual(
+            "queued", by_id[str(DOCUMENT_JOB_ID)]["current_stage"]
+        )
+        self.assertEqual(
+            "2026-11-02T00:01:00Z",
+            by_id[str(DOCUMENT_JOB_ID)]["stage_updated_at"],
+        )
 
     def test_listing_jobs_for_a_just_registered_source(self):
         # The exact state right after registration: one record, no document.

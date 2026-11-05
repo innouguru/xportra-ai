@@ -13,6 +13,7 @@
  * - GET  /regulatory/sources/{id}                  (GRANT_MANAGE)
  * - GET  /regulatory/sources/{id}/artifacts        (GRANT_MANAGE)
  * - GET  /regulatory/sources/{id}/ingestion-jobs   (GRANT_MANAGE)
+ * - GET  /regulatory/ingestion-jobs/{id}/extraction-history (GRANT_MANAGE)
  * - GET  /regulatory/sources/{id}/candidates       (GRANT_MANAGE)
  * - GET  /regulatory/candidates/{id}               (GRANT_MANAGE)
  * - POST /regulatory/candidates/{id}/stage-a       (STAGE_A_VERIFY)
@@ -102,11 +103,77 @@ export interface RegulatoryIngestionJob {
   completed_at: string | null;
   error_details: string | null;
   parser_version: string;
-  current_stage: string | null;
-  stage_updated_at: string | null;
+  current_stage?: string | null;
+  stage_updated_at?: string | null;
   actor_user_id: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface RegulatoryExtractionRunCandidate {
+  candidate_index: number;
+  candidate_id: string | null;
+  evidence_snapshot: Record<string, unknown>;
+  resolution_status: string;
+  is_origin: boolean;
+}
+
+export interface RegulatoryJobExtractionRun {
+  extraction_run_id: string;
+  normalized_document_id: string;
+  artifact_id: string;
+  source_id: string;
+  ingestion_job_id: string;
+  artifact_content_hash: string;
+  artifact_source_version: string | null;
+  normalized_text_sha256: string;
+  parser_version: string;
+  extraction_method: string;
+  extraction_version: string;
+  prompt_version: string | null;
+  configured_model_identifier: string | null;
+  model_identifiers: string[];
+  provider_names: string[];
+  outcome: string;
+  failed_chunks: Array<Record<string, unknown>>;
+  rejected_candidate_count: number;
+  started_at: string;
+  completed_at: string;
+  candidate_count: number;
+  persisted_candidate_count: number;
+  candidates: RegulatoryExtractionRunCandidate[];
+}
+
+export interface RegulatoryJobExtractionHistory {
+  job_id: string;
+  items: RegulatoryJobExtractionRun[];
+}
+
+export interface RegulatoryCandidateExtractionHistory {
+  extraction_run_id: string;
+  normalized_document_id: string;
+  artifact_id: string;
+  source_id: string;
+  ingestion_job_id: string;
+  artifact_content_hash: string;
+  artifact_source_version: string | null;
+  normalized_text_sha256: string;
+  parser_version: string;
+  extraction_method: string;
+  extraction_version: string;
+  prompt_version: string | null;
+  configured_model_identifier: string | null;
+  model_identifiers: string[];
+  provider_names: string[];
+  outcome: string;
+  failed_chunks: Array<Record<string, unknown>>;
+  rejected_candidate_count: number;
+  started_at: string;
+  completed_at: string;
+  candidate_index: number;
+  evidence_snapshot: Record<string, unknown>;
+  resolution_status: string;
+  is_origin: boolean;
 }
 
 export interface RegulatoryCandidate {
@@ -128,6 +195,22 @@ export interface RegulatoryCandidate {
   ingestion_job_id: string | null;
   created_at: string;
   updated_at: string;
+  source_title?: string | null;
+  source_jurisdiction?: string | null;
+  source_version?: string | null;
+  source_status?: string | null;
+  source_authority_id?: string | null;
+  artifact_content_hash?: string | null;
+  artifact_source_version?: string | null;
+  artifact_status?: string | null;
+  artifact_content_length?: number | null;
+  artifact_content_type?: string | null;
+  artifact_acquisition_channel?: string | null;
+  ingestion_job_status?: string | null;
+  ingestion_job_error_details?: string | null;
+  ingestion_job_parser_version?: string | null;
+  document_parser_name?: string | null;
+  extraction_history?: RegulatoryCandidateExtractionHistory[];
 }
 
 export interface RegulatoryStageAState {
@@ -277,6 +360,16 @@ export function listSourceJobs(
   sourceId: string,
 ): Promise<{ items: RegulatoryIngestionJob[]; total: number }> {
   return apiFetch(`/regulatory/sources/${encodeURIComponent(sourceId)}/ingestion-jobs`, credentials);
+}
+
+export function getRegulatoryIngestionJobExtractionHistory(
+  credentials: AuthCredentials,
+  jobId: string,
+): Promise<RegulatoryJobExtractionHistory> {
+  return apiFetch(
+    `/regulatory/ingestion-jobs/${encodeURIComponent(jobId)}/extraction-history`,
+    credentials,
+  );
 }
 
 export function listSourceCandidates(

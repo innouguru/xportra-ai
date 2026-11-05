@@ -44,11 +44,17 @@ def make_token(subject: UUID, email: str) -> str:
 
 
 class FakeDatabase:
-    """In-memory connection double for repository read paths."""
+    """In-memory connection double for repository read paths.
 
-    def __init__(self, user_row=None, memberships=()):
+    ``fetchall`` is routed by the executed statement so the membership
+    query and the global staff grant query can be faked independently.
+    """
+
+    def __init__(self, user_row=None, memberships=(), grants=()):
         self.user_row = user_row
         self.memberships = list(memberships)
+        self.grants = list(grants)
+        self.broken_grants = False
 
     @contextmanager
     def connection(self):
@@ -56,7 +62,16 @@ class FakeDatabase:
         cursor = MagicMock()
         conn.cursor.return_value.__enter__.return_value = cursor
         cursor.fetchone.return_value = self.user_row
-        cursor.fetchall.return_value = self.memberships
+
+        def execute(statement, *args, **kwargs):
+            if "global_staff_grants" in statement:
+                if self.broken_grants:
+                    raise RuntimeError("grant store unavailable")
+                cursor.fetchall.return_value = list(self.grants)
+            else:
+                cursor.fetchall.return_value = list(self.memberships)
+
+        cursor.execute.side_effect = execute
         yield conn
 
 
@@ -78,6 +93,10 @@ def user_row():
         "status": "active",
         "supabase_uid": SUBJECT,
     }
+
+
+def grant_row(permission: str):
+    return {"permission": permission}
 
 
 def build_app(database):
@@ -226,3 +245,89 @@ class TestIdentityApi(TestCase):
             )
         assert response.status_code == 200, response.text
         assert response.json()["email"] == "db@example.test"
+
+    def test_returns_no_staff_permissions_for_ordinary_user(self):
+        database = FakeDatabase(
+            user_row=user_row(),
+            memberships=[membership_row(TENANT_ID)],
+        )
+        with self._client(database) as client:
+            response = client.get(
+                "/me",
+                headers={"Authorization": f"Bearer {make_token(SUBJECT, EMAIL)}"},
+            )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["staff_permissions"] == []
+        # Tenant ownership must never imply global staff permission.
+        assert body["role"] == "owner"
+
+    def test_returns_active_staff_permissions(self):
+        database = FakeDatabase(
+            user_row=user_row(),
+            memberships=[membership_row(TENANT_ID)],
+            grants=[
+                grant_row("grant_manage"),
+                grant_row("stage_a_verify"),
+                grant_row("stage_b_approve"),
+            ],
+        )
+        with self._client(database) as client:
+            response = client.get(
+                "/me",
+                headers={"Authorization": f"Bearer {make_token(SUBJECT, EMAIL)}"},
+            )
+        assert response.status_code == 200, response.text
+        assert response.json()["staff_permissions"] == [
+            "grant_manage",
+            "stage_a_verify",
+            "stage_b_approve",
+        ]
+
+    def test_staff_permissions_only_carry_recognized_names(self):
+        database = FakeDatabase(
+            user_row=user_row(),
+            memberships=[membership_row(TENANT_ID)],
+            grants=[
+                grant_row("grant_manage"),
+                grant_row("not_a_real_permission"),
+            ],
+        )
+        with self._client(database) as client:
+            response = client.get(
+                "/me",
+                headers={"Authorization": f"Bearer {make_token(SUBJECT, EMAIL)}"},
+            )
+        assert response.status_code == 200, response.text
+        assert response.json()["staff_permissions"] == ["grant_manage"]
+
+    def test_omits_staff_permissions_for_inactive_user(self):
+        database = FakeDatabase(
+            user_row={**user_row(), "status": "inactive"},
+            memberships=[membership_row(TENANT_ID)],
+            grants=[grant_row("grant_manage")],
+        )
+        with self._client(database) as client:
+            response = client.get(
+                "/me",
+                headers={"Authorization": f"Bearer {make_token(SUBJECT, EMAIL)}"},
+            )
+        assert response.status_code == 200, response.text
+        assert response.json()["staff_permissions"] == []
+
+    def test_staff_permissions_fail_closed_when_grant_store_is_unavailable(self):
+        database = FakeDatabase(
+            user_row=user_row(),
+            memberships=[membership_row(TENANT_ID)],
+            grants=[grant_row("grant_manage")],
+        )
+        database.broken_grants = True
+        with self._client(database) as client:
+            response = client.get(
+                "/me",
+                headers={"Authorization": f"Bearer {make_token(SUBJECT, EMAIL)}"},
+            )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["staff_permissions"] == []
+        assert body["display_name"] == DISPLAY_NAME

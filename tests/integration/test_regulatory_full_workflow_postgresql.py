@@ -17,6 +17,7 @@ configuration must never be used by this suite.
 
 from __future__ import annotations
 
+import json
 import os
 import unittest
 from uuid import UUID
@@ -42,12 +43,50 @@ from xportra.application.regulatory_stage_a_review_service import (
 from xportra.application.regulatory_stage_b_review_service import (
     RegulatoryStageBReviewService,
 )
+from xportra.domain.llm import LLMGenerationConfig, LLMResponse
+from xportra.infrastructure.llm import ScriptedLLMClient
 from xportra.persistence.database import Database, DatabaseSettings
 
 AUTHORITY_ID = UUID("ccccccb2-0000-0000-0000-000000000003")
 ACTOR_A_SUBJECT = UUID("aaaaaab2-0000-0000-0000-000000000001")
 ACTOR_B_SUBJECT = UUID("bbbbbbb2-0000-0000-0000-000000000002")
 TENANT_ID = UUID("99999992-0000-0000-0000-000000000099")
+SCRIPTED_MODEL = "scripted-regulatory-integration-model"
+
+
+def _configured_extraction_service(database, storage_service, quotes):
+    requirements = [
+        {
+            "title": quote,
+            "description": quote,
+            "requirement_type": "obligation",
+            "category": "obligation",
+            "supporting_quote": quote,
+            "page_reference": None,
+            "section_reference": None,
+            "product_category": None,
+            "effective_date": None,
+            "actor": None,
+            "condition": None,
+            "threshold": None,
+        }
+        for quote in quotes
+    ]
+    client = ScriptedLLMClient(responses=[
+        LLMResponse(
+            json.dumps({"requirements": requirements}),
+            model_identifier=SCRIPTED_MODEL,
+        )
+    ])
+    return RegulatoryCandidateExtractionService(
+        database,
+        storage_service=storage_service,
+        llm_client=client,
+        llm_configuration=LLMGenerationConfig(
+            model_identifier=SCRIPTED_MODEL,
+            max_output_tokens=4096,
+        ),
+    )
 
 
 class FakeStorage:
@@ -211,6 +250,46 @@ class RegulatoryFullWorkflowIntegrationTests(unittest.TestCase):
                     )
                 cursor.execute(
                     """
+                    DELETE FROM xportra.regulatory_publication_index_jobs
+                    WHERE requirement_id IN (
+                        SELECT id FROM xportra.regulatory_requirements
+                        WHERE source_id IN (
+                            SELECT id FROM xportra.regulatory_sources
+                            WHERE authority_id = %s
+                        )
+                    )
+                    """,
+                    (AUTHORITY_ID,),
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM
+                        xportra.regulatory_requirement_extraction_run_candidates
+                    WHERE normalized_document_id IN (
+                        SELECT id FROM xportra.regulatory_document_normalizations
+                        WHERE source_id IN (
+                            SELECT id FROM xportra.regulatory_sources
+                            WHERE authority_id = %s
+                        )
+                    )
+                    """,
+                    (AUTHORITY_ID,),
+                )
+                cursor.execute(
+                    """
+                    DELETE FROM xportra.regulatory_requirement_extraction_runs
+                    WHERE normalized_document_id IN (
+                        SELECT id FROM xportra.regulatory_document_normalizations
+                        WHERE source_id IN (
+                            SELECT id FROM xportra.regulatory_sources
+                            WHERE authority_id = %s
+                        )
+                    )
+                    """,
+                    (AUTHORITY_ID,),
+                )
+                cursor.execute(
+                    """
                     DELETE FROM xportra.regulatory_requirements
                     WHERE source_id IN (SELECT id FROM xportra.regulatory_sources
                                         WHERE authority_id = %s)
@@ -286,12 +365,12 @@ class RegulatoryFullWorkflowIntegrationTests(unittest.TestCase):
         if self.database is None:
             self.skipTest("DATABASE_URL is not configured")
         self.storage = FakeStorage()
-        storage_service = FakeStorageService(self.storage)
+        self.storage_service = FakeStorageService(self.storage)
         self.intake = RegulatorySourceIntakeService(
-            self.database, storage_service=storage_service,
+            self.database, storage_service=self.storage_service,
         )
         self.extraction = RegulatoryCandidateExtractionService(
-            self.database, storage_service=storage_service,
+            self.database, storage_service=self.storage_service,
         )
         self.stage_a = RegulatoryStageAReviewService(self.database)
         self.stage_b = RegulatoryStageBReviewService(self.database)
@@ -326,6 +405,14 @@ class RegulatoryFullWorkflowIntegrationTests(unittest.TestCase):
         job = artifact_result["job"]
         self.assertEqual(job["status"], "pending")
 
+        self.extraction = _configured_extraction_service(
+            self.database,
+            self.storage_service,
+            (
+                "Shall be labeled with origin.",
+                "Shall not exceed 50 kg.",
+            ),
+        )
         extraction = self.extraction.extract_candidates(
             actor_user_id=self.actor_a,
             source_id=source["id"],
@@ -449,6 +536,11 @@ class RegulatoryFullWorkflowIntegrationTests(unittest.TestCase):
             source_id=source["id"],
             content_text="Shall be withdrawn with the source.",
             content_type="text/plain",
+        )
+        self.extraction = _configured_extraction_service(
+            self.database,
+            self.storage_service,
+            ("Shall be withdrawn with the source.",),
         )
         extraction = self.extraction.extract_candidates(
             actor_user_id=self.actor_a,

@@ -89,6 +89,12 @@ class GlobalStaffIntegrationTests(unittest.TestCase):
         ]
         with cls.database.transaction() as connection:
             with connection.cursor() as cursor:
+                # Clean up any leftover grant_manage holders from interrupted runs
+                # (test fixtures only; production grants are never created here).
+                cursor.execute(
+                    "DELETE FROM xportra.global_staff_grants "
+                    "WHERE permission = 'grant_manage'"
+                )
                 cursor.execute(
                     "ALTER TABLE xportra.global_staff_audit "
                     "DISABLE TRIGGER global_staff_audit_no_delete"
@@ -99,6 +105,12 @@ class GlobalStaffIntegrationTests(unittest.TestCase):
                         "WHERE actor_user_id IN (SELECT id FROM xportra.users WHERE supabase_uid = ANY(%s)) "
                         "   OR target_user_id IN (SELECT id FROM xportra.users WHERE supabase_uid = ANY(%s))",
                         (auth_ids, auth_ids),
+                    )
+                    # Also clean up audit events for any leftover test users
+                    cursor.execute(
+                        "DELETE FROM xportra.global_staff_audit "
+                        "WHERE actor_user_id IN (SELECT id FROM xportra.users WHERE email LIKE 'gs-%@example.invalid') "
+                        "   OR target_user_id IN (SELECT id FROM xportra.users WHERE email LIKE 'gs-%@example.invalid')"
                     )
                 finally:
                     cursor.execute(
@@ -117,14 +129,26 @@ class GlobalStaffIntegrationTests(unittest.TestCase):
                     "WHERE user_id IN (SELECT id FROM xportra.users WHERE supabase_uid = ANY(%s))",
                     (auth_ids,),
                 )
+                # Clean up any leftover grants for test users by email pattern
+                cursor.execute(
+                    "DELETE FROM xportra.global_staff_grants "
+                    "WHERE user_id IN (SELECT id FROM xportra.users WHERE email LIKE 'gs-%@example.invalid')"
+                )
                 cursor.execute(
                     "DELETE FROM xportra.user_tenant_memberships "
                     "WHERE user_id IN (SELECT id FROM xportra.users WHERE supabase_uid = ANY(%s))",
                     (auth_ids,),
                 )
                 cursor.execute(
+                    "DELETE FROM xportra.user_tenant_memberships "
+                    "WHERE user_id IN (SELECT id FROM xportra.users WHERE email LIKE 'gs-%@example.invalid')"
+                )
+                cursor.execute(
                     "DELETE FROM xportra.users WHERE supabase_uid = ANY(%s)",
                     (auth_ids,),
+                )
+                cursor.execute(
+                    "DELETE FROM xportra.users WHERE email LIKE 'gs-%@example.invalid'"
                 )
                 cursor.execute(
                     "DELETE FROM xportra.tenants WHERE id = %s",

@@ -19,7 +19,7 @@ boundary. No second search system and no new dependency are involved.
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Callable
 from uuid import UUID
 
 from qdrant_client import QdrantClient
@@ -31,7 +31,10 @@ from xportra.domain.errors import (
     VectorStoreError,
     require_tenant_context,
 )
-from xportra.domain.evidence_corpus import SOURCE_TYPES
+from xportra.domain.evidence_corpus import (
+    GLOBAL_REGULATORY_TENANT_ID,
+    SOURCE_TYPES,
+)
 from xportra.domain.evidence_hybrid import (
     EvidenceLexicalIndex,
     lexical_matches,
@@ -185,6 +188,42 @@ def _validated_index_record(
         "embedding_model": record["embedding_model"],
         "embedding_dimensions": record["embedding_dimensions"],
     }
+    index_metadata = record.get("index_metadata")
+    if index_metadata is not None:
+        if not isinstance(index_metadata, dict):
+            raise DomainValidationError("index metadata is malformed")
+        content_scope = index_metadata.get("content_scope")
+        if content_scope != "global_regulatory":
+            raise DomainValidationError("unsupported index content scope")
+        if tenant_id.tenant_id != GLOBAL_REGULATORY_TENANT_ID:
+            raise DomainValidationError(
+                "global regulatory points require the reserved index context")
+        requirement_id = index_metadata.get("regulatory_requirement_id")
+        if not isinstance(requirement_id, UUID):
+            raise DomainValidationError(
+                "regulatory requirement identity is malformed")
+        if index_metadata.get("publication_status") != "published":
+            raise DomainValidationError(
+                "only published regulatory requirements can be indexed")
+        publication_fingerprint = index_metadata.get(
+            "publication_fingerprint")
+        if (
+            not isinstance(publication_fingerprint, str)
+            or not publication_fingerprint.strip()
+        ):
+            raise DomainValidationError(
+                "regulatory publication fingerprint is malformed")
+        payload.update({
+            "content_scope": content_scope,
+            "regulatory_requirement_id": str(requirement_id),
+            "publication_status": "published",
+            "publication_fingerprint": publication_fingerprint,
+        })
+    else:
+        if tenant_id.tenant_id == GLOBAL_REGULATORY_TENANT_ID:
+            raise DomainValidationError(
+                "the reserved index context is not a tenant")
+        payload["content_scope"] = "tenant"
     return record, [float(v) for v in vector], payload
 
 
@@ -201,7 +240,13 @@ class QdrantEvidenceVectorIndex:
     """
 
     def __init__(
-        self, client: QdrantClient, config: VectorIndexConfig
+        self,
+        client: QdrantClient,
+        config: VectorIndexConfig,
+        *,
+        global_requirement_filter: Callable[
+            [set[UUID]], dict[UUID, str]
+        ] | None = None,
     ) -> None:
         if client is None:
             raise DomainValidationError("a Qdrant client is required")
@@ -210,6 +255,11 @@ class QdrantEvidenceVectorIndex:
                 "an explicit VectorIndexConfig is required")
         self._client = client
         self.config = config
+        if (global_requirement_filter is not None
+                and not callable(global_requirement_filter)):
+            raise DomainValidationError(
+                "global requirement filter must be callable")
+        self._global_requirement_filter = global_requirement_filter
 
     # ------------------------------------------------------------------
     # collection lifecycle
@@ -354,13 +404,16 @@ class QdrantEvidenceVectorIndex:
                 "an evidence retrieval scope is required")
         if not self._collection_exists("find"):
             return []
-        must = [_tenant_condition(tenant_id), *_scope_conditions(scope)]
+        if tenant_id.tenant_id == GLOBAL_REGULATORY_TENANT_ID:
+            raise DomainValidationError(
+                "the reserved index context is not a tenant")
+        query_filter = _retrieval_filter(tenant_id, scope)
         try:
             response = self._client.query_points(
                 collection_name=self.config.collection_name,
                 query=vector,
-                limit=top_k,
-                query_filter=qmodels.Filter(must=must),
+                limit=top_k * 4,
+                query_filter=query_filter,
                 with_payload=True,
                 with_vectors=False,
             )
@@ -376,7 +429,8 @@ class QdrantEvidenceVectorIndex:
         for point in points:
             payload = dict(getattr(point, "payload", None) or {})
             try:
-                representation = _payload_to_representation(payload)
+                representation = _payload_to_representation(
+                    payload, requesting_tenant_id=tenant_id.tenant_id)
                 representation["score"] = float(point.score)
                 result = EvidenceRetrievalResult.from_record(representation)
             except Exception as exc:
@@ -406,7 +460,8 @@ class QdrantEvidenceVectorIndex:
                         "requested scope"),
                 )
             results.append(result)
-        return results
+        return self._filter_current_global_results(
+            results, "find")[:top_k]
 
     # ------------------------------------------------------------------
     # lexical retrieval operation (Phase 5.4)
@@ -448,19 +503,26 @@ class QdrantEvidenceVectorIndex:
                 "an evidence retrieval scope is required")
         if not self._collection_exists("find_lexical"):
             return []
+        if tenant_id.tenant_id == GLOBAL_REGULATORY_TENANT_ID:
+            raise DomainValidationError(
+                "the reserved index context is not a tenant")
         self._ensure_content_text_index()
-        must = [_tenant_condition(tenant_id), *_scope_conditions(scope)]
-        must.append(
-            qmodels.FieldCondition(
-                key=_CONTENT_FIELD,
-                match=qmodels.MatchText(text=" ".join(validated_terms)),
-            )
+        query_filter = _retrieval_filter(
+            tenant_id,
+            scope,
+            extra_must=[
+                qmodels.FieldCondition(
+                    key=_CONTENT_FIELD,
+                    match=qmodels.MatchText(
+                        text=" ".join(validated_terms)),
+                )
+            ],
         )
         try:
             records, _offset = self._client.scroll(
                 collection_name=self.config.collection_name,
-                scroll_filter=qmodels.Filter(must=must),
-                limit=top_k,
+                scroll_filter=query_filter,
+                limit=top_k * 4,
                 with_payload=True,
                 with_vectors=False,
             )
@@ -470,7 +532,8 @@ class QdrantEvidenceVectorIndex:
         for record in list(records):
             payload = dict(getattr(record, "payload", None) or {})
             try:
-                representation = _payload_to_representation(payload)
+                representation = _payload_to_representation(
+                    payload, requesting_tenant_id=tenant_id.tenant_id)
                 content = representation.get(_CONTENT_FIELD)
                 if not isinstance(content, str) or not content.strip():
                     raise DomainValidationError("content is required")
@@ -508,7 +571,8 @@ class QdrantEvidenceVectorIndex:
                 )
             results.append(result)
         results.sort(key=lambda item: (-item.score, item.chunk_id))
-        return results
+        return self._filter_current_global_results(
+            results, "find_lexical")[:top_k]
 
     # ------------------------------------------------------------------
     # internals
@@ -530,6 +594,53 @@ class QdrantEvidenceVectorIndex:
             ))
         except Exception as exc:
             raise VectorStoreError(operation, exc) from exc
+
+    def _filter_current_global_results(
+        self,
+        results: list[EvidenceRetrievalResult],
+        operation: str,
+    ) -> list[EvidenceRetrievalResult]:
+        global_ids = {
+            result.regulatory_requirement_id
+            for result in results
+            if result.content_scope == "global_regulatory"
+        }
+        if not global_ids:
+            return results
+        if self._global_requirement_filter is None:
+            return [
+                result for result in results
+                if result.content_scope != "global_regulatory"
+            ]
+        try:
+            allowed = self._global_requirement_filter(global_ids)
+        except Exception as exc:
+            raise VectorStoreError(
+                f"{operation} current regulatory eligibility", exc
+            ) from exc
+        if (
+            not isinstance(allowed, dict)
+            or any(
+                not isinstance(item, UUID)
+                or not isinstance(fingerprint, str)
+                or not fingerprint.strip()
+                for item, fingerprint in allowed.items()
+            )
+            or not set(allowed).issubset(global_ids)
+        ):
+            raise VectorStoreError(
+                f"{operation} current regulatory eligibility",
+                ValueError("eligibility filter returned malformed output"),
+            )
+        return [
+            result for result in results
+            if result.content_scope != "global_regulatory"
+            or (
+                result.regulatory_requirement_id in allowed
+                and result.publication_fingerprint
+                == allowed[result.regulatory_requirement_id]
+            )
+        ]
 
     def _ensure_content_text_index(self) -> None:
         """Idempotently provision the conservative content text index.
@@ -583,6 +694,31 @@ def _tenant_condition(tenant_id: Any) -> qmodels.FieldCondition:
     return qmodels.FieldCondition(
         key="tenant_id",
         match=qmodels.MatchValue(value=str(tenant_id.tenant_id)),
+    )
+
+
+def _retrieval_filter(
+    tenant_id: Any,
+    scope: EvidenceRetrievalScope,
+    *,
+    extra_must: list[Any] | None = None,
+) -> qmodels.Filter:
+    """Union tenant-owned evidence with explicitly global publications."""
+    global_condition = qmodels.Filter(
+        must=[
+            qmodels.FieldCondition(
+                key="content_scope",
+                match=qmodels.MatchValue(value="global_regulatory"),
+            ),
+            qmodels.FieldCondition(
+                key="publication_status",
+                match=qmodels.MatchValue(value="published"),
+            ),
+        ]
+    )
+    return qmodels.Filter(
+        must=[*_scope_conditions(scope), *(extra_must or [])],
+        should=[_tenant_condition(tenant_id), global_condition],
     )
 
 
@@ -648,9 +784,14 @@ def _validated_query_vector(
     return [float(value) for value in vector]
 
 
-def _payload_to_representation(payload: dict[str, Any]) -> dict[str, Any]:
+def _payload_to_representation(
+    payload: dict[str, Any],
+    *,
+    requesting_tenant_id: UUID | None = None,
+) -> dict[str, Any]:
     """Normalize a persisted payload back into domain-friendly types."""
     out = dict(payload)
+    out.setdefault("content_scope", "tenant")
     for field in _PAYLOAD_UUID_FIELDS:
         value = out.get(field)
         if isinstance(value, str):
@@ -659,4 +800,28 @@ def _payload_to_representation(payload: dict[str, Any]) -> dict[str, Any]:
             except ValueError:
                 raise DomainValidationError(
                     "persisted payload identity is malformed")
+    requirement_id = out.get("regulatory_requirement_id")
+    if isinstance(requirement_id, str):
+        try:
+            out["regulatory_requirement_id"] = UUID(requirement_id)
+        except ValueError as exc:
+            raise DomainValidationError(
+                "regulatory requirement identity is malformed") from exc
+    if out.get("content_scope") == "global_regulatory":
+        if (
+            out.get("tenant_id") != GLOBAL_REGULATORY_TENANT_ID
+            or out.get("publication_status") != "published"
+            or not isinstance(
+                out.get("regulatory_requirement_id"), UUID)
+        ):
+            raise DomainValidationError(
+                "persisted global regulatory point is malformed")
+        if requesting_tenant_id is not None:
+            out["tenant_id"] = requesting_tenant_id
+        fingerprint = out.get("publication_fingerprint")
+        if not isinstance(fingerprint, str) or not fingerprint.strip():
+            raise DomainValidationError(
+                "persisted regulatory publication fingerprint is malformed")
+    elif out.get("content_scope") != "tenant":
+        raise DomainValidationError("persisted content scope is malformed")
     return out

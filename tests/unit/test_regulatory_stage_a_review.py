@@ -222,6 +222,11 @@ class FakeRequirementRepository:
             "ingestion_job_parser_version": None,
         }
 
+    def list_extraction_runs_for_candidate(
+        self, requirement_id: UUID
+    ) -> list[dict]:
+        return []
+
 
 class FakeAuditRepository:
     def __init__(self) -> None:

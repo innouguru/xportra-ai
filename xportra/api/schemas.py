@@ -605,6 +605,61 @@ class ConversationMessageResponse(BaseModel):
     refusal_reason: str | None = None
 
 
+class ConversationCreateRequest(APIRequest):
+    """Create a new conversation for the authenticated tenant."""
+
+    mode: ConversationMode = "knowledge"
+
+
+class ConversationCreateResponse(BaseModel):
+    """Created conversation identity."""
+
+    id: UUID
+    tenant_id: UUID
+    mode: str
+
+
+class ConversationListItem(BaseModel):
+    """One conversation in a tenant's conversation list."""
+
+    id: UUID
+    tenant_id: UUID
+    mode: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationListResponse(BaseModel):
+    """A tenant's conversations, most recent first."""
+
+    conversations: list[ConversationListItem]
+
+
+class ConversationMessageItem(BaseModel):
+    """One persisted message in a conversation transcript."""
+
+    id: UUID
+    role: str
+    content: str
+    intent: str | None = None
+    status: str | None = None
+    citations: list[dict[str, Any]] = []
+    shipment_references: list[dict[str, Any]] = []
+    refusal_reason: str | None = None
+    created_at: datetime
+
+
+class ConversationDetailResponse(BaseModel):
+    """A conversation with its full message transcript."""
+
+    id: UUID
+    tenant_id: UUID
+    mode: str
+    created_at: datetime
+    updated_at: datetime
+    messages: list[ConversationMessageItem]
+
+
 #: Phase 10.4 evidence file-upload schemas. The transport
 #: carries base64-encoded bytes (no multipart dependency):
 #: the domain boundary validates the decoded bytes
@@ -893,6 +948,8 @@ class RegulatoryIngestionJobResponse(BaseModel):
     completed_at: datetime | None
     error_details: str | None
     parser_version: str
+    current_stage: str | None = None
+    stage_updated_at: datetime | None = None
     actor_user_id: UUID | None
     created_at: datetime
     updated_at: datetime
@@ -973,6 +1030,9 @@ class RegulatoryExtractResponse(BaseModel):
     duplicate: bool = False
     normalization_id: UUID | None = None
     error: str | None = None
+    failed_chunks: list[dict[str, Any]] = Field(default_factory=list)
+    rejected_candidate_count: int = 0
+    no_qualifying_requirements: bool = False
 
 
 class RegulatoryManualCandidateRequest(APIRequest):
@@ -1010,13 +1070,88 @@ class RegulatoryManualCandidateResponse(BaseModel):
     updated_at: datetime
 
 
+class RegulatoryCandidateExtractionHistoryResponse(BaseModel):
+    """One immutable candidate snapshot from a semantic extraction run."""
+
+    extraction_run_id: UUID
+    normalized_document_id: UUID
+    artifact_id: UUID
+    source_id: UUID
+    ingestion_job_id: UUID
+    artifact_content_hash: str
+    artifact_source_version: str | None = None
+    normalized_text_sha256: str
+    parser_version: str
+    extraction_method: str
+    extraction_version: str
+    prompt_version: str | None = None
+    configured_model_identifier: str | None = None
+    model_identifiers: list[str] = Field(default_factory=list)
+    provider_names: list[str] = Field(default_factory=list)
+    outcome: str
+    failed_chunks: list[dict[str, Any]] = Field(default_factory=list)
+    rejected_candidate_count: int
+    started_at: datetime
+    completed_at: datetime
+    candidate_index: int
+    evidence_snapshot: dict[str, Any]
+    resolution_status: str
+    is_origin: bool
+
+
+class RegulatoryJobExtractionCandidateResponse(BaseModel):
+    """One exact candidate snapshot recorded during a job's extraction run."""
+
+    candidate_index: int
+    candidate_id: UUID | None = None
+    evidence_snapshot: dict[str, Any]
+    resolution_status: str
+    is_origin: bool
+
+
+class RegulatoryJobExtractionRunResponse(BaseModel):
+    """Persisted extraction outcome and evidence for one ingestion job run."""
+
+    extraction_run_id: UUID
+    normalized_document_id: UUID
+    artifact_id: UUID
+    source_id: UUID
+    ingestion_job_id: UUID
+    artifact_content_hash: str
+    artifact_source_version: str | None = None
+    normalized_text_sha256: str
+    parser_version: str
+    extraction_method: str
+    extraction_version: str
+    prompt_version: str | None = None
+    configured_model_identifier: str | None = None
+    model_identifiers: list[str] = Field(default_factory=list)
+    provider_names: list[str] = Field(default_factory=list)
+    outcome: str
+    failed_chunks: list[dict[str, Any]] = Field(default_factory=list)
+    rejected_candidate_count: int
+    started_at: datetime
+    completed_at: datetime
+    candidate_count: int
+    persisted_candidate_count: int
+    candidates: list[RegulatoryJobExtractionCandidateResponse] = Field(
+        default_factory=list
+    )
+
+
+class RegulatoryIngestionJobExtractionHistoryResponse(BaseModel):
+    """Read-only extraction history attached to one ingestion job."""
+
+    job_id: UUID
+    items: list[RegulatoryJobExtractionRunResponse] = Field(default_factory=list)
+
+
 class RegulatoryCandidateResponse(BaseModel):
     """One candidate requirement (unreviewed, not approved).
 
-    Provenance fields (source, artifact, ingestion job) are populated
-    by the detail endpoint to enable traceability from candidate text
-    back to the source artifact and extraction run. The list endpoint
-    omits these fields for brevity.
+    Provenance fields are populated by the list and detail endpoints to
+    enable traceability from candidate text to its source artifact and
+    extraction history.
     """
 
     id: UUID
@@ -1046,6 +1181,8 @@ class RegulatoryCandidateResponse(BaseModel):
     #: Artifact metadata for review traceability.
     artifact_uri: str | None = None
     artifact_content_hash: str | None = None
+    artifact_source_version: str | None = None
+    artifact_status: str | None = None
     artifact_content_length: int | None = None
     artifact_content_type: str | None = None
     artifact_acquisition_channel: str | None = None
@@ -1053,6 +1190,10 @@ class RegulatoryCandidateResponse(BaseModel):
     ingestion_job_status: str | None = None
     ingestion_job_error_details: str | None = None
     ingestion_job_parser_version: str | None = None
+    document_parser_name: str | None = None
+    extraction_history: list[RegulatoryCandidateExtractionHistoryResponse] = Field(
+        default_factory=list
+    )
 
 
 class RegulatoryCandidateEligibilityResponse(BaseModel):
@@ -1151,6 +1292,77 @@ class RegulatoryStageAReviewResponse(BaseModel):
     audit_id: UUID
     audit_created_at: datetime
     wording_correction_id: UUID | None = None
+    source_id: UUID | None = None
+    artifact_id: UUID | None = None
+    normalized_document_id: UUID | None = None
+    requirement_text: str | None = None
+    requirement_type: str | None = None
+    source_location: dict[str, Any] | None = None
+    position: int | None = None
+    extraction_outcome: str | None = None
+    status: str | None = None
+    manual_entry: bool | None = None
+    source_title: str | None = None
+    source_jurisdiction: str | None = None
+    source_version: str | None = None
+    source_status: str | None = None
+    source_authority_id: UUID | None = None
+    artifact_uri: str | None = None
+    artifact_content_hash: str | None = None
+    artifact_source_version: str | None = None
+    artifact_status: str | None = None
+    artifact_content_length: int | None = None
+    artifact_content_type: str | None = None
+    artifact_acquisition_channel: str | None = None
+    document_parser_name: str | None = None
+    ingestion_job_id: UUID | None = None
+    ingestion_job_status: str | None = None
+    ingestion_job_error_details: str | None = None
+    ingestion_job_parser_version: str | None = None
+    extraction_history: list[RegulatoryCandidateExtractionHistoryResponse] = Field(
+        default_factory=list
+    )
+
+
+class RegulatoryStageAReviewDetailResponse(BaseModel):
+    """Current Stage A state with full source and extraction provenance."""
+
+    id: UUID
+    requirement_id: UUID
+    source_id: UUID | None = None
+    artifact_id: UUID | None = None
+    normalized_document_id: UUID | None = None
+    requirement_text: str | None = None
+    requirement_type: str | None = None
+    source_location: dict[str, Any] | None = None
+    position: int | None = None
+    extraction_outcome: str | None = None
+    status: str | None = None
+    manual_entry: bool | None = None
+    stage_a_status: str
+    stage_a_reviewer_user_id: UUID | None = None
+    stage_a_reviewed_at: datetime | None = None
+    stage_a_rationale: str | None = None
+    source_title: str | None = None
+    source_jurisdiction: str | None = None
+    source_version: str | None = None
+    source_status: str | None = None
+    source_authority_id: UUID | None = None
+    document_parser_name: str | None = None
+    artifact_uri: str | None = None
+    artifact_content_hash: str | None = None
+    artifact_source_version: str | None = None
+    artifact_status: str | None = None
+    artifact_content_length: int | None = None
+    artifact_content_type: str | None = None
+    artifact_acquisition_channel: str | None = None
+    ingestion_job_id: UUID | None = None
+    ingestion_job_status: str | None = None
+    ingestion_job_error_details: str | None = None
+    ingestion_job_parser_version: str | None = None
+    extraction_history: list[RegulatoryCandidateExtractionHistoryResponse] = Field(
+        default_factory=list
+    )
 
 
 class RegulatoryWordingCorrectionResponse(BaseModel):

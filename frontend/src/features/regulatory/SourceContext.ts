@@ -19,6 +19,8 @@ export interface SourceContextValue {
   flags: RegulatoryGovernanceFlag[];
   /** True while a user-initiated reload is in flight. */
   loading: boolean;
+  /** Last source refresh error, including a failed background refresh. */
+  refreshError: unknown;
   /** Refetch everything. Silent reloads never toggle ``loading``. */
   reload: (options?: { silent?: boolean }) => Promise<void>;
 }

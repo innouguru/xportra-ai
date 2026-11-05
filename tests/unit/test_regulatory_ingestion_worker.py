@@ -9,7 +9,12 @@ skipped when DATABASE_URL is absent.
 from __future__ import annotations
 
 import inspect
+import os
+import threading
+import time
+from datetime import datetime, timezone
 from unittest import TestCase
+from unittest.mock import patch
 from uuid import UUID
 
 from xportra.application.regulatory_ingestion_service import RegulatoryIngestionService
@@ -19,6 +24,7 @@ from xportra.application.regulatory_ingestion_worker import (
     POLL_INTERVAL_SECONDS,
     LEASE_TIMEOUT_SECONDS,
 )
+from xportra.persistence.repositories import RegulatoryIngestionJobRepository
 
 
 class FakeGrantRepo:
@@ -42,57 +48,12 @@ class FakeDB:
         return Ctx()
 
 
-class PollingFakeDB(FakeDB):
-    def __init__(self, jobs):
-        super().__init__()
-        self.jobs = jobs
-        self.poll_sql = None
-
-    def transaction(self):
-        database = self
-
-        class Cursor:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                pass
-
-            def execute(self, query):
-                database.poll_sql = query
-                eligible = [
-                    job
-                    for job in database.jobs
-                    if job["status"] in ("pending", "retryable")
-                ]
-                if "artifact_id IS NOT NULL" in query:
-                    eligible = [
-                        job for job in eligible
-                        if job["artifact_id"] is not None
-                    ]
-                eligible.sort(key=lambda job: job["created_at"])
-                self.row = (eligible[0]["id"],) if eligible else None
-
-            def fetchone(self):
-                return self.row
-
-        class Ctx:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *args):
-                pass
-
-            def cursor(self):
-                return Cursor()
-
-        return Ctx()
-
-
 class TestWorkerAuthorization(TestCase):
     def test_authorized_worker_can_start(self):
         db = FakeDB()
-        worker = RegulatoryIngestionWorker(db)
+        worker = RegulatoryIngestionWorker(
+            db, extraction_service=lambda database: object()
+        )
         actor = UUID("aaaaaaaa-0000-0000-0000-000000000001")
         worker._actor_id = actor
         worker._grants = FakeGrantRepo({(actor, GRANT_MANAGE): True})
@@ -117,6 +78,23 @@ class TestWorkerLifecycleContracts(TestCase):
         # The contract is that start/stop exist and handle authorization safely.
         self.assertTrue(hasattr(worker, "start"))
         self.assertTrue(hasattr(worker, "stop"))
+
+    def test_missing_worker_configuration_logs_sanitized_startup_warning(self):
+        configured_value = "not-a-valid-worker-id"
+        with patch.dict(
+                os.environ,
+                {"REGULATORY_WORKER_ACTOR_USER_ID": configured_value}):
+            worker = RegulatoryIngestionWorker(FakeDB())
+
+        with self.assertLogs(
+                "xportra.application.regulatory_ingestion_worker",
+                level="WARNING") as captured:
+            worker.start()
+
+        diagnostic = "\n".join(captured.output)
+        self.assertIn("missing or invalid", diagnostic)
+        self.assertNotIn(configured_value, diagnostic)
+        self.assertFalse(worker._running)
 
     def test_poll_interval_and_lease_defaults_safe(self):
         # Defaults must be positive and finite; never zero or infinite.
@@ -156,6 +134,48 @@ class TestWorkerCrashRecoveryContract(TestCase):
         self.assertIn("(LEASE_TIMEOUT_SECONDS,)", source)
 
 
+class TestAtomicClaimQuery(TestCase):
+    def test_claim_next_filters_artifacts_and_preserves_locking_order(self):
+        captured = {}
+        claimed = {"id": UUID("ffffffff-0000-0000-0000-000000000006")}
+
+        class Cursor:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def execute(self, query):
+                captured["query"] = query
+
+            def fetchone(self):
+                return claimed
+
+        class Transaction:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def cursor(self):
+                return Cursor()
+
+        class Database:
+            def transaction(self):
+                return Transaction()
+
+        result = RegulatoryIngestionJobRepository(Database()).claim_next()
+
+        query = captured["query"]
+        self.assertEqual(result, claimed)
+        self.assertIn("status IN ('pending', 'retryable')", query)
+        self.assertIn("artifact_id IS NOT NULL", query)
+        self.assertIn("ORDER BY created_at ASC, id ASC", query)
+        self.assertIn("LIMIT 1\n                            FOR UPDATE SKIP LOCKED", query)
+
+
 class FakeExtractionService:
     """Callable factory returning an object with extract_candidates."""
 
@@ -174,13 +194,17 @@ class FakeExtractionService:
     def __call__(self, database):
         return self
 
-    def extract_candidates(self, actor_user_id, source_id, artifact_id, job_id):
+    def extract_candidates(
+        self, actor_user_id, source_id, artifact_id, job_id,
+        claim_started_at=None,
+    ):
         self.calls.append(
             {
                 "actor_user_id": actor_user_id,
                 "source_id": source_id,
                 "artifact_id": artifact_id,
                 "job_id": job_id,
+                "claim_started_at": claim_started_at,
             }
         )
         if self.should_fail:
@@ -192,14 +216,52 @@ class FakeJobRepo:
     def __init__(self, jobs=None):
         self.jobs = dict(jobs or {})
         self.get_calls: list[UUID] = []
+        self.claim_next_calls = 0
+        self.claim_calls: list[UUID] = []
+        self.renew_calls: list[tuple[UUID, datetime]] = []
+        self._claim_started_at = datetime(
+            2026, 11, 4, tzinfo=timezone.utc
+        )
 
     def get(self, job_id):
         self.get_calls.append(job_id)
         return self.jobs.get(job_id)
 
-    def update_stage(self, job_id, current_stage, stage_updated_at):  # noqa: ARG002
-        # No-op for test fixture; the real repo persists to DB.
-        pass
+    def _claim(self, job):
+        if job is None or job.get("status") not in ("pending", "retryable"):
+            return None
+        job.update({
+            "status": "claimed",
+            "started_at": self._claim_started_at,
+            "current_stage": "queued",
+        })
+        return dict(job)
+
+    def claim(self, job_id):
+        self.claim_calls.append(job_id)
+        return self._claim(self.jobs.get(job_id))
+
+    def claim_next(self):
+        self.claim_next_calls += 1
+        eligible = [
+            job
+            for job in self.jobs.values()
+            if job.get("artifact_id") is not None
+            and job.get("status") in ("pending", "retryable")
+        ]
+        eligible.sort(key=lambda job: job.get("created_at", 0))
+        return self._claim(eligible[0] if eligible else None)
+
+    def renew_claim(self, job_id, claim_started_at):
+        self.renew_calls.append((job_id, claim_started_at))
+        job = self.jobs.get(job_id)
+        if (
+            job is None
+            or job.get("status") not in ("claimed", "processing")
+            or job.get("started_at") != claim_started_at
+        ):
+            return None
+        return {"id": job_id}
 
 
 class FakeStorageServiceForTest:
@@ -229,7 +291,7 @@ class TestWorkerProcessing(TestCase):
         )
         return worker
 
-    def test_process_pending_job_calls_extraction_and_completes(self):
+    def test_process_pending_job_is_atomically_claimed_before_extraction(self):
         job_repo = FakeJobRepo(
             {self.job: {"id": self.job, "artifact_id": self.artifact,
                         "source_id": self.source, "status": "pending"}}
@@ -237,7 +299,7 @@ class TestWorkerProcessing(TestCase):
         extraction_service = FakeExtractionService()
         worker = self._make_worker(job_repo, extraction_service)
 
-        worker._process_job(self.job)
+        worker._poll_cycle()
 
         self.assertEqual(len(extraction_service.calls), 1)
         call = extraction_service.calls[0]
@@ -245,8 +307,11 @@ class TestWorkerProcessing(TestCase):
         self.assertEqual(call["source_id"], self.source)
         self.assertEqual(call["artifact_id"], self.artifact)
         self.assertEqual(call["job_id"], self.job)
+        self.assertEqual(call["claim_started_at"], job_repo._claim_started_at)
+        self.assertEqual(job_repo.claim_next_calls, 1)
+        self.assertEqual(job_repo.jobs[self.job]["status"], "claimed")
 
-    def test_process_job_without_artifact_skips_extraction(self):
+    def test_placeholder_is_not_claimed_or_processed(self):
         job_repo = FakeJobRepo(
             {self.job: {"id": self.job, "artifact_id": None,
                         "source_id": self.source, "status": "pending"}}
@@ -254,20 +319,21 @@ class TestWorkerProcessing(TestCase):
         extraction_service = FakeExtractionService()
         worker = self._make_worker(job_repo, extraction_service)
 
-        worker._process_job(self.job)
+        worker._poll_cycle()
 
         self.assertEqual(len(extraction_service.calls), 0)
+        self.assertEqual(job_repo.jobs[self.job]["status"], "pending")
 
     def test_process_missing_job_is_noop(self):
         job_repo = FakeJobRepo({})
         extraction_service = FakeExtractionService()
         worker = self._make_worker(job_repo, extraction_service)
 
-        worker._process_job(UUID("99999999-0000-0000-0000-000000000999"))
+        worker._poll_cycle()
 
         self.assertEqual(len(extraction_service.calls), 0)
 
-    def test_process_job_extraction_failure_logs_and_does_not_complete(self):
+    def test_extraction_failure_is_logged_without_completing_claim(self):
         job_repo = FakeJobRepo(
             {self.job: {"id": self.job, "artifact_id": self.artifact,
                         "source_id": self.source, "status": "pending"}}
@@ -275,10 +341,14 @@ class TestWorkerProcessing(TestCase):
         extraction_service = FakeExtractionService(should_fail=True)
         worker = self._make_worker(job_repo, extraction_service)
 
-        # Should not raise; failure is logged.
-        worker._process_job(self.job)
+        with self.assertLogs(
+                "xportra.application.regulatory_ingestion_worker",
+                level="ERROR") as captured:
+            worker._poll_cycle()
 
         self.assertEqual(len(extraction_service.calls), 1)
+        self.assertIn("RuntimeError", "\n".join(captured.output))
+        self.assertEqual(job_repo.jobs[self.job]["status"], "claimed")
 
     def test_unauthorized_worker_skips_processing(self):
         job_repo = FakeJobRepo(
@@ -288,9 +358,10 @@ class TestWorkerProcessing(TestCase):
         extraction_service = FakeExtractionService()
         worker = self._make_worker(job_repo, extraction_service, granted=False)
 
-        worker._process_job(self.job)
+        worker._poll_cycle()
 
         self.assertEqual(len(extraction_service.calls), 0)
+        self.assertEqual(job_repo.claim_next_calls, 0)
 
     def test_process_retryable_job(self):
         job_repo = FakeJobRepo(
@@ -300,123 +371,59 @@ class TestWorkerProcessing(TestCase):
         extraction_service = FakeExtractionService()
         worker = self._make_worker(job_repo, extraction_service)
 
-        worker._process_job(self.job)
+        worker._poll_cycle()
 
         self.assertEqual(len(extraction_service.calls), 1)
         self.assertEqual(extraction_service.calls[0]["job_id"], self.job)
+        self.assertEqual(job_repo.jobs[self.job]["status"], "claimed")
 
 
-class TestExtractionRaceCondition(TestCase):
-    def test_claim_returns_none_is_idempotent_noop(self):
-        # When claim_job returns None (another worker already claimed),
-        # extract_candidates returns duplicate=True instead of completing
-        # someone else's job.
-        from xportra.application.regulatory_candidate_extraction_service import (
-            RegulatoryCandidateExtractionService,
+class TestWorkerClaimContention(TestCase):
+    def test_second_claim_attempt_cannot_claim_already_claimed_job(self):
+        job_id = UUID("ffffffff-0000-0000-0000-000000000006")
+        artifact_id = UUID("eeeeeeee-0000-0000-0000-000000000005")
+        job_repo = FakeJobRepo({
+            job_id: {
+                "id": job_id,
+                "artifact_id": artifact_id,
+                "status": "pending",
+            }
+        })
+
+        first_claim = job_repo.claim(job_id)
+        second_claim = job_repo.claim(job_id)
+
+        self.assertIsNotNone(first_claim)
+        self.assertIsNone(second_claim)
+        self.assertEqual(job_repo.jobs[job_id]["status"], "claimed")
+
+    def test_lease_heartbeat_renews_claim_during_processing(self):
+        job_id = UUID("ffffffff-0000-0000-0000-000000000006")
+        claim_started_at = datetime(2026, 11, 4, tzinfo=timezone.utc)
+        job_repo = FakeJobRepo({
+            job_id: {
+                "id": job_id,
+                "status": "claimed",
+                "started_at": claim_started_at,
+            }
+        })
+        worker = RegulatoryIngestionWorker(FakeDB(), job_repo=job_repo)
+        stop_event = threading.Event()
+        heartbeat = threading.Thread(
+            target=worker._renew_claim_lease,
+            args=(job_id, claim_started_at, stop_event),
         )
 
-        actor = UUID("aaaaaaaa-0000-0000-0000-000000000001")
-        source = UUID("dddddddd-0000-0000-0000-000000000004")
-        artifact = UUID("eeeeeeee-0000-0000-0000-000000000005")
-        job = UUID("ffffffff-0000-0000-0000-000000000006")
+        with patch(
+                "xportra.application.regulatory_ingestion_worker."
+                "LEASE_TIMEOUT_SECONDS", 0.3):
+            heartbeat.start()
+            time.sleep(0.25)
+            stop_event.set()
+            heartbeat.join(timeout=1)
 
-        class FakeIngestionService:
-            def __init__(self):
-                self.claimed = None
-                self.completed = None
-
-            def claim_job(self, job_id, actor_user_id=None):
-                self.claimed = job_id
-                return None  # simulate already claimed by another worker
-
-            def complete_job(self, job_id, actor_user_id=None):
-                self.completed = job_id
-
-        class FakeDB:
-            def transaction(self):
-                class Ctx:
-                    def __enter__(self):
-                        return self
-                    def __exit__(self, *a):
-                        pass
-                return Ctx()
-
-        class FakeSourceRepo:
-            def get(self, source_id):
-                return {"id": source} if source_id == source else None
-
-        class FakeArtifactRepo:
-            def get(self, artifact_id):
-                if artifact_id == artifact:
-                    return {"id": artifact, "source_id": source}
-                return None
-
-        class FakeJobRepo:
-            def get(self, job_id):
-                if job_id == job:
-                    return {"id": job, "artifact_id": artifact,
-                            "source_id": source, "status": "claimed"}
-                return None
-
-            def update_stage(self, job_id, current_stage, stage_updated_at):  # noqa: ARG002
-                # No-op for test fixture; the real repo persists to DB.
-                pass
-
-        class FakeNormalizationRepo:
-            def get_by_artifact(self, artifact_id):
-                return None
-
-        class FakeRequirementRepo:
-            def list_for_document(self, doc_id):
-                return []
-
-            def create(self, **kwargs):
-                return {"id": kwargs.get("id", job)}
-
-        class FakeGrantService:
-            def is_granted(self, user_id, permission):
-                return (user_id, permission) == (actor, "grant_manage")
-
-        ingestion = FakeIngestionService()
-        service = RegulatoryCandidateExtractionService(
-            FakeDB(),
-            source_repo=FakeSourceRepo(),
-            artifact_repo=FakeArtifactRepo(),
-            job_repo=FakeJobRepo(),
-            requirement_repo=FakeRequirementRepo(),
-            normalization_repo=FakeNormalizationRepo(),
-            grant_service=FakeGrantService(),
-            storage_service=FakeStorageServiceForTest(),
-        )
-        # Override storage and ingestion with fakes
-        service._storage = type("S", (), {
-            "get_artifact": lambda self, key, actor_user_id: b"text"
-        })()
-        service._ingestion = ingestion
-        service._parser = type("P", (), {
-            "parse": lambda self, **kw: {"normalized_text": "text",
-                                         "parser_name": "v1",
-                                         "status": "parsed"}
-        })()
-        service._normalizer = type("N", (), {
-            "normalize": lambda self, **kw: {"id": job}
-        })()
-        service._metadata_extractor = type("M", (), {
-            "extract": lambda self, doc: None
-        })()
-        service._candidate_extractor = type("C", (), {
-            "extract": lambda self, doc: []
-        })()
-
-        result = service.extract_candidates(
-            actor_user_id=actor,
-            source_id=source,
-            artifact_id=artifact,
-            job_id=job,
-        )
-
-        self.assertTrue(result["duplicate"])
-        self.assertIsNone(ingestion.completed)
+        self.assertFalse(heartbeat.is_alive())
+        self.assertGreaterEqual(len(job_repo.renew_calls), 1)
 
 
 class PollQueryExcludesPlaceholderJobsTests(TestCase):
@@ -437,42 +444,35 @@ class PollQueryExcludesPlaceholderJobsTests(TestCase):
         }
 
     def _poll(self, jobs):
-        database = PollingFakeDB(jobs)
         job_repo = FakeJobRepo({job["id"]: job for job in jobs})
         extraction_service = FakeExtractionService()
         worker = RegulatoryIngestionWorker(
-            database,
+            FakeDB(),
             extraction_service=extraction_service,
             job_repo=job_repo,
         )
         worker._actor_id = self.actor
-        worker._grants = FakeGrantRepo({(self.actor, GRANT_MANAGE): True})
+        worker._grants = FakeGrantRepo({
+            (self.actor, GRANT_MANAGE): True
+        })
 
         worker._poll_cycle()
-        return database, job_repo, extraction_service
-
-    def _assert_polling_contract(self, query):
-        self.assertIn("AND artifact_id IS NOT NULL", query)
-        self.assertIn("ORDER BY created_at ASC", query)
-        self.assertIn("LIMIT 1 FOR UPDATE SKIP LOCKED", query)
-        self.assertIn("status IN ('pending', 'retryable')", query)
+        return job_repo, extraction_service
 
     def test_pending_registration_placeholder_is_skipped_and_unchanged(self):
         placeholder = self._job(self.placeholder, None, "pending", 1)
 
-        database, job_repo, extraction_service = self._poll([placeholder])
+        job_repo, extraction_service = self._poll([placeholder])
 
-        self._assert_polling_contract(database.poll_sql)
         self.assertEqual(extraction_service.calls, [])
-        self.assertEqual(job_repo.get_calls, [])
+        self.assertEqual(job_repo.claim_next_calls, 1)
         self.assertEqual(placeholder["status"], "pending")
 
     def test_pending_job_with_artifact_is_selected(self):
         valid = self._job(self.valid_job, self.artifact, "pending", 1)
 
-        database, _, extraction_service = self._poll([valid])
+        _, extraction_service = self._poll([valid])
 
-        self._assert_polling_contract(database.poll_sql)
         self.assertEqual(
             [call["job_id"] for call in extraction_service.calls],
             [self.valid_job],
@@ -482,9 +482,8 @@ class PollQueryExcludesPlaceholderJobsTests(TestCase):
         placeholder = self._job(self.placeholder, None, "pending", 1)
         valid = self._job(self.valid_job, self.artifact, "pending", 2)
 
-        database, _, extraction_service = self._poll([placeholder, valid])
+        _, extraction_service = self._poll([placeholder, valid])
 
-        self._assert_polling_contract(database.poll_sql)
         self.assertEqual(
             [call["job_id"] for call in extraction_service.calls],
             [self.valid_job],
@@ -496,9 +495,8 @@ class PollQueryExcludesPlaceholderJobsTests(TestCase):
             self.valid_job, self.artifact, "retryable", 1
         )
 
-        database, _, extraction_service = self._poll([retryable])
+        _, extraction_service = self._poll([retryable])
 
-        self._assert_polling_contract(database.poll_sql)
         self.assertEqual(
             [call["job_id"] for call in extraction_service.calls],
             [self.valid_job],

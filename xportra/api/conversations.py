@@ -1,39 +1,43 @@
-"""Thin conversational HTTP adapter (Phase 10.2).
+"""Conversational HTTP adapter (Phase 10.2, extended by Workstream 6).
 
-One stateless, read-only endpoint::
+Endpoints::
 
-    POST /conversations/messages
+    POST /conversations                  Create a conversation
+    GET  /conversations                  List the tenant's conversations
+    GET  /conversations/{conversation_id}  Get a conversation with messages
+    POST /conversations/messages         Send one turn (stateless logic + optional persistence)
 
 Every handler follows the established Phase 8.2 shape:
 
-1. ``require_permission`` resolves the authorized
-   ``MemberContext`` (existing Phase 1 boundary — tenant
-   from server-side membership, never the request body).
-2. The handler builds an ``ApplicationContext`` from that
-   membership plus the ``get_request_actor`` subject.
+1. ``require_permission`` resolves the authorized ``MemberContext``
+   (existing Phase 1 boundary — tenant from server-side membership,
+   never the request body).
+2. The handler builds an ``ApplicationContext`` from that membership
+   plus the ``get_request_actor`` subject.
 3. Exactly one application use case
-   (``ConversationApplicationService.handle_message``) is
-   invoked with the optional RAG service from the container.
-4. Its ``AssistantResponse`` is translated to DTO
-   serialization (identifier + validated-citation mapping
-   only — no prompts, content, scores, or internals).
+   (``ConversationApplicationService.handle_message`` or the new
+   conversation lifecycle methods) is invoked with the optional RAG
+   service and persistence repositories from the container.
+4. The response is translated to DTO serialization (identifier +
+   validated-citation mapping only — no prompts, content, scores,
+   or internals).
 
-Stored-conversation endpoints (start/resume/get) do not exist
-here: Phase 10.2 persists nothing (ADR-0010), so there is no
-record to create or fetch. Knowledge intents fail closed with
-503 when the RAG chain is unwired for the environment, using
-the same code/message as the RAG route.
+When conversation repositories are wired, messages are persisted
+and conversations can be reopened. When they are not wired, the
+service remains stateless (the Phase 10.2 default).
 """
 
 from typing import Annotated, Any
+import uuid
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Path, Query
 
 from xportra.application.context import ApplicationContext
 from xportra.application.conversations import (
     ConversationApplicationService,
 )
+from xportra.application.errors import ApplicationNotFoundError
 
 from .auth import MemberContext
 from .authorization import READ_TENANT_RESOURCE
@@ -43,6 +47,12 @@ from .dependencies import (
     require_permission,
 )
 from .schemas import (
+    ConversationCreateRequest,
+    ConversationCreateResponse,
+    ConversationDetailResponse,
+    ConversationListItem,
+    ConversationListResponse,
+    ConversationMessageItem,
     ConversationMessageRequest,
     ConversationMessageResponse,
 )
@@ -55,6 +65,25 @@ def _context(
 ) -> ApplicationContext:
     return ApplicationContext(
         actor_id=actor_id, tenant=member.tenant, role=member.role
+    )
+
+
+def _service(services: ServicesDependency) -> ConversationApplicationService:
+    """Build the conversational use case from the container.
+
+    The RAG service (for knowledge answers) and the conversation
+    / message repositories (for persistence) are both optional;
+    the service degrades gracefully when either is absent.
+    """
+    rag = getattr(services, "rag", None)
+    conversation_repo = getattr(services, "conversation_repository", None)
+    message_repo = getattr(services, "conversation_message_repository", None)
+    database = getattr(services, "database", None)
+    return ConversationApplicationService(
+        rag=rag,
+        conversation_repo=conversation_repo,
+        message_repo=message_repo,
+        database=database,
     )
 
 
@@ -93,6 +122,96 @@ def _message_response(answer) -> dict[str, Any]:
 
 
 @router.post(
+    "/conversations",
+    response_model=ConversationCreateResponse,
+)
+def create_conversation(
+    payload: ConversationCreateRequest,
+    services: ServicesDependency,
+    member: Annotated[
+        MemberContext, Depends(require_permission(READ_TENANT_RESOURCE))
+    ],
+    actor_id: Annotated[UUID | None, Depends(get_request_actor)],
+):
+    """Create a new conversation for the authenticated tenant.
+
+    Tenant identity comes exclusively from the authenticated member
+    context. The conversation is persisted when conversation
+    repositories are wired; otherwise the request still succeeds
+    (the caller can use any client-generated conversation_id with
+    ``POST /conversations/messages``).
+    """
+    service = _service(services)
+    conversation_id = uuid.uuid4()
+    result = service.create_conversation(
+        _context(member, actor_id),
+        conversation_id=conversation_id,
+        mode=payload.mode,
+    )
+    return ConversationCreateResponse(
+        id=result["id"],
+        tenant_id=result["tenant_id"],
+        mode=result["mode"],
+    )
+
+
+@router.get(
+    "/conversations",
+    response_model=ConversationListResponse,
+)
+def list_conversations(
+    services: ServicesDependency,
+    member: Annotated[
+        MemberContext, Depends(require_permission(READ_TENANT_RESOURCE))
+    ],
+    actor_id: Annotated[UUID | None, Depends(get_request_actor)],
+):
+    """List the authenticated tenant's conversations, most recent first."""
+    service = _service(services)
+    conversations = service.list_conversations(_context(member, actor_id))
+    return ConversationListResponse(
+        conversations=[
+            ConversationListItem(**c) for c in conversations
+        ],
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationDetailResponse,
+)
+def get_conversation(
+    conversation_id: Annotated[UUID, Path()],
+    services: ServicesDependency,
+    member: Annotated[
+        MemberContext, Depends(require_permission(READ_TENANT_RESOURCE))
+    ],
+    actor_id: Annotated[UUID | None, Depends(get_request_actor)],
+):
+    """Get one conversation with its full message transcript.
+
+    Tenant isolation is enforced: conversations belonging to another
+    tenant return 404.
+    """
+    service = _service(services)
+    detail = service.get_conversation_with_messages(
+        _context(member, actor_id), conversation_id=conversation_id)
+    if detail is None:
+        raise ApplicationNotFoundError(
+            "conversation not found for the active tenant")
+    return ConversationDetailResponse(
+        id=detail["id"],
+        tenant_id=detail["tenant_id"],
+        mode=detail["mode"],
+        created_at=detail["created_at"],
+        updated_at=detail["updated_at"],
+        messages=[
+            ConversationMessageItem(**m) for m in detail["messages"]
+        ],
+    )
+
+
+@router.post(
     "/conversations/messages",
     response_model=ConversationMessageResponse,
 )
@@ -109,15 +228,12 @@ def post_conversation_message(
     Tenant identity comes exclusively from the authenticated
     member context — the request body cannot supply or
     override it. The service revalidates the supplied
-    workflow context per request; the server holds no
-    conversation session and no transcript store.
+    workflow context per request; when persistence is wired,
+    both the user message and the assistant response are stored
+    so the conversation can be reopened and follow-up questions
+    receive preceding context.
     """
-    rag = getattr(services, "rag", None)
-    # No handler-owned branching: the use case validates
-    # mode/context first and raises InfrastructureError when a
-    # knowledge intent needs an unwired chain; the central
-    # error mapping turns that into a static 503.
-    service = ConversationApplicationService(rag=rag)
+    service = _service(services)
     answer = service.handle_message(
         _context(member, actor_id),
         conversation_id=payload.conversation_id,

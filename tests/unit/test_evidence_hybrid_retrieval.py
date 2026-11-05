@@ -756,7 +756,7 @@ class TestDeterminismAndProvenance(unittest.TestCase):
             c for c in candidates if c.evidence.chunk_id == CHUNK_1)
         evidence = merged.evidence
         self.assertIsInstance(evidence, EvidenceRetrievalResult)
-        self.assertEqual(len(evidence.to_record()), 13)
+        self.assertEqual(len(evidence.to_record()), 16)
         self.assertEqual(evidence.tenant_id, TENANT_ID)
         self.assertEqual(evidence.document_id, DOC_A)
         self.assertEqual(evidence.content_fingerprint, "fp-1")
@@ -894,20 +894,20 @@ class FakeQdrantClient:
         must = list(scroll_filter.must)
         self.last_scroll = types.SimpleNamespace(
             must=[
-                (
-                    condition.key,
-                    getattr(condition.match, "text",
-                            getattr(condition.match, "value", None)),
-                )
+                self._describe_condition(condition)
                 for condition in must
+            ],
+            should=[
+                self._describe_condition(condition)
+                for condition in scroll_filter.should or []
             ],
             limit=limit,
         )
         coll = self.collections[collection_name]
         selected = []
         for point in coll["points"].values():
-            if not self.ignore_filter and not self._matches(
-                    point.payload, must):
+            if not self.ignore_filter and not self._matches_filter(
+                    point.payload, scroll_filter):
                 continue
             selected.append(point)
         return (
@@ -918,18 +918,48 @@ class FakeQdrantClient:
             None,
         )
 
-    @staticmethod
-    def _matches(payload, must):
-        for condition in must:
-            if isinstance(condition.match, qmodels.MatchText):
-                if not _provider_prefix_match(
-                        payload.get(condition.key, ""),
-                        condition.match.text):
-                    return False
-                continue
-            if payload.get(condition.key) != condition.match.value:
-                return False
-        return True
+    @classmethod
+    def _describe_condition(cls, condition):
+        if isinstance(condition, qmodels.Filter):
+            return {
+                "must": tuple(
+                    cls._describe_condition(item)
+                    for item in condition.must or []
+                ),
+                "should": tuple(
+                    cls._describe_condition(item)
+                    for item in condition.should or []
+                ),
+            }
+        match = condition.match
+        value = (
+            match.text if isinstance(match, qmodels.MatchText)
+            else match.value
+        )
+        return (condition.key, value)
+
+    @classmethod
+    def _matches_filter(cls, payload, query_filter):
+        if not all(
+            cls._matches_condition(payload, condition)
+            for condition in query_filter.must or []
+        ):
+            return False
+        should = query_filter.should or []
+        return not should or any(
+            cls._matches_condition(payload, condition)
+            for condition in should
+        )
+
+    @classmethod
+    def _matches_condition(cls, payload, condition):
+        if isinstance(condition, qmodels.Filter):
+            return cls._matches_filter(payload, condition)
+        match = condition.match
+        if isinstance(match, qmodels.MatchText):
+            return _provider_prefix_match(
+                payload.get(condition.key, ""), match.text)
+        return payload.get(condition.key) == match.value
 
 
 def make_index_record(**overrides):
@@ -946,6 +976,9 @@ def make_index_record(**overrides):
         document_version="v1",
         embedding_model=MODEL,
         embedding_dimensions=DIMS,
+        content_scope="tenant",
+        regulatory_requirement_id=None,
+        publication_fingerprint=None,
         embedding_vector=[1.0, 0.0, 0.0, 0.0],
     )
     base.update(overrides)
@@ -980,10 +1013,15 @@ class TestQdrantLexicalTranslation(AdapterTestCase):
             ("form", "nxp"), tenant_id=self.tenant, top_k=5,
             scope=EvidenceRetrievalScope(source_id=SRC_A))
         must = self.client.last_scroll.must
-        self.assertEqual(must[0], ("tenant_id", str(TENANT_ID)))
-        self.assertEqual(must[1], ("source_id", SRC_A))
-        self.assertEqual(must[2], ("content", "form nxp"))
-        self.assertEqual(self.client.last_scroll.limit, 5)
+        self.assertEqual(must, [
+            ("source_id", SRC_A),
+            ("content", "form nxp"),
+        ])
+        self.assertEqual(
+            self.client.last_scroll.should[0],
+            ("tenant_id", str(TENANT_ID)),
+        )
+        self.assertEqual(self.client.last_scroll.limit, 20)
 
     def test_02_content_text_index_provisioned_once(self) -> None:
         self.seed(make_index_record())

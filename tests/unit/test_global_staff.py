@@ -77,6 +77,13 @@ class FakeGrants:
             (user_id, permission)
         )
 
+    def list_active_for_user(self, user_id: UUID):
+        return [
+            row
+            for (uid, _permission), row in self.active.items()
+            if uid == user_id
+        ]
+
     def lock_in_transaction(self, connection, user_id: UUID, permission: str):
         self.lock_calls += 1
         return self.active.get((user_id, permission)) or self.revoked.get(
@@ -260,6 +267,25 @@ class GlobalStaffPermissionTests(TestCase):
         service = factory.service()
         # Must not raise: actor differs from target.
         service._deny_self_managed(ACTOR, TARGET, GRANT_MANAGE, "grant")
+
+    def test_active_permissions_returns_only_recognized_active_grants(self):
+        factory = ServiceFactory(active={ACTOR, TARGET})
+        service = factory.service()
+        factory.grants.active[(TARGET, GRANT_MANAGE)] = FakeGrantRow(
+            user_id=TARGET, permission=GRANT_MANAGE
+        )
+        factory.grants.active[(TARGET, "not_a_real_permission")] = FakeGrantRow(
+            user_id=TARGET, permission="not_a_real_permission"
+        )
+        factory.grants.active[(OTHER, GRANT_MANAGE)] = FakeGrantRow(
+            user_id=OTHER, permission=GRANT_MANAGE
+        )
+        self.assertEqual(service.active_permissions(TARGET), [GRANT_MANAGE])
+
+    def test_active_permissions_is_empty_without_grants(self):
+        factory = ServiceFactory(active={ACTOR, TARGET})
+        service = factory.service()
+        self.assertEqual(service.active_permissions(TARGET), [])
 
 
 class GlobalStaffGrantOrchestrationTests(TestCase):

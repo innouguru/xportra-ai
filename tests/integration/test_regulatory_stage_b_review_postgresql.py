@@ -472,7 +472,8 @@ class RegulatoryStageBReviewIntegrationTests(unittest.TestCase):
                             NULL, 'succeeded', 'v1', FALSE, NULL, NULL,
                             %s, 'pending', NULL, NULL, NULL,
                             now(), now())
-                    RETURNING *
+                    ON CONFLICT (id) DO UPDATE
+                        SET stage_a_status = EXCLUDED.stage_a_status
                     """,
                     (
                         factory_cand_id, UUID("44444444-0000-0000-0000-000000000404"),

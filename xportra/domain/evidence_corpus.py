@@ -11,6 +11,10 @@ from uuid import NAMESPACE_URL, UUID, uuid5
 from xportra.domain.errors import DomainValidationError, require_tenant_context
 from xportra.persistence.tenant import TenantContext
 
+GLOBAL_REGULATORY_TENANT_ID = UUID(
+    "00000000-0000-0000-0000-000000000001"
+)
+
 SOURCE_TYPES = frozenset({"regulation", "guidance", "certificate", "policy", "other"})
 DOCUMENT_STATUSES = frozenset({"active", "inactive"})
 
@@ -157,5 +161,4 @@ class EvidenceDocument:
             raise
         except Exception as exc:
             raise DomainValidationError("record malformed") from exc
-
 

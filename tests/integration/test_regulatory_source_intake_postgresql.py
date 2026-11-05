@@ -143,9 +143,86 @@ class RegulatorySourceIntakeIntegrationTests(unittest.TestCase):
             return
         with cls.database.transaction() as connection:
             with connection.cursor() as cursor:
+                # Clear supersession links before deleting sources
+                cursor.execute(
+                    "UPDATE xportra.regulatory_sources "
+                    "SET supersedes_source_id = NULL, superseded_by_source_id = NULL"
+                )
+                # Clean up review flags by trigger source or linked requirement
+                cursor.execute(
+                    "DELETE FROM xportra.regulatory_review_flags "
+                    "WHERE trigger_source_id IN "
+                    "(SELECT id FROM xportra.regulatory_sources "
+                    "WHERE authority_id = %s)",
+                    (AUTHORITY_ID,),
+                )
+                cursor.execute(
+                    "DELETE FROM xportra.regulatory_review_flags "
+                    "WHERE requirement_id IN "
+                    "(SELECT id FROM xportra.regulatory_requirements "
+                    "WHERE source_id IN "
+                    "(SELECT id FROM xportra.regulatory_sources "
+                    "WHERE authority_id = %s))",
+                    (AUTHORITY_ID,),
+                )
+                # Clean up normalization records linked to fixture-owned artifacts
+                cursor.execute(
+                    "DELETE FROM xportra.regulatory_document_normalizations "
+                    "WHERE artifact_id IN "
+                    "(SELECT id FROM xportra.regulatory_source_artifacts "
+                    "WHERE source_id IN "
+                    "(SELECT id FROM xportra.regulatory_sources "
+                    "WHERE authority_id = %s))",
+                    (AUTHORITY_ID,),
+                )
+                # Clean up ingestion jobs linked to fixture-owned sources
+                cursor.execute(
+                    "DELETE FROM xportra.regulatory_ingestion_jobs "
+                    "WHERE source_id IN "
+                    "(SELECT id FROM xportra.regulatory_sources "
+                    "WHERE authority_id = %s)",
+                    (AUTHORITY_ID,),
+                )
+                # Clean up artifacts linked to fixture-owned sources
+                cursor.execute(
+                    "DELETE FROM xportra.regulatory_source_artifacts "
+                    "WHERE source_id IN "
+                    "(SELECT id FROM xportra.regulatory_sources "
+                    "WHERE authority_id = %s)",
+                    (AUTHORITY_ID,),
+                )
+                # Clean up requirements linked to fixture-owned sources.
+                # regulatory_stage_a_reviews is append-only, so only delete
+                # requirements that have no stage_a_review rows.
+                cursor.execute(
+                    "DELETE FROM xportra.regulatory_requirements "
+                    "WHERE source_id IN "
+                    "(SELECT id FROM xportra.regulatory_sources "
+                    "WHERE authority_id = %s)"
+                    " AND id NOT IN (SELECT requirement_id FROM xportra.regulatory_stage_a_reviews)",
+                    (AUTHORITY_ID,),
+                )
+                # Delete sources (dependents already removed)
+                cursor.execute(
+                    "DELETE FROM xportra.regulatory_sources "
+                    "WHERE authority_id = %s",
+                    (AUTHORITY_ID,),
+                )
+                # Delete the authority last (RESTRICT FK from sources)
                 cursor.execute(
                     "DELETE FROM xportra.authorities WHERE id = %s",
                     (AUTHORITY_ID,),
+                )
+                # Clean up grant/user fixtures for this actor
+                cursor.execute(
+                    "DELETE FROM xportra.global_staff_grants "
+                    "WHERE user_id IN "
+                    "(SELECT id FROM xportra.users WHERE supabase_uid = %s)",
+                    (ACTOR_SUBJECT,),
+                )
+                cursor.execute(
+                    "DELETE FROM xportra.users WHERE supabase_uid = %s",
+                    (ACTOR_SUBJECT,),
                 )
 
     def setUp(self):
@@ -163,11 +240,24 @@ class RegulatorySourceIntakeIntegrationTests(unittest.TestCase):
     def _fixture_authority(self):
         authority_repo = AuthorityRepository(self.database)
         existing = authority_repo.get(AUTHORITY_ID)
-        if existing is None:
-            # Try to find by name/jurisdiction in case it was created
-            # by another test class with the same name/jurisdiction
-            with self.database.connection() as connection:
-                with connection.cursor() as cursor:
+        if existing is not None:
+            return
+        with self.database.connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO xportra.authorities
+                        (id, name, jurisdiction, authority_type, status)
+                    VALUES (%s, %s, %s, 'government', 'active')
+                    ON CONFLICT (name, jurisdiction) DO NOTHING
+                    RETURNING id
+                    """,
+                    (AUTHORITY_ID, "Test Authority", "EU"),
+                )
+                row = cursor.fetchone()
+                if row is None:
+                    # Authority with same name/jurisdiction already exists
+                    # (e.g. left over from another test class); adopt its id.
                     cursor.execute(
                         """
                         SELECT id FROM xportra.authorities
@@ -178,19 +268,7 @@ class RegulatorySourceIntakeIntegrationTests(unittest.TestCase):
                     )
                     row = cursor.fetchone()
                     if row is not None:
-                        # Use existing authority id
                         globals()['AUTHORITY_ID'] = row['id']
-                        return
-                    # Create new authority
-                    cursor.execute(
-                        """
-                        INSERT INTO xportra.authorities
-                            (id, name, jurisdiction, authority_type, status)
-                        VALUES (%s, %s, %s, 'government', 'active')
-                        RETURNING *
-                        """,
-                        (AUTHORITY_ID, "Test Authority", "EU"),
-                    )
 
     def _fixture_user_with_grant(self):
         user_repo = UserRepository(self.database)
@@ -582,9 +660,12 @@ class RegulatorySupersessionIntegrationTests(unittest.TestCase):
                     "UPDATE xportra.regulatory_sources "
                     "SET supersedes_source_id = NULL, superseded_by_source_id = NULL",
                 )
-                # Clean up requirements linked to fixture-owned sources (before normalization delete)
+                # Clean up requirements linked to fixture-owned sources.
+                # regulatory_stage_a_reviews is append-only, so only delete
+                # requirements that have no stage_a_review rows.
                 cursor.execute(
-                    "DELETE FROM xportra.regulatory_requirements WHERE source_id IN (SELECT id FROM xportra.regulatory_sources WHERE authority_id = %s)",
+                    "DELETE FROM xportra.regulatory_requirements WHERE source_id IN (SELECT id FROM xportra.regulatory_sources WHERE authority_id = %s)"
+                    " AND id NOT IN (SELECT requirement_id FROM xportra.regulatory_stage_a_reviews)",
                     (AUTHORITY_ID,),
                 )
                 # Clean up review flags by trigger source or linked requirement
@@ -596,14 +677,15 @@ class RegulatorySupersessionIntegrationTests(unittest.TestCase):
                     "DELETE FROM xportra.regulatory_review_flags WHERE requirement_id IN (SELECT id FROM xportra.regulatory_requirements WHERE source_id IN (SELECT id FROM xportra.regulatory_sources WHERE authority_id = %s))",
                     (AUTHORITY_ID,),
                 )
-                # Clean up normalization records (after requirements deleted)
+                # Clean up normalization records linked to fixture-owned artifacts
                 cursor.execute(
-                    "DELETE FROM xportra.regulatory_document_normalizations WHERE id = %s",
-                    (UUID("77777777-0000-0000-0000-000000000700"),),
-                )
-                cursor.execute(
-                    "UPDATE xportra.regulatory_sources "
-                    "SET supersedes_source_id = NULL, superseded_by_source_id = NULL",
+                    "DELETE FROM xportra.regulatory_document_normalizations "
+                    "WHERE artifact_id IN "
+                    "(SELECT id FROM xportra.regulatory_source_artifacts "
+                    "WHERE source_id IN "
+                    "(SELECT id FROM xportra.regulatory_sources "
+                    "WHERE authority_id = %s))",
+                    (AUTHORITY_ID,),
                 )
                 cursor.execute(
                     "DELETE FROM xportra.regulatory_source_artifacts "

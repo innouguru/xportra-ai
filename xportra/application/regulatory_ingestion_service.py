@@ -7,6 +7,7 @@ service creates durable records that a future worker would claim.
 """
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -71,23 +72,13 @@ class RegulatoryIngestionService:
         if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
             from xportra.api.errors import PermissionDeniedError
             raise PermissionDeniedError()
-        return self._job_repo.claim(job_id, actor_user_id)
+        return self._job_repo.claim(job_id)
 
-    def complete_job(self, job_id: UUID, actor_user_id: UUID | None = None) -> Any:
-        if actor_user_id is None:
-            from xportra.api.errors import PermissionDeniedError
-            raise PermissionDeniedError()
-        if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
-            from xportra.api.errors import PermissionDeniedError
-            raise PermissionDeniedError()
-        return self._job_repo.complete(job_id, actor_user_id)
-
-    def fail_job(
+    def complete_job(
         self,
         job_id: UUID,
-        error_details: str | None = None,
-        make_retryable: bool = False,
         actor_user_id: UUID | None = None,
+        claim_started_at: datetime | None = None,
     ) -> Any:
         if actor_user_id is None:
             from xportra.api.errors import PermissionDeniedError
@@ -95,11 +86,37 @@ class RegulatoryIngestionService:
         if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
             from xportra.api.errors import PermissionDeniedError
             raise PermissionDeniedError()
+        if claim_started_at is None:
+            raise ApplicationValidationError(
+                "claim ownership is required to complete an ingestion job"
+            )
+        return self._job_repo.complete(
+            job_id, claim_started_at
+        )
+
+    def fail_job(
+        self,
+        job_id: UUID,
+        error_details: str | None = None,
+        make_retryable: bool = False,
+        actor_user_id: UUID | None = None,
+        claim_started_at: datetime | None = None,
+    ) -> Any:
+        if actor_user_id is None:
+            from xportra.api.errors import PermissionDeniedError
+            raise PermissionDeniedError()
+        if not self._grant_service.is_granted(actor_user_id, GRANT_MANAGE):
+            from xportra.api.errors import PermissionDeniedError
+            raise PermissionDeniedError()
+        if claim_started_at is None:
+            raise ApplicationValidationError(
+                "claim ownership is required to fail an ingestion job"
+            )
         return self._job_repo.fail(
             job_id,
             error_details=error_details,
             make_retryable=make_retryable,
-            actor_user_id=actor_user_id,
+            claim_started_at=claim_started_at,
         )
 
     def retry_job(self, job_id: UUID, actor_user_id: UUID) -> Any:

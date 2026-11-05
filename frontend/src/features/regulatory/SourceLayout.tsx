@@ -83,8 +83,8 @@ export function SourceLayout() {
         setError(null);
       } catch (caught) {
         if (token !== loadTokenRef.current) return;
-        // A failed background refresh keeps the last known data on screen.
-        if (!silent) setError(caught);
+        // Keep the last known snapshot but mark it stale after any failed refresh.
+        setError(caught);
       } finally {
         if (!silent && token === loadTokenRef.current) setLoading(false);
       }
@@ -141,7 +141,7 @@ export function SourceLayout() {
     : [];
 
   const context: SourceContextValue | null = data
-    ? { auth, sourceId, ...data, loading, reload }
+    ? { auth, sourceId, ...data, loading, refreshError: error, reload }
     : null;
 
   return (

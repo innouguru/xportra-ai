@@ -75,6 +75,11 @@ class RegulatoryStageAReviewService:
         if row is None:
             return None
         provenance = self._requirement_repo.get_with_provenance(candidate_id)
+        extraction_history = (
+            self._requirement_repo.list_extraction_runs_for_candidate(
+                candidate_id
+            )
+        )
         result = {
             "id": row["id"],
             "source_id": row.get("source_id"),
@@ -96,8 +101,20 @@ class RegulatoryStageAReviewService:
             "source_version": provenance.get("source_version") if provenance else None,
             "source_status": provenance.get("source_status") if provenance else None,
             "source_authority_id": provenance.get("source_authority_id") if provenance else None,
+            "normalized_document_id": row.get("normalized_document_id"),
+            "document_parser_name": (
+                provenance.get("document_parser_name")
+                if provenance else None
+            ),
             "artifact_uri": provenance.get("artifact_uri") if provenance else None,
             "artifact_content_hash": provenance.get("artifact_content_hash") if provenance else None,
+            "artifact_source_version": (
+                provenance.get("artifact_source_version")
+                if provenance else None
+            ),
+            "artifact_status": (
+                provenance.get("artifact_status") if provenance else None
+            ),
             "artifact_content_length": provenance.get("artifact_content_length") if provenance else None,
             "artifact_content_type": provenance.get("artifact_content_type") if provenance else None,
             "artifact_acquisition_channel": provenance.get("artifact_acquisition_channel") if provenance else None,
@@ -105,6 +122,7 @@ class RegulatoryStageAReviewService:
             "ingestion_job_status": provenance.get("ingestion_job_status") if provenance else None,
             "ingestion_job_error_details": provenance.get("ingestion_job_error_details") if provenance else None,
             "ingestion_job_parser_version": provenance.get("ingestion_job_parser_version") if provenance else None,
+            "extraction_history": extraction_history,
         }
         return result
 

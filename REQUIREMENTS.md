@@ -864,10 +864,13 @@ and server-controlled registration boundaries.
 ## R-4D: Regulatory Knowledge Administration — Proposed; Planning Authorized Only
 
 **Status:** Proposed functional scope. The product owner accepted ADR-0017
-as the basis for implementation planning only on 2026-10-20. This section
-does not authorize implementation or exporter-facing publication. Remaining
-technical decisions and qualified product/legal gates must be resolved
-before affected implementation tasks are authorized. See
+as the basis for implementation planning only on 2026-10-20. An explicit
+Workstream 5 assignment on 2026-11-05 supersedes that gate only for the
+scoped publication-indexing and global-plus-tenant retrieval work recorded
+in `ACTIVE_TASK.md` and ADR-0025; it does not authorize other proposed R-4D
+implementation or deployment. Remaining technical decisions and qualified
+product/legal gates must be resolved before other affected implementation
+tasks are authorized. See
 `docs/phases/phase-4d-regulatory-knowledge-administration.md` and proposed
 `docs/decisions/ADR-0017-regulatory-knowledge-administration.md`. Initial
 source research for a proposed sesame-to-EU pilot is recorded in

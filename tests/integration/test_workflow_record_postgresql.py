@@ -21,12 +21,12 @@ import json
 import os
 import pathlib
 import unittest
-from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi.testclient import TestClient
 
 from xportra.api.app import create_app
+from xportra.api.dependencies import ApplicationServices
 from xportra.application.result_store import ComplianceResultStore
 from xportra.domain.answer_validation import CitationAwareAnswerValidator
 from xportra.domain.evidence_context import (
@@ -53,6 +53,7 @@ from xportra.persistence.repositories import (
     ComplianceWorkflowRepository,
     ComplianceWorkflowRoundRepository,
     FinalAssessmentPackageRepository,
+    ShipmentRepository,
     TenantRepository,
 )
 from xportra.persistence.tenant import TenantContext
@@ -62,6 +63,8 @@ MIGRATIONS = (
 )
 UP = MIGRATIONS / "012_compliance_workflows.sql"
 DOWN = MIGRATIONS / "012_compliance_workflows.down.sql"
+UP_013 = MIGRATIONS / "013_shipments.sql"
+DOWN_013 = MIGRATIONS / "013_shipments.down.sql"
 
 TENANT_A_SLUG = "workflow-record-integration-a"
 TENANT_B_SLUG = "workflow-record-integration-b"
@@ -211,10 +214,19 @@ class WorkflowRecordPostgreSQLTests(unittest.TestCase):
 
         cls.database = Database(DatabaseSettings.from_environment())
         apply_migration(cls.database, UP)
+        apply_migration(cls.database, UP_013)
         if not table_exists(cls.database, "compliance_workflows"):
             raise unittest.SkipTest(
                 "migration 012 table compliance_workflows was "
                 "not created")
+
+        # Clean up any leftover fixture tenants from interrupted runs.
+        with cls.database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM xportra.tenants WHERE slug IN (%s, %s)",
+                    (TENANT_A_SLUG, TENANT_B_SLUG),
+                )
 
         tenants = TenantRepository(cls.database)
         tenant_a = tenants.create(
@@ -237,10 +249,20 @@ class WorkflowRecordPostgreSQLTests(unittest.TestCase):
             workflows=ComplianceWorkflowRepository(cls.database),
         )
         cls.workflows = ComplianceWorkflowRepository(cls.database)
-        cls.client = TestClient(create_app(services=SimpleNamespace(
-            rag=FakeRAGService(cls.tenant_a.tenant_id),
-            result_store=cls.store,
-        )))
+        # Create the shipment referenced by workflow tests.
+        shipments = ShipmentRepository(cls.database)
+        with cls.database.transaction() as connection:
+            shipments.create_in_transaction(
+                connection, cls.tenant_a, SHIPMENT_ID,
+                CASE_ID, "Cocoa beans", "Nigeria",
+                "Netherlands", "20", "tonnes", "2026-11-01",
+                "bound")
+        services = ApplicationServices.from_environment()
+        object.__setattr__(services, 'rag',
+                           FakeRAGService(cls.tenant_a.tenant_id))
+        app = create_app(services=services)
+        app.state.services = services
+        cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
@@ -248,6 +270,7 @@ class WorkflowRecordPostgreSQLTests(unittest.TestCase):
             return
         try:
             apply_migration(cls.database, DOWN)
+            apply_migration(cls.database, DOWN_013)
             if table_exists(cls.database, "compliance_workflows"):
                 raise AssertionError(
                     "rollback left compliance_workflows behind")

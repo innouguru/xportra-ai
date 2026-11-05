@@ -19,6 +19,7 @@ from typing import Any
 from uuid import UUID
 
 from .errors import (
+    DomainNotFoundError,
     DomainValidationError,
     VectorStoreError,
     require_tenant_context,
@@ -127,6 +128,12 @@ class EvidenceIndexSyncService:
                 item.get("tenant_id") != tenant_id.tenant_id
             ):
                 raise DomainValidationError("tenant identity mismatch")
+        index_metadata = record.get("index_metadata")
+        if index_metadata is not None:
+            if not isinstance(index_metadata, dict):
+                raise DomainValidationError("index metadata is malformed")
+            for item in indexed:
+                item["index_metadata"] = dict(index_metadata)
 
         total = len(indexed)
         indexed_chunk_ids: list[UUID] = []
@@ -149,3 +156,22 @@ class EvidenceIndexSyncService:
             "indexed_chunk_ids": indexed_chunk_ids,
             "status": "complete",
         }
+
+    def delete_chunks(
+        self,
+        chunk_ids: list[UUID] | tuple[UUID, ...],
+        *,
+        tenant_id: Any,
+    ) -> None:
+        """Delete a previously synchronized document's points."""
+        require_tenant_context(tenant_id)
+        if not isinstance(chunk_ids, (list, tuple)):
+            raise DomainValidationError("chunk identities are malformed")
+        for chunk_id in chunk_ids:
+            if not isinstance(chunk_id, UUID):
+                raise DomainValidationError("chunk identity is malformed")
+            try:
+                self._vector_index.delete(
+                    tenant_id=tenant_id, chunk_id=chunk_id)
+            except DomainNotFoundError:
+                pass

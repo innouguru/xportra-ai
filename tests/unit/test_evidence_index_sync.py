@@ -391,8 +391,7 @@ class TestInvalidInput(unittest.TestCase):
     def test_30_no_retrieval_api_introduced(self) -> None:
         public = {name for name in dir(EvidenceIndexSyncService)
                   if not name.startswith("_")}
-        self.assertEqual(public, {"sync"})
+        self.assertEqual(public, {"sync", "delete_chunks"})
         report = make_service().sync(make_document(), tenant_id=TENANT)
         self.assertEqual(report["status"], "complete")
-
 

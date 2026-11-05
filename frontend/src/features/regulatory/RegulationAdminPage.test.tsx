@@ -53,9 +53,25 @@ const FAILED_JOB = {
   completed_at: "2026-01-02T00:05:00Z",
   error_details: "simulated parser failure",
   parser_version: "v1",
+  current_stage: "failed",
+  stage_updated_at: "2026-01-02T00:04:00Z",
   actor_user_id: null,
   created_at: "2026-01-02T00:00:00Z",
   updated_at: "2026-01-02T00:05:00Z",
+};
+
+const ARTIFACT = {
+  id: FAILED_JOB.artifact_id,
+  source_id: SOURCE.id,
+  content_hash: "artifact-hash-123",
+  content_length: 128,
+  content_type: "text/plain",
+  acquisition_channel: "staff_upload",
+  acquired_at: "2026-01-02T00:00:00Z",
+  status: "available",
+  source_version: "2026-01",
+  created_at: "2026-01-02T00:00:00Z",
+  updated_at: "2026-01-02T00:00:00Z",
 };
 
 /** The new attempt row the backend returns for an authorized retry (M4). */
@@ -67,6 +83,8 @@ const RETRIED_JOB = {
   started_at: null,
   completed_at: null,
   error_details: null,
+  current_stage: "queued",
+  stage_updated_at: "2026-01-06T00:00:00Z",
   updated_at: "2026-01-06T00:00:00Z",
 };
 
@@ -86,7 +104,14 @@ const CANDIDATE = {
   normalized_document_id: null,
   requirement_text: "All cocoa exports require a phytosanitary certificate.",
   requirement_type: "documentation",
-  source_location: { page: 2 },
+  source_location: {
+    page_reference: 2,
+    supporting_quote: "All cocoa exports require a phytosanitary certificate.",
+    reference_status: {
+      page: "verified",
+      section: "not_returned_by_model",
+    },
+  },
   position: 1,
   actor: "exporter",
   status: "extracted",
@@ -96,8 +121,93 @@ const CANDIDATE = {
   reviewer_user_id: null,
   reviewed_at: null,
   ingestion_job_id: FAILED_JOB.id,
+  source_title: SOURCE.title,
+  source_jurisdiction: SOURCE.jurisdiction,
+  artifact_source_version: ARTIFACT.source_version,
+  artifact_content_hash: ARTIFACT.content_hash,
+  document_parser_name: "plain-text-v1",
+  extraction_history: [
+    {
+      extraction_run_id: "94949494-9494-4949-9494-949494949494",
+      normalized_document_id: "95959595-9595-4959-9595-959595959595",
+      artifact_id: ARTIFACT.id,
+      source_id: SOURCE.id,
+      ingestion_job_id: FAILED_JOB.id,
+      artifact_content_hash: ARTIFACT.content_hash,
+      artifact_source_version: ARTIFACT.source_version,
+      normalized_text_sha256: "a".repeat(64),
+      parser_version: "v1",
+      extraction_method: "llm_semantic_chunked",
+      extraction_version: "v1",
+      prompt_version: "requirements-v1",
+      configured_model_identifier: "model-id",
+      model_identifiers: ["model-id"],
+      provider_names: ["provider-name"],
+      outcome: "partial",
+      failed_chunks: [{ reason: "provider_unavailable" }],
+      rejected_candidate_count: 1,
+      started_at: "2026-01-02T00:01:00Z",
+      completed_at: "2026-01-02T00:02:00Z",
+      candidate_index: 0,
+      evidence_snapshot: {
+        source_location: {
+          supporting_quote:
+            "All cocoa exports require a phytosanitary certificate.",
+          page_reference: 2,
+          reference_status: {
+            page: "verified",
+            section: "not_returned_by_model",
+          },
+        },
+      },
+      resolution_status: "persisted",
+      is_origin: true,
+    },
+  ],
   created_at: "2026-01-03T00:00:00Z",
   updated_at: "2026-01-03T00:00:00Z",
+};
+
+const JOB_EXTRACTION_HISTORY = {
+  job_id: FAILED_JOB.id,
+  items: [
+    {
+      extraction_run_id: "94949494-9494-4949-9494-949494949494",
+      normalized_document_id: "95959595-9595-4959-9595-959595959595",
+      artifact_id: ARTIFACT.id,
+      source_id: SOURCE.id,
+      ingestion_job_id: FAILED_JOB.id,
+      artifact_content_hash: ARTIFACT.content_hash,
+      artifact_source_version: ARTIFACT.source_version,
+      normalized_text_sha256: "a".repeat(64),
+      parser_version: "v1",
+      extraction_method: "llm_semantic_chunked",
+      extraction_version: "v1",
+      prompt_version: "requirements-v1",
+      configured_model_identifier: "model-id",
+      model_identifiers: ["model-id"],
+      provider_names: ["provider-name"],
+      outcome: "partial",
+      failed_chunks: [{ reason: "provider_unavailable" }],
+      rejected_candidate_count: 1,
+      started_at: "2026-01-02T00:01:00Z",
+      completed_at: "2026-01-02T00:02:00Z",
+      candidate_count: 1,
+      persisted_candidate_count: 1,
+      candidates: [
+        {
+          candidate_index: 0,
+          candidate_id: CANDIDATE.id,
+          evidence_snapshot: {
+            requirement_text: CANDIDATE.requirement_text,
+            source_location: CANDIDATE.source_location,
+          },
+          resolution_status: "persisted",
+          is_origin: true,
+        },
+      ],
+    },
+  ],
 };
 
 const PENDING_FLAG = {
@@ -170,6 +280,9 @@ const AUTHORITY_B = {
 function stubRegulatoryBackend(options: {
   listStatus?: number;
   listBody?: unknown;
+  artifactsBody?: unknown;
+  jobsBody?: unknown;
+  extractionHistoryBody?: unknown;
 }) {
   return vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
     const url = typeof input === "string" ? input : input.url;
@@ -190,10 +303,17 @@ function stubRegulatoryBackend(options: {
       return respond(options.listBody ?? { items: [SOURCE], total: 1 }, status);
     }
     if (/\/regulatory\/sources\/[^/]+\/artifacts$/.test(url)) {
-      return respond({ items: [], limit: 50, offset: 0, total: 0 });
+      const body = options.artifactsBody ?? { items: [], limit: 50, offset: 0, total: 0 };
+      return respond(body);
     }
     if (/\/regulatory\/sources\/[^/]+\/ingestion-jobs$/.test(url)) {
-      return respond({ items: [FAILED_JOB], limit: 50, offset: 0, total: 1 });
+      const body = options.jobsBody ?? { items: [FAILED_JOB], limit: 50, offset: 0, total: 1 };
+      return respond(body);
+    }
+    if (/\/regulatory\/ingestion-jobs\/[^/]+\/extraction-history$/.test(url)) {
+      return respond(
+        options.extractionHistoryBody ?? { job_id: FAILED_JOB.id, items: [] },
+      );
     }
     if (/\/regulatory\/sources\/[^/]+\/candidates$/.test(url)) {
       return respond({ items: [CANDIDATE], limit: 50, offset: 0, total: 1 });
@@ -349,6 +469,119 @@ describe("RegulationAdminPage", () => {
     expect(await screen.findByText("Supersedes (as recorded)")).toBeTruthy();
   });
 
+  it("shows recorded stage progress and lets staff inspect a job's extraction evidence", async () => {
+    const processingJob = {
+      ...FAILED_JOB,
+      id: "56565656-5656-4656-8656-565656565656",
+      status: "processing",
+      current_stage: "extracting_requirements",
+      stage_updated_at: "2026-01-02T00:03:00Z",
+      completed_at: null,
+      error_details: null,
+    };
+    const fetchStub = stubRegulatoryBackend({
+      artifactsBody: { items: [ARTIFACT], limit: 50, offset: 0, total: 1 },
+      jobsBody: { items: [processingJob], limit: 50, offset: 0, total: 1 },
+      extractionHistoryBody: {
+        ...JOB_EXTRACTION_HISTORY,
+        job_id: processingJob.id,
+      },
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await openSource(user);
+    await openTab(user, "Ingestion");
+
+    expect(await screen.findByText("Extracting requirements")).toBeTruthy();
+    expect(screen.getByText("processing")).toBeTruthy();
+    expect(screen.getByText(/2026-01/)).toBeTruthy();
+    expect(screen.queryByText(/% complete/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "Inspect job" }));
+    expect(await screen.findByText("provider_unavailable")).toBeTruthy();
+    expect(screen.getByText("model-id")).toBeTruthy();
+    expect(
+      screen.getAllByText(
+        "All cocoa exports require a phytosanitary certificate.",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByText("Not returned by model")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Inspect candidate and full provenance" }),
+    ).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Refresh jobs" }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Hide job details" }),
+      ).toBeTruthy();
+    });
+    expect(screen.getByText("Extracting requirements")).toBeTruthy();
+  });
+
+  it("shows a successful empty extraction as zero candidates", async () => {
+    const emptyRun = {
+      ...JOB_EXTRACTION_HISTORY.items[0],
+      outcome: "succeeded",
+      candidate_count: 0,
+      persisted_candidate_count: 0,
+      rejected_candidate_count: 0,
+      failed_chunks: [],
+      candidates: [],
+    };
+    const fetchStub = stubRegulatoryBackend({
+      extractionHistoryBody: {
+        job_id: FAILED_JOB.id,
+        items: [emptyRun],
+      },
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await openSource(user);
+    await openTab(user, "Ingestion");
+    await user.click(screen.getByRole("button", { name: "Inspect job" }));
+
+    expect(await screen.findByText("succeeded")).toBeTruthy();
+    expect(screen.getByText(/0 candidate snapshots recorded/)).toBeTruthy();
+    expect(
+      screen.getByText("This persisted run contains no candidate snapshots."),
+    ).toBeTruthy();
+  });
+
+  it("marks the last loaded job snapshot as stale when refresh fails", async () => {
+    const jobsUrl = `/regulatory/sources/${SOURCE.id}/ingestion-jobs`;
+    const backend = stubRegulatoryBackend({});
+    let jobListCalls = 0;
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.url;
+      if (String(url).endsWith(jobsUrl)) {
+        jobListCalls += 1;
+        if (jobListCalls > 1) {
+          return new Response(
+            JSON.stringify({
+              error: { code: "unexpected_error", message: "Refresh unavailable." },
+            }),
+            { status: 503, headers: { "Content-Type": "application/json" } },
+          );
+        }
+      }
+      return backend(input, init);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await openSource(user);
+    await openTab(user, "Ingestion");
+    await user.click(screen.getByRole("button", { name: "Refresh jobs" }));
+
+    expect(
+      await screen.findByText(/last successfully loaded snapshot and may be stale/i),
+    ).toBeTruthy();
+    expect(screen.getByText("failed")).toBeTruthy();
+  });
+
   it("opens candidate review with Stage A and Stage B as distinct actions", async () => {
     const fetchStub = stubRegulatoryBackend({});
     vi.stubGlobal("fetch", fetchStub);
@@ -366,6 +599,33 @@ describe("RegulationAdminPage", () => {
     expect(
       screen.getByRole("button", { name: "Record Stage B approval" }),
     ).toBeTruthy();
+  });
+
+  it("shows exact candidate evidence, reference status, and extraction provenance", async () => {
+    vi.stubGlobal("fetch", stubRegulatoryBackend({}));
+    const user = userEvent.setup();
+    renderAdmin();
+    await openCandidateReview(user);
+
+    expect(
+      (await screen.findAllByText(CANDIDATE.requirement_text)).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getAllByText(
+        "All cocoa exports require a phytosanitary certificate.",
+      ).length,
+    ).toBeGreaterThan(0);
+    for (const text of [
+      "2 · verified against supplied source context",
+      "Not returned by the model",
+      "2026-01",
+      "artifact-hash-123",
+      "llm_semantic_chunked / v1",
+      "model-id",
+      "provider_unavailable",
+    ]) {
+      expect(screen.getAllByText(text).length).toBeGreaterThan(0);
+    }
   });
 
   it("displays the pending governance flag and states it cannot be bypassed", async () => {
@@ -1384,8 +1644,11 @@ describe("RegulationAdminPage", () => {
     // The success message reports the new attempt as recorded, never
     // as already ingested — the worker still has to process it.
     expect(
-      await screen.findByText(/Retry recorded: a new ingestion attempt \(2\)/),
+      await screen.findByText(/Retry recorded as attempt 2/),
     ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Retry failed job" }),
+    ).toBeNull();
     await waitFor(() => {
       const jobsCallsAfter = fetchStub.mock.calls.filter(([url]) =>
         String(url).endsWith(`/regulatory/sources/${SOURCE.id}/ingestion-jobs`),
@@ -1426,6 +1689,33 @@ describe("RegulationAdminPage", () => {
     expect(
       fetchStub.mock.calls.some(([url]) => String(url).endsWith(jobsUrl)),
     ).toBe(true);
+    expect(screen.queryByRole("button", { name: "Retry failed job" })).toBeNull();
+  });
+
+  it("does not offer retry for an older failed attempt after a later attempt exists", async () => {
+    const jobsUrl = `/regulatory/sources/${SOURCE.id}/ingestion-jobs`;
+    const fetchStub = vi.fn(async (input: string | Request, init?: RequestInit): Promise<Response> => {
+      const url = typeof input === "string" ? input : input.url;
+      if (String(url).endsWith(jobsUrl)) {
+        return new Response(
+          JSON.stringify({
+            items: [FAILED_JOB, RETRIED_JOB],
+            limit: 50,
+            offset: 0,
+            total: 2,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return stubRegulatoryBackend({})(input, init);
+    });
+    vi.stubGlobal("fetch", fetchStub);
+    const user = userEvent.setup();
+    renderAdmin();
+    await openSource(user);
+    await openTab(user, "Ingestion");
+
+    expect(await screen.findByText("failed")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Retry failed job" })).toBeNull();
   });
 

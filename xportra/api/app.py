@@ -105,7 +105,22 @@ def create_app(services: ApplicationServices | None = None) -> FastAPI:
             from xportra.persistence.database import Database
             db_for_worker = getattr(application.state.services, "database", None)
             if db_for_worker is not None:
-                worker = RegulatoryIngestionWorker(db_for_worker)
+                worker = RegulatoryIngestionWorker(
+                    db_for_worker,
+                    publication_indexer=getattr(
+                        application.state.services,
+                        "regulatory_publication_indexer",
+                        None,
+                    ),
+                    llm_client=getattr(
+                        application.state.services, "llm_client", None
+                    ),
+                    llm_configuration=getattr(
+                        application.state.services,
+                        "llm_generation_config",
+                        None,
+                    ),
+                )
                 skip_reason = worker.startup_skip_reason()
                 if skip_reason is None:
                     worker.start()
@@ -134,6 +149,12 @@ def create_app(services: ApplicationServices | None = None) -> FastAPI:
                 worker.stop()
             except Exception:  # noqa: BLE001
                 pass
+        llm_client = getattr(
+            application.state.services, "llm_client", None
+        )
+        close_llm_client = getattr(llm_client, "close", None)
+        if callable(close_llm_client):
+            close_llm_client()
 
     application = FastAPI(
         title="Xportra AI API",

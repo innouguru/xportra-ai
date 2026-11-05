@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import logging
 
@@ -782,12 +782,9 @@ class RegulatoryRequirementRepository:
     def __init__(self, database: Database) -> None:
         self._database = database
 
-    def create(self, **values: Any) -> Row:
+    def _create(self, values: dict[str, Any], connection=None) -> Row:
         condition_metadata = values.get("condition_metadata")
-        return _insert(
-            self._database,
-            "regulatory requirement creation",
-            """
+        statement = """
             INSERT INTO xportra.regulatory_requirements
                 (id, normalized_document_id, requirement_text, requirement_type,
                  source_location, position, actor, condition_metadata, status,
@@ -800,34 +797,251 @@ class RegulatoryRequirementRepository:
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
+            """
+        parameters = (
+            values["id"],
+            values["normalized_document_id"],
+            values["requirement_text"],
+            values["requirement_type"],
+            Jsonb(values["source_location"]),
+            values["position"],
+            values.get("actor"),
+            Jsonb(condition_metadata) if condition_metadata is not None else None,
+            values["status"],
+            values.get("ingestion_job_id"),
+            values.get("extraction_outcome", "succeeded"),
+            values.get("parser_version"),
+            values.get("manual_entry", False),
+            values.get("reviewer_user_id"),
+            values.get("reviewed_at"),
+            values.get("source_id"),
+            values.get("stage_a_status", "pending"),
+            values.get("stage_a_reviewer_user_id"),
+            values.get("stage_a_reviewed_at"),
+            values.get("stage_a_rationale"),
+            values.get("stage_b_status", "pending"),
+            values.get("stage_b_reviewer_user_id"),
+            values.get("stage_b_reviewed_at"),
+            values.get("stage_b_rationale"),
+            values.get("stage_b_pilot_scope"),
+        )
+        if connection is not None:
+            return _insert_in_transaction(
+                connection,
+                "regulatory requirement creation",
+                statement,
+                parameters,
+            )
+        return _insert(
+            self._database,
+            "regulatory requirement creation",
+            statement,
+            parameters,
+        )
+
+    def create(self, **values: Any) -> Row:
+        return self._create(values)
+
+    def create_with_extraction_run_candidate(
+        self,
+        *,
+        extraction_run_id: UUID,
+        candidate_index: int,
+        values: dict[str, Any],
+    ) -> Row:
+        """Insert a candidate and resolve its origin evidence atomically."""
+        with self._database.transaction() as connection:
+            candidate = self._create(values, connection=connection)
+            _insert_in_transaction(
+                connection,
+                "regulatory extraction run candidate resolution",
+                """
+                UPDATE xportra.regulatory_requirement_extraction_run_candidates
+                SET candidate_id = %s,
+                    resolution_status = 'persisted',
+                    is_origin = TRUE
+                WHERE extraction_run_id = %s
+                  AND candidate_index = %s
+                  AND resolution_status = 'pending'
+                RETURNING *
+                """,
+                (candidate["id"], extraction_run_id, candidate_index),
+            )
+            return candidate
+
+    def mark_extraction_succeeded(self, requirement_id: UUID) -> Row | None:
+        """Upgrade an unreviewed partial candidate after a complete retry."""
+        return _insert(
+            self._database,
+            "regulatory requirement extraction outcome update",
+            """
+            UPDATE xportra.regulatory_requirements
+            SET extraction_outcome = 'succeeded',
+                updated_at = now()
+            WHERE id = %s
+              AND extraction_outcome = 'partial'
+              AND manual_entry = FALSE
+              AND status = 'extracted'
+              AND stage_a_status = 'pending'
+              AND stage_b_status = 'pending'
+            RETURNING *
+            """,
+            (requirement_id,),
+        )
+
+    def create_extraction_run(self, **values: Any) -> Row:
+        return _insert(
+            self._database,
+            "regulatory requirement extraction run creation",
+            """
+            INSERT INTO xportra.regulatory_requirement_extraction_runs
+                (id, normalized_document_id, artifact_id, source_id,
+                 ingestion_job_id, artifact_content_hash,
+                 artifact_source_version, normalized_text_sha256, parser_version,
+                 extraction_method, extraction_version, prompt_version,
+                 configured_model_identifier, model_identifiers, provider_names,
+                 outcome, failed_chunks, rejected_candidate_count,
+                 started_at, completed_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING *
             """,
             (
                 values["id"],
                 values["normalized_document_id"],
-                values["requirement_text"],
-                values["requirement_type"],
-                Jsonb(values["source_location"]),
-                values["position"],
-                values.get("actor"),
-                Jsonb(condition_metadata) if condition_metadata is not None else None,
-                values["status"],
-                values.get("ingestion_job_id"),
-                values.get("extraction_outcome", "succeeded"),
-                values.get("parser_version"),
-                values.get("manual_entry", False),
-                values.get("reviewer_user_id"),
-                values.get("reviewed_at"),
-                values.get("source_id"),
-                values.get("stage_a_status", "pending"),
-                values.get("stage_a_reviewer_user_id"),
-                values.get("stage_a_reviewed_at"),
-                values.get("stage_a_rationale"),
-                values.get("stage_b_status", "pending"),
-                values.get("stage_b_reviewer_user_id"),
-                values.get("stage_b_reviewed_at"),
-                values.get("stage_b_rationale"),
-                values.get("stage_b_pilot_scope"),
+                values["artifact_id"],
+                values["source_id"],
+                values["ingestion_job_id"],
+                values["artifact_content_hash"],
+                values.get("artifact_source_version"),
+                values["normalized_text_sha256"],
+                values["parser_version"],
+                values["extraction_method"],
+                values["extraction_version"],
+                values.get("prompt_version"),
+                values.get("configured_model_identifier"),
+                Jsonb(values.get("model_identifiers", [])),
+                Jsonb(values.get("provider_names", [])),
+                values["outcome"],
+                Jsonb(values.get("failed_chunks", [])),
+                values.get("rejected_candidate_count", 0),
+                values["started_at"],
+                values["completed_at"],
             ),
+        )
+
+    def create_extraction_run_candidate(
+        self,
+        *,
+        extraction_run_id: UUID,
+        normalized_document_id: UUID,
+        candidate_index: int,
+        evidence_snapshot: dict[str, Any],
+    ) -> Row:
+        return _insert(
+            self._database,
+            "regulatory extraction run candidate snapshot creation",
+            """
+            INSERT INTO xportra.regulatory_requirement_extraction_run_candidates
+                (extraction_run_id, normalized_document_id, candidate_index,
+                 evidence_snapshot)
+            VALUES (%s, %s, %s, %s)
+            RETURNING *
+            """,
+            (
+                extraction_run_id,
+                normalized_document_id,
+                candidate_index,
+                Jsonb(evidence_snapshot),
+            ),
+        )
+
+    def resolve_extraction_run_candidate(
+        self,
+        *,
+        extraction_run_id: UUID,
+        candidate_index: int,
+        candidate_id: UUID | None,
+        resolution_status: str,
+        is_origin: bool = False,
+    ) -> Row | None:
+        return _insert(
+            self._database,
+            "regulatory extraction run candidate resolution",
+            """
+            UPDATE xportra.regulatory_requirement_extraction_run_candidates
+            SET candidate_id = %s,
+                resolution_status = %s,
+                is_origin = %s
+            WHERE extraction_run_id = %s
+              AND candidate_index = %s
+              AND resolution_status = 'pending'
+            RETURNING *
+            """,
+            (
+                candidate_id,
+                resolution_status,
+                is_origin,
+                extraction_run_id,
+                candidate_index,
+            ),
+        )
+
+    def list_extraction_runs_for_candidate(
+        self, requirement_id: UUID
+    ) -> list[Row]:
+        return _fetch_all(
+            self._database,
+            """
+            SELECT run.id AS extraction_run_id,
+                   run.normalized_document_id, run.artifact_id,
+                   run.source_id, run.ingestion_job_id,
+                   run.artifact_content_hash, run.normalized_text_sha256,
+                   run.artifact_source_version,
+                   run.parser_version, run.extraction_method,
+                   run.extraction_version, run.prompt_version,
+                   run.configured_model_identifier, run.model_identifiers,
+                   run.provider_names, run.outcome, run.failed_chunks,
+                   run.rejected_candidate_count, run.started_at,
+                   run.completed_at,
+                   link.candidate_index, link.evidence_snapshot,
+                   link.resolution_status, link.is_origin
+            FROM xportra.regulatory_requirement_extraction_run_candidates AS link
+            JOIN xportra.regulatory_requirement_extraction_runs AS run
+              ON run.id = link.extraction_run_id
+            WHERE link.candidate_id = %s
+            ORDER BY run.started_at, run.id, link.candidate_index
+            """,
+            (requirement_id,),
+        )
+
+    def list_extraction_runs_for_job(self, job_id: UUID) -> list[Row]:
+        return _fetch_all(
+            self._database,
+            """
+            SELECT run.id AS extraction_run_id,
+                   run.normalized_document_id, run.artifact_id,
+                   run.source_id, run.ingestion_job_id,
+                   run.artifact_content_hash, run.normalized_text_sha256,
+                   run.artifact_source_version,
+                   run.parser_version, run.extraction_method,
+                   run.extraction_version, run.prompt_version,
+                   run.configured_model_identifier, run.model_identifiers,
+                   run.provider_names, run.outcome, run.failed_chunks,
+                   run.rejected_candidate_count, run.started_at,
+                   run.completed_at,
+                   link.candidate_index, link.candidate_id,
+                   link.evidence_snapshot, link.resolution_status,
+                   link.is_origin
+            FROM xportra.regulatory_requirement_extraction_runs AS run
+            LEFT JOIN
+                xportra.regulatory_requirement_extraction_run_candidates
+                AS link
+              ON link.extraction_run_id = run.id
+            WHERE run.ingestion_job_id = %s
+            ORDER BY run.started_at, run.id, link.candidate_index
+            """,
+            (job_id,),
         )
 
     def get_eligible_for_publication(
@@ -872,10 +1086,32 @@ class RegulatoryRequirementRepository:
         return _fetch_all(
             self._database,
             """
-            SELECT requirement.*, document.artifact_id, document.source_id
+            SELECT requirement.*, document.artifact_id, document.source_id,
+                   document.parser_name AS document_parser_name,
+                   source.title AS source_title,
+                   source.jurisdiction AS source_jurisdiction,
+                   source.version AS source_version,
+                   source.status AS source_status,
+                   source.authority_id AS source_authority_id,
+                   artifact.artifact_uri AS artifact_uri,
+                   artifact.content_hash AS artifact_content_hash,
+                   artifact.content_length AS artifact_content_length,
+                   artifact.content_type AS artifact_content_type,
+                   artifact.acquisition_channel AS artifact_acquisition_channel,
+                   artifact.source_version AS artifact_source_version,
+                   artifact.status AS artifact_status,
+                   job.status AS ingestion_job_status,
+                   job.error_details AS ingestion_job_error_details,
+                   job.parser_version AS ingestion_job_parser_version
             FROM xportra.regulatory_requirements AS requirement
             JOIN xportra.regulatory_document_normalizations AS document
               ON document.id = requirement.normalized_document_id
+            LEFT JOIN xportra.regulatory_sources AS source
+              ON source.id = document.source_id
+            LEFT JOIN xportra.regulatory_source_artifacts AS artifact
+              ON artifact.id = document.artifact_id
+            LEFT JOIN xportra.regulatory_ingestion_jobs AS job
+              ON job.id = requirement.ingestion_job_id
             WHERE requirement.normalized_document_id = %s
             ORDER BY requirement.position, requirement.id
             """,
@@ -886,10 +1122,32 @@ class RegulatoryRequirementRepository:
         return _fetch_all(
             self._database,
             """
-            SELECT requirement.*, document.artifact_id, document.source_id
+            SELECT requirement.*, document.artifact_id, document.source_id,
+                   document.parser_name AS document_parser_name,
+                   source.title AS source_title,
+                   source.jurisdiction AS source_jurisdiction,
+                   source.version AS source_version,
+                   source.status AS source_status,
+                   source.authority_id AS source_authority_id,
+                   artifact.artifact_uri AS artifact_uri,
+                   artifact.content_hash AS artifact_content_hash,
+                   artifact.content_length AS artifact_content_length,
+                   artifact.content_type AS artifact_content_type,
+                   artifact.acquisition_channel AS artifact_acquisition_channel,
+                   artifact.source_version AS artifact_source_version,
+                   artifact.status AS artifact_status,
+                   job.status AS ingestion_job_status,
+                   job.error_details AS ingestion_job_error_details,
+                   job.parser_version AS ingestion_job_parser_version
             FROM xportra.regulatory_requirements AS requirement
             JOIN xportra.regulatory_document_normalizations AS document
               ON document.id = requirement.normalized_document_id
+            LEFT JOIN xportra.regulatory_sources AS source
+              ON source.id = document.source_id
+            LEFT JOIN xportra.regulatory_source_artifacts AS artifact
+              ON artifact.id = document.artifact_id
+            LEFT JOIN xportra.regulatory_ingestion_jobs AS job
+              ON job.id = requirement.ingestion_job_id
             WHERE requirement.source_id = %s
             ORDER BY requirement.position, requirement.id
             """,
@@ -930,6 +1188,9 @@ class RegulatoryRequirementRepository:
                    artifact.content_length AS artifact_content_length,
                    artifact.content_type AS artifact_content_type,
                    artifact.acquisition_channel AS artifact_acquisition_channel,
+                   artifact.source_version AS artifact_source_version,
+                   artifact.status AS artifact_status,
+                   document.parser_name AS document_parser_name,
                    job.id AS ingestion_job_id,
                    job.status AS ingestion_job_status,
                    job.error_details AS ingestion_job_error_details,
@@ -2554,46 +2815,69 @@ class RegulatoryIngestionJobRepository:
     def __init__(self, database) -> None:
         self._database = database
 
-    def update_stage(self, job_id, current_stage, stage_updated_at):
+    def update_stage(
+        self,
+        job_id,
+        current_stage,
+        stage_updated_at,
+        claim_started_at,
+    ):
         from psycopg.errors import IntegrityError
         from .errors import PersistenceIntegrityError
         try:
             with self._database.transaction() as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "UPDATE xportra.regulatory_ingestion_jobs SET current_stage = %s, stage_updated_at = %s WHERE id = %s RETURNING *",
-                        (current_stage, stage_updated_at, job_id),
+                        """
+                        UPDATE xportra.regulatory_ingestion_jobs
+                        SET current_stage = %s,
+                            stage_updated_at = %s,
+                            updated_at = clock_timestamp()
+                        WHERE id = %s
+                          AND status IN ('claimed', 'processing')
+                          AND started_at = %s
+                        RETURNING *
+                        """,
+                        (
+                            current_stage,
+                            stage_updated_at,
+                            job_id,
+                            claim_started_at,
+                        ),
                     )
-                    row = cursor.fetchone()
-                    if row is None:
-                        raise PersistenceIntegrityError(
-                            "regulatory ingestion job stage update",
-                            None,
-                        )
-                    return row
+                    return cursor.fetchone()
         except IntegrityError as cause:
             raise PersistenceIntegrityError("regulatory ingestion job stage update", cause) from cause
 
     def create(self, artifact_id, source_id, actor_user_id=None, audit_ref=None, parser_version="v1", attempt_number=None, status=None):
-        from .database import Database
         if status not in (None, "pending"):
             raise ValueError("ingestion jobs are always created in 'pending' state")
-        row = _insert(
+        return _insert(
             self._database,
             "regulatory ingestion job creation",
-            "INSERT INTO xportra.regulatory_ingestion_jobs (artifact_id, source_id, status, actor_user_id, audit_ref, parser_version, attempt_number) VALUES (%s, %s, 'pending', %s, %s, %s, %s) RETURNING *",
-            (artifact_id, source_id, actor_user_id, audit_ref, parser_version, attempt_number if attempt_number is not None else 1),
+            """
+            INSERT INTO xportra.regulatory_ingestion_jobs
+                (artifact_id, source_id, status, actor_user_id, audit_ref,
+                 parser_version, attempt_number, current_stage,
+                 stage_updated_at)
+            VALUES (
+                %s, %s, 'pending', %s, %s, %s, %s,
+                CASE WHEN %s::uuid IS NOT NULL THEN 'queued' ELSE NULL END,
+                CASE WHEN %s::uuid IS NOT NULL THEN now() ELSE NULL END
+            )
+            RETURNING *
+            """,
+            (
+                artifact_id,
+                source_id,
+                actor_user_id,
+                audit_ref,
+                parser_version,
+                attempt_number if attempt_number is not None else 1,
+                artifact_id,
+                artifact_id,
+            ),
         )
-        # Set initial queued stage for document jobs only; placeholder jobs
-        # (artifact_id IS NULL) remain without a stage to avoid misrepresentation.
-        if artifact_id is not None and row is not None:
-            with self._database.connection() as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        "UPDATE xportra.regulatory_ingestion_jobs SET current_stage = 'queued', stage_updated_at = now() WHERE id = %s",
-                        (row["id"],),
-                    )
-        return row
 
     def create_in_transaction(
         self,
@@ -2607,14 +2891,33 @@ class RegulatoryIngestionJobRepository:
         status=None,
     ):
         """Create an ingestion job inside the caller's transaction."""
-        from .database import Database
         if status not in (None, "pending"):
             raise ValueError("ingestion jobs are always created in 'pending' state")
         return _insert_in_transaction(
             connection,
             "regulatory ingestion job creation",
-            "INSERT INTO xportra.regulatory_ingestion_jobs (artifact_id, source_id, status, actor_user_id, audit_ref, parser_version, attempt_number) VALUES (%s, %s, 'pending', %s, %s, %s, %s) RETURNING *",
-            (artifact_id, source_id, actor_user_id, audit_ref, parser_version, attempt_number if attempt_number is not None else 1),
+            """
+            INSERT INTO xportra.regulatory_ingestion_jobs
+                (artifact_id, source_id, status, actor_user_id, audit_ref,
+                 parser_version, attempt_number, current_stage,
+                 stage_updated_at)
+            VALUES (
+                %s, %s, 'pending', %s, %s, %s, %s,
+                CASE WHEN %s::uuid IS NOT NULL THEN 'queued' ELSE NULL END,
+                CASE WHEN %s::uuid IS NOT NULL THEN now() ELSE NULL END
+            )
+            RETURNING *
+            """,
+            (
+                artifact_id,
+                source_id,
+                actor_user_id,
+                audit_ref,
+                parser_version,
+                attempt_number if attempt_number is not None else 1,
+                artifact_id,
+                artifact_id,
+            ),
         )
 
     def get(self, job_id):
@@ -2637,46 +2940,180 @@ class RegulatoryIngestionJobRepository:
     def list_for_source(self, source_id):
         return _fetch_all(self._database, "SELECT * FROM xportra.regulatory_ingestion_jobs WHERE source_id = %s ORDER BY created_at, id", (source_id,))
 
-    def claim(self, job_id, actor_user_id=None):
+    def claim(self, job_id):
         from psycopg.errors import IntegrityError
         from .errors import PersistenceIntegrityError
         try:
             with self._database.transaction() as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute("UPDATE xportra.regulatory_ingestion_jobs SET status = 'claimed', started_at = now(), actor_user_id = %s WHERE id = %s AND status IN ('pending', 'retryable') RETURNING *", (actor_user_id, job_id))
+                    cursor.execute(
+                        """
+                        UPDATE xportra.regulatory_ingestion_jobs
+                        SET status = 'claimed',
+                            started_at = GREATEST(
+                                clock_timestamp(),
+                                COALESCE(
+                                    started_at + interval '1 microsecond',
+                                    clock_timestamp()
+                                )
+                            ),
+                            completed_at = NULL,
+                            error_details = NULL,
+                            current_stage = 'queued',
+                            stage_updated_at = clock_timestamp(),
+                            updated_at = clock_timestamp()
+                        WHERE id = %s
+                          AND artifact_id IS NOT NULL
+                          AND status IN ('pending', 'retryable')
+                        RETURNING *
+                        """,
+                        (job_id,),
+                    )
                     return cursor.fetchone()
         except IntegrityError as cause:
             raise PersistenceIntegrityError("regulatory ingestion job claim", cause) from cause
 
-    def complete(self, job_id, actor_user_id=None):
+    def claim_next(self):
+        """Atomically select and claim the oldest eligible artifact job."""
         from psycopg.errors import IntegrityError
         from .errors import PersistenceIntegrityError
         try:
             with self._database.transaction() as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute("UPDATE xportra.regulatory_ingestion_jobs SET status = 'completed', completed_at = now(), actor_user_id = COALESCE(%s, actor_user_id) WHERE id = %s AND status IN ('claimed', 'processing', 'retryable') RETURNING *", (actor_user_id, job_id))
+                    cursor.execute(
+                        """
+                        WITH next_job AS (
+                            SELECT id
+                            FROM xportra.regulatory_ingestion_jobs
+                            WHERE status IN ('pending', 'retryable')
+                              AND artifact_id IS NOT NULL
+                            ORDER BY created_at ASC, id ASC
+                            LIMIT 1
+                            FOR UPDATE SKIP LOCKED
+                        )
+                        UPDATE xportra.regulatory_ingestion_jobs AS job
+                        SET status = 'claimed',
+                            started_at = GREATEST(
+                                clock_timestamp(),
+                                COALESCE(
+                                    job.started_at + interval '1 microsecond',
+                                    clock_timestamp()
+                                )
+                            ),
+                            completed_at = NULL,
+                            error_details = NULL,
+                            current_stage = 'queued',
+                            stage_updated_at = clock_timestamp(),
+                            updated_at = clock_timestamp()
+                        FROM next_job
+                        WHERE job.id = next_job.id
+                        RETURNING job.*
+                        """
+                    )
+                    return cursor.fetchone()
+        except IntegrityError as cause:
+            raise PersistenceIntegrityError(
+                "regulatory ingestion job claim", cause
+            ) from cause
+
+    def complete(self, job_id, claim_started_at):
+        from psycopg.errors import IntegrityError
+        from .errors import PersistenceIntegrityError
+        try:
+            with self._database.transaction() as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE xportra.regulatory_ingestion_jobs
+                        SET status = 'completed',
+                            completed_at = clock_timestamp(),
+                            error_details = NULL,
+                            current_stage = 'completed',
+                            stage_updated_at = clock_timestamp(),
+                            updated_at = clock_timestamp()
+                        WHERE id = %s
+                          AND status IN ('claimed', 'processing')
+                          AND started_at = %s
+                        RETURNING *
+                        """,
+                        (job_id, claim_started_at),
+                    )
                     return cursor.fetchone()
         except IntegrityError as cause:
             raise PersistenceIntegrityError("regulatory ingestion job complete", cause) from cause
 
-    def fail(self, job_id, error_details=None, make_retryable=False, actor_user_id=None):
+    def fail(
+        self,
+        job_id,
+        error_details=None,
+        make_retryable=False,
+        claim_started_at=None,
+    ):
         from psycopg.errors import IntegrityError
         from .errors import PersistenceIntegrityError
-        next_status = "retryable" if make_retryable else "failed"
         # Bounded-retry accounting: each retryable failure increments the
         # per-attempt retry counter; terminal failures leave it unchanged
         # so the authorized retry endpoint can distinguish a fresh attempt.
         if make_retryable:
-            update_sql = "UPDATE xportra.regulatory_ingestion_jobs SET status = 'retryable', completed_at = now(), error_details = %s, actor_user_id = COALESCE(%s, actor_user_id), retry_count = retry_count + 1 WHERE id = %s AND status IN ('claimed', 'processing', 'pending') RETURNING *"
+            update_sql = """
+                UPDATE xportra.regulatory_ingestion_jobs
+                SET status = 'retryable',
+                    completed_at = clock_timestamp(),
+                    error_details = %s,
+                    current_stage = 'failed',
+                    stage_updated_at = clock_timestamp(),
+                updated_at = clock_timestamp(),
+                retry_count = retry_count + 1
+                WHERE id = %s
+                  AND status IN ('claimed', 'processing')
+                  AND started_at = %s
+                RETURNING *
+            """
         else:
-            update_sql = "UPDATE xportra.regulatory_ingestion_jobs SET status = 'failed', completed_at = now(), error_details = %s, actor_user_id = COALESCE(%s, actor_user_id) WHERE id = %s AND status IN ('claimed', 'processing', 'pending') RETURNING *"
+            update_sql = """
+                UPDATE xportra.regulatory_ingestion_jobs
+                SET status = 'failed',
+                    completed_at = clock_timestamp(),
+                    error_details = %s,
+                    current_stage = 'failed',
+                    stage_updated_at = clock_timestamp(),
+                    updated_at = clock_timestamp()
+                WHERE id = %s
+                  AND status IN ('claimed', 'processing')
+                  AND started_at = %s
+                RETURNING *
+            """
         try:
             with self._database.transaction() as connection:
                 with connection.cursor() as cursor:
-                    cursor.execute(update_sql, (error_details, actor_user_id, job_id))
+                    cursor.execute(
+                        update_sql,
+                        (
+                            error_details,
+                            job_id,
+                            claim_started_at,
+                        ),
+                    )
                     return cursor.fetchone()
         except IntegrityError as cause:
             raise PersistenceIntegrityError("regulatory ingestion job fail", cause) from cause
+
+    def renew_claim(self, job_id, claim_started_at):
+        """Extend the active claim lease without changing its fencing token."""
+        with self._database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    UPDATE xportra.regulatory_ingestion_jobs
+                    SET updated_at = clock_timestamp()
+                    WHERE id = %s
+                      AND status IN ('claimed', 'processing')
+                      AND started_at = %s
+                    RETURNING id
+                    """,
+                    (job_id, claim_started_at),
+                )
+                return cursor.fetchone()
 
 
 class RegulatoryArtifactLegalHoldRepository:
@@ -2909,4 +3346,148 @@ class RegulatoryReviewFlagRepository:
             self._database,
             "SELECT * FROM xportra.regulatory_review_flags WHERE trigger_source_id = %s AND status = 'pending_review' ORDER BY created_at",
             (source_id,),
+        )
+
+
+class ConversationRepository:
+    """Tenant-scoped conversation rows.
+
+    One row per conversation; tenant isolation is enforced by the
+    mandatory tenant_id on every query. Mode is one of the frozen
+    domain conversation modes. Updated_at tracks the most recent
+    message so listings stay recency-ordered.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create_in_transaction(
+        self,
+        connection,
+        tenant: TenantContext,
+        conversation_id: UUID,
+        mode: str,
+    ) -> dict[str, Any]:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO xportra.conversations
+                    (id, tenant_id, mode)
+                VALUES (%s, %s, %s)
+                RETURNING *
+                """,
+                (conversation_id, tenant.tenant_id, mode),
+            )
+            return dict(cursor.fetchone())
+
+    def get(
+        self, tenant: TenantContext, conversation_id: UUID
+    ) -> dict[str, Any] | None:
+        return _fetch_one(
+            self._database,
+            """SELECT * FROM xportra.conversations
+               WHERE id = %s AND tenant_id = %s""",
+            (conversation_id, tenant.tenant_id),
+        )
+
+    def list_for_tenant(
+        self, tenant: TenantContext
+    ) -> list[dict[str, Any]]:
+        return _fetch_all(
+            self._database,
+            """SELECT * FROM xportra.conversations
+               WHERE tenant_id = %s
+               ORDER BY updated_at DESC, id DESC""",
+            (tenant.tenant_id,),
+        )
+
+    def touch(
+        self,
+        connection,
+        tenant: TenantContext,
+        conversation_id: UUID,
+    ) -> dict[str, Any] | None:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE xportra.conversations
+                SET updated_at = now()
+                WHERE id = %s AND tenant_id = %s
+                RETURNING *
+                """,
+                (conversation_id, tenant.tenant_id),
+            )
+            return cursor.fetchone()
+
+
+class ConversationMessageRepository:
+    """Tenant-scoped conversation message rows.
+
+    Messages belong to exactly one conversation; the conversation
+    row's tenant check enforces isolation. Citations and shipment
+    references are stored as JSONB so the full assistant response
+    survives reopening.
+    """
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def create_in_transaction(
+        self,
+        connection,
+        conversation_id: UUID,
+        role: str,
+        content: str,
+        *,
+        intent: str | None = None,
+        status: str | None = None,
+        citations: list[dict[str, Any]] | None = None,
+        shipment_references: list[dict[str, Any]] | None = None,
+        refusal_reason: str | None = None,
+    ) -> dict[str, Any]:
+        from uuid import uuid4
+        message_id = uuid4()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO xportra.conversation_messages
+                    (id, conversation_id, role, content, intent, status,
+                     citations, shipment_references, refusal_reason)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING *
+                """,
+                (
+                    message_id,
+                    conversation_id,
+                    role,
+                    content,
+                    intent,
+                    status,
+                    Jsonb(citations or []),
+                    Jsonb(shipment_references or []),
+                    refusal_reason,
+                ),
+            )
+            row = dict(cursor.fetchone())
+            row["id"] = message_id
+            return row
+
+    def list_for_conversation(
+        self, conversation_id: UUID
+    ) -> list[dict[str, Any]]:
+        return _fetch_all(
+            self._database,
+            """SELECT * FROM xportra.conversation_messages
+               WHERE conversation_id = %s
+               ORDER BY created_at ASC, id ASC""",
+            (conversation_id,),
+        )
+
+    def get_by_id(
+        self, message_id: UUID
+    ) -> dict[str, Any] | None:
+        return _fetch_one(
+            self._database,
+            "SELECT * FROM xportra.conversation_messages WHERE id = %s",
+            (message_id,),
         )

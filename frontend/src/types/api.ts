@@ -338,6 +338,55 @@ export interface ConversationMessageResponse {
   refusal_reason: string | null;
 }
 
+/** Request to create a new conversation. */
+export interface ConversationCreateRequest {
+  mode?: ConversationMode;
+}
+
+/** Response when creating a conversation. */
+export interface ConversationCreateResponse {
+  id: string;
+  tenant_id: string;
+  mode: string;
+}
+
+/** One conversation in a tenant's conversation list. */
+export interface ConversationListItem {
+  id: string;
+  tenant_id: string;
+  mode: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Response listing a tenant's conversations. */
+export interface ConversationListResponse {
+  conversations: ConversationListItem[];
+}
+
+/** One persisted message in a conversation transcript. */
+export interface ConversationMessageItem {
+  id: string;
+  role: string;
+  content: string;
+  intent: string | null;
+  status: string | null;
+  citations: ConversationCitation[];
+  shipment_references: ConversationShipmentCitation[];
+  refusal_reason: string | null;
+  created_at: string;
+}
+
+/** A conversation with its full message transcript. */
+export interface ConversationDetailResponse {
+  id: string;
+  tenant_id: string;
+  mode: string;
+  created_at: string;
+  updated_at: string;
+  messages: ConversationMessageItem[];
+}
+
 /**
  * Organization registration (mirrors `OrganizationRegistrationRequest`
  * / `OrganizationRegistrationResponse`, Phase 10.11).

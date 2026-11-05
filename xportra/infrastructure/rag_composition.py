@@ -61,7 +61,8 @@ import logging
 import math
 import os
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
+from uuid import UUID
 
 from qdrant_client import QdrantClient
 
@@ -148,6 +149,41 @@ def _optional_positive_float(
         raise RAGConfigurationError(
             f"{name} must be a positive number of seconds")
     return parsed
+
+
+def compose_regulatory_extraction_llm_from_environment(
+    environment: Mapping[str, str] | None = None,
+) -> tuple[LLMClient, LLMGenerationConfig]:
+    """Build the existing OpenRouter client for regulatory extraction only."""
+    values = os.environ if environment is None else environment
+    try:
+        settings = LLMSettings.from_environment(values)
+    except LLMConfigurationError as cause:
+        raise RAGConfigurationError(str(cause)) from cause
+    base_url = values.get("LLM_BASE_URL", "")
+    base_url = (
+        base_url.strip()
+        if isinstance(base_url, str) and base_url.strip()
+        else OPENROUTER_BASE_URL
+    )
+    timeout_seconds = _optional_positive_float(
+        values,
+        "LLM_TIMEOUT_SECONDS",
+        DEFAULT_LLM_TIMEOUT_SECONDS,
+    )
+    generation = LLMGenerationConfig(
+        model_identifier=settings.model_identifier,
+        temperature=0.0,
+        max_output_tokens=4096,
+    )
+    return (
+        OpenRouterLLMClient(
+            settings=settings,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+        ),
+        generation,
+    )
 
 
 #: Canonical variable carrying the optional Qdrant API key
@@ -355,6 +391,9 @@ def compose_rag_stack(
     *,
     embedding_provider: EmbeddingProvider | None = None,
     llm_client: LLMClient | None = None,
+    global_requirement_filter: (
+        Callable[[set[UUID]], dict[UUID, str]] | None
+    ) = None,
 ) -> RAGComposition:
     """Build the full dependency graph from real implementations.
 
@@ -414,6 +453,7 @@ def compose_rag_stack(
             check_compatibility=False,
         ),
         config.vector,
+        global_requirement_filter=global_requirement_filter,
     )
     semantic_retriever = VectorIndexEvidenceRetriever(
         vector_index=vector_index,
@@ -449,12 +489,16 @@ def compose_rag_stack_from_environment(
     environment: Mapping[str, str] | None = None,
     embedding_provider: EmbeddingProvider | None = None,
     llm_client: LLMClient | None = None,
+    global_requirement_filter: (
+        Callable[[set[UUID]], dict[UUID, str]] | None
+    ) = None,
 ) -> RAGComposition:
     """Environment-driven convenience over ``compose_rag_stack``."""
     return compose_rag_stack(
         RAGInfrastructureConfig.from_environment(environment),
         embedding_provider=embedding_provider,
         llm_client=llm_client,
+        global_requirement_filter=global_requirement_filter,
     )
 
 
@@ -467,5 +511,6 @@ __all__ = [
     "SentenceTransformerEmbeddingProvider",
     "compose_rag_stack",
     "compose_rag_stack_from_environment",
+    "compose_regulatory_extraction_llm_from_environment",
     "qdrant_api_key_from_environment",
 ]

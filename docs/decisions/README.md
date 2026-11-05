@@ -4,14 +4,15 @@ This directory holds Architecture Decision Records. Per `INVARIANTS.md`,
 any change to structure, boundaries, data flow, storage, or cross-cutting
 concerns requires an ADR here **before** implementation.
 
-- Status: 20 ADR files recorded as of 2026-10-24 (ADR-0001 through
-  ADR-0020; no gaps). ADR-0017 is accepted as the basis for
+- Status: 25 ADR files recorded as of 2026-11-05 (ADR-0001 through
+  ADR-0025; no gaps). ADR-0017 is accepted as the basis for
   implementation planning only. ADR-0018 is a completed technology
   review with unresolved prerequisites. ADR-0019 records the migration
   029 engineering disposition (technical consistency satisfactory;
   historical provenance unverified; blocked from production
   application). ADR-0020 is the migration 029 reconstruction note
-  (provenance remains UNVERIFIED).
+  (provenance remains UNVERIFIED). ADR-0025 records the scoped Workstream 5
+  authorization and publication-index/retrieval boundary.
 - Naming: `ADR-0001-short-title.md`, incrementing.
 - Each ADR must record: context, decision, alternatives considered,
   consequences, and linked requirements/tasks.
@@ -44,3 +45,11 @@ concerns requires an ADR here **before** implementation.
 - `ADR-0020-reconstruction-note.md` (reconstruction note for migration
   029; provenance UNVERIFIED; not an authorization to apply the
   migration)
+- `ADR-0021-regulatory-administration-retry-wording-withdrawal.md`
+- `ADR-0022-registration-ingestion-jobs-artifact-optional.md`
+- `ADR-0023-semantic-regulatory-requirement-extraction.md` (scoped
+  Workstream 2 authorization and extraction boundary)
+- `ADR-0024-regulatory-extraction-provenance-history.md` (Workstream 3
+  provenance-history implementation)
+- `ADR-0025-regulatory-publication-indexing.md` (scoped Workstream 5
+  publication-indexing and global-plus-tenant retrieval)

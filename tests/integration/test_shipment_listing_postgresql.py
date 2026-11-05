@@ -14,12 +14,12 @@ rollback removal.
 import os
 import pathlib
 import unittest
-from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi.testclient import TestClient
 
 from xportra.api.app import create_app
+from xportra.api.dependencies import ApplicationServices
 from xportra.application.result_store import ComplianceResultStore
 from xportra.persistence.database import Database, DatabaseSettings
 from xportra.persistence.repositories import (
@@ -39,6 +39,10 @@ MIGRATIONS = (
 )
 UP = MIGRATIONS / "013_shipments.sql"
 DOWN = MIGRATIONS / "013_shipments.down.sql"
+UP_012 = MIGRATIONS / "012_compliance_workflows.sql"
+DOWN_012 = MIGRATIONS / "012_compliance_workflows.down.sql"
+UP_010 = MIGRATIONS / "010_compliance_analysis_results.sql"
+DOWN_010 = MIGRATIONS / "010_compliance_analysis_results.down.sql"
 
 TENANT_A_SLUG = "shipment-listing-integration-a"
 TENANT_B_SLUG = "shipment-listing-integration-b"
@@ -73,10 +77,30 @@ class ShipmentListingPostgreSQLTests(unittest.TestCase):
             raise unittest.SkipTest("DATABASE_URL is not configured")
 
         cls.database = Database(DatabaseSettings.from_environment())
+        apply_migration(cls.database, UP_010)
+        apply_migration(cls.database, UP_012)
         apply_migration(cls.database, UP)
         if not table_exists(cls.database, "shipments"):
             raise unittest.SkipTest(
                 "migration 013 table shipments was not created")
+
+        # Clean up any leftover fixture tenants from interrupted runs.
+        with cls.database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM xportra.shipments WHERE tenant_id IN "
+                    "(SELECT id FROM xportra.tenants WHERE slug IN (%s, %s))",
+                    (TENANT_A_SLUG, TENANT_B_SLUG),
+                )
+                cursor.execute(
+                    "DELETE FROM xportra.compliance_workflows WHERE tenant_id IN "
+                    "(SELECT id FROM xportra.tenants WHERE slug IN (%s, %s))",
+                    (TENANT_A_SLUG, TENANT_B_SLUG),
+                )
+                cursor.execute(
+                    "DELETE FROM xportra.tenants WHERE slug IN (%s, %s)",
+                    (TENANT_A_SLUG, TENANT_B_SLUG),
+                )
 
         tenants = TenantRepository(cls.database)
         tenant_a = tenants.create(
@@ -107,7 +131,8 @@ class ShipmentListingPostgreSQLTests(unittest.TestCase):
             database=cls.database,
             reports=ComplianceAnalysisReportRepository(
                 cls.database),
-            analyses=ComplianceAnalysisRepository(cls.database),
+            analyses=ComplianceAnalysisRepository(
+                cls.database),
             traces=ComplianceAnalysisTraceRepository(
                 cls.database),
             rounds=ComplianceWorkflowRoundRepository(
@@ -117,10 +142,11 @@ class ShipmentListingPostgreSQLTests(unittest.TestCase):
             workflows=workflows,
             shipments=shipments,
         )
-        cls.client = TestClient(create_app(services=SimpleNamespace(
-            rag=None,
-            result_store=cls.store,
-        )))
+        services = ApplicationServices.from_environment()
+        object.__setattr__(services, 'result_store', cls.store)
+        app = create_app(services=services)
+        app.state.services = services
+        cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
@@ -128,6 +154,8 @@ class ShipmentListingPostgreSQLTests(unittest.TestCase):
             return
         try:
             apply_migration(cls.database, DOWN)
+            apply_migration(cls.database, DOWN_012)
+            apply_migration(cls.database, DOWN_010)
             if table_exists(cls.database, "shipments"):
                 raise AssertionError(
                     "rollback left shipments behind")

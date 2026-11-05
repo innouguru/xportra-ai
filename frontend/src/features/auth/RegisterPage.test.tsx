@@ -31,7 +31,7 @@ function renderPage() {
 
 afterEach(() => {
   vi.clearAllMocks();
-  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
 describe("RegisterPage recovery", () => {
@@ -60,7 +60,7 @@ describe("RegisterPage recovery", () => {
     finishRequest({ tenant_id: "tenant-1" });
 
     expect(await screen.findByText("Dashboard screen")).toBeInTheDocument();
-    expect(window.sessionStorage.getItem("xportra.pending-registration.v1")).toBeNull();
+    expect(window.localStorage.getItem("xportra.pending-registration.v1")).toBeNull();
   });
 
   it("retains pending profile data and shows a safe retry after API failure", async () => {
@@ -79,7 +79,7 @@ describe("RegisterPage recovery", () => {
 
     await user.click(await screen.findByRole("button", { name: /resume registration/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/could not be reached/i);
-    expect(window.sessionStorage.getItem("xportra.pending-registration.v1")).not.toBeNull();
+    expect(window.localStorage.getItem("xportra.pending-registration.v1")).not.toBeNull();
     expect(screen.getByRole("button", { name: /resume registration/i })).toBeEnabled();
   });
 });

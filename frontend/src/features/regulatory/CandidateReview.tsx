@@ -28,7 +28,7 @@ import {
   StatusBadge,
 } from "../../components/StatusBits";
 import { STAGE_A_VERIFY, STAGE_B_APPROVE } from "../../types/api";
-import { createdAt, tone } from "./regulatoryUi";
+import { createdAt, sourcePath, tone } from "./regulatoryUi";
 import { useStaffPermissions } from "./useStaffPermissions";
 
 /**
@@ -38,6 +38,154 @@ import { useStaffPermissions } from "./useStaffPermissions";
  * the backend in an append-only trail. Nothing here publishes a
  * requirement or marks it exporter-applicable.
  */
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function referenceDisplay(
+  location: Record<string, unknown>,
+  key: "page" | "section",
+): string {
+  const field = key === "page" ? "page_reference" : "section_reference";
+  const status = recordValue(location.reference_status)[key];
+  const value = location[field];
+  if (value !== null && value !== undefined && String(value).trim()) {
+    return status === "verified"
+      ? `${String(value)} · verified against supplied source context`
+      : String(value);
+  }
+  if (status === "not_returned_by_model") return "Not returned by the model";
+  if (status === "unavailable_in_supplied_context") {
+    return "Unavailable in the supplied source context";
+  }
+  if (status === "verified") return "Verified; no value recorded";
+  return "Not recorded";
+}
+
+function EvidenceHistory({
+  history,
+}: {
+  history: NonNullable<RegulatoryCandidate["extraction_history"]>;
+}) {
+  if (history.length === 0) {
+    return (
+      <p className="muted">
+        No extraction-run history is recorded for this candidate.
+      </p>
+    );
+  }
+
+  return (
+    <ol className="reg-ingestion-runs">
+      {history.map((run) => {
+        const snapshot = recordValue(run.evidence_snapshot);
+        const location = recordValue(snapshot.source_location);
+        return (
+          <li key={`${run.extraction_run_id}-${run.candidate_index}`}>
+            <section className="reg-ingestion-run">
+              <header className="reg-ingestion-run__header">
+                <h4>Extraction run</h4>
+                <StatusBadge value={run.outcome} tone={tone(run.outcome)} />
+              </header>
+              <dl className="reg-ingestion-meta">
+                <div>
+                  <dt>Run ID</dt>
+                  <dd><Identifier value={run.extraction_run_id} short={36} /></dd>
+                </div>
+                <div>
+                  <dt>Artifact version</dt>
+                  <dd>{run.artifact_source_version ?? "Not recorded"}</dd>
+                </div>
+                <div>
+                  <dt>Artifact content hash</dt>
+                  <dd>{run.artifact_content_hash}</dd>
+                </div>
+                <div>
+                  <dt>Extraction method / version</dt>
+                  <dd>{run.extraction_method} / {run.extraction_version}</dd>
+                </div>
+                <div>
+                  <dt>Parser version</dt>
+                  <dd>{run.parser_version}</dd>
+                </div>
+                <div>
+                  <dt>Prompt version</dt>
+                  <dd>{run.prompt_version ?? "Not recorded"}</dd>
+                </div>
+                <div>
+                  <dt>Configured model</dt>
+                  <dd>{run.configured_model_identifier ?? "Not recorded"}</dd>
+                </div>
+                <div>
+                  <dt>Observed providers and models</dt>
+                  <dd>
+                    {[...run.provider_names, ...run.model_identifiers].join(", ") ||
+                      "Not recorded"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Candidate resolution</dt>
+                  <dd>{run.resolution_status}{run.is_origin ? " · origin run" : ""}</dd>
+                </div>
+                <div>
+                  <dt>Started</dt>
+                  <dd>{createdAt(run.started_at)}</dd>
+                </div>
+                <div>
+                  <dt>Completed</dt>
+                  <dd>{createdAt(run.completed_at)}</dd>
+                </div>
+                <div>
+                  <dt>Rejected candidates</dt>
+                  <dd>{run.rejected_candidate_count}</dd>
+                </div>
+              </dl>
+              <dl className="reg-ingestion-meta">
+                <div>
+                  <dt>Snapshot supporting quotation</dt>
+                  <dd>
+                    {typeof location.supporting_quote === "string"
+                      ? <blockquote>{location.supporting_quote}</blockquote>
+                      : "Not recorded"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Snapshot page reference</dt>
+                  <dd>{referenceDisplay(location, "page")}</dd>
+                </div>
+                <div>
+                  <dt>Snapshot section or article</dt>
+                  <dd>{referenceDisplay(location, "section")}</dd>
+                </div>
+              </dl>
+              {run.failed_chunks.length > 0 ? (
+                <div className="ledger-reason">
+                  <strong>Recorded extraction warnings</strong>
+                  <ul>
+                    {run.failed_chunks.map((failure, index) => {
+                      const reason = failure.reason;
+                      const errorType = failure.error_type;
+                      return (
+                        <li key={`${String(reason ?? "warning")}-${index}`}>
+                          {[reason, errorType]
+                            .filter((value) => typeof value === "string")
+                            .join(" · ") || "A failed extraction chunk was recorded."}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+            </section>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 export function CandidateReview({
   auth,
@@ -219,10 +367,26 @@ export function CandidateReview({
             </Field>
             <Field label="Requirement text">{candidate.requirement_text}</Field>
             <Field label="Type">{candidate.requirement_type || "—"}</Field>
-            <Field label="Source location">
-              {Object.keys(candidate.source_location).length > 0
-                ? JSON.stringify(candidate.source_location)
-                : "—"}
+            <Field label="Source">{candidate.source_title ?? "Not recorded"}</Field>
+            <Field label="Jurisdiction">
+              {candidate.source_jurisdiction ?? "Not recorded"}
+            </Field>
+            <Field label="Supporting quotation">
+              {typeof candidate.source_location?.supporting_quote === "string"
+                ? <blockquote>{candidate.source_location.supporting_quote}</blockquote>
+                : "Not recorded"}
+            </Field>
+            <Field label="Page reference">
+              {referenceDisplay(candidate.source_location ?? {}, "page")}
+            </Field>
+            <Field label="Section or article">
+              {referenceDisplay(candidate.source_location ?? {}, "section")}
+            </Field>
+            <Field label="Source artifact version">
+              {candidate.artifact_source_version ?? "Not recorded"}
+            </Field>
+            <Field label="Artifact content hash">
+              {candidate.artifact_content_hash ?? "Not recorded"}
             </Field>
             <Field label="Status">
               <StatusBadge value={candidate.status} tone={tone(candidate.status)} />
@@ -237,6 +401,16 @@ export function CandidateReview({
             <Field label="Artifact reference">
               {candidate.artifact_id ? <Identifier value={candidate.artifact_id} short={36} /> : "—"}
             </Field>
+            <Field label="Ingestion job">
+              {candidate.ingestion_job_id ? (
+                <Link to={sourcePath(candidate.source_id, "ingestion")}>
+                  <Identifier value={candidate.ingestion_job_id} short={12} />
+                </Link>
+              ) : "Not recorded"}
+            </Field>
+            <Field label="Document parser">
+              {candidate.document_parser_name ?? candidate.parser_version ?? "Not recorded"}
+            </Field>
             <Field label="Extracted by">
               {candidate.reviewer_user_id ? (
                 <Identifier value={candidate.reviewer_user_id} short={36} />
@@ -246,6 +420,16 @@ export function CandidateReview({
             </Field>
             <Field label="Created">{candidate.created_at ?? "—"}</Field>
           </dl>
+
+          <h4>Extraction and evidence history</h4>
+          <EvidenceHistory history={candidate.extraction_history ?? []} />
+
+          <details className="collapsible">
+            <summary>Full recorded source-location metadata</summary>
+            <pre className="reg-ingestion-json">
+              {JSON.stringify(candidate.source_location, null, 2)}
+            </pre>
+          </details>
 
           <h4>Governance flags for this requirement</h4>
           {flags.length === 0 ? (

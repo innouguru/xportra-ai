@@ -68,8 +68,12 @@ describe("source page workflow", () => {
     await screen.findByLabelText("Source progress");
     await user.click(tab("Ingestion"));
     expect(
-      await screen.findByText(/Registration record — no document attached yet/),
+      await screen.findByRole("heading", { name: "Registration placeholder" }),
     ).toBeTruthy();
+    expect(
+      screen.getByText("Registration placeholder; waiting for an artifact upload."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Artifact ingestion · attempt/)).toBeNull();
     // No retry is offered for something that never ran.
     expect(screen.queryByRole("button", { name: "Retry failed job" })).toBeNull();
   });

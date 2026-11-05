@@ -1,5 +1,6 @@
 """Dependency wiring for the API boundary."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import Annotated, Any
 from uuid import UUID
@@ -16,6 +17,7 @@ from xportra.application.organization_registration import (
 from xportra.domain.evidence_ingestion import (
     EvidenceDocumentIngestionService,
 )
+from xportra.domain.llm import LLMGenerationConfig
 from xportra.domain.services import (
     CertificationService,
     ComplianceEvidenceService,
@@ -42,6 +44,8 @@ from xportra.persistence.repositories import (
     ComplianceEvidenceRepository,
     ComplianceWorkflowRepository,
     ComplianceWorkflowRoundRepository,
+    ConversationMessageRepository,
+    ConversationRepository,
     DestinationMarketRepository,
     EvidenceDocumentRepository,
     EvidenceRequirementRepository,
@@ -67,6 +71,8 @@ from .auth import (
 from .authorization import OWNER_ROLE, authorize, require_permission
 from .errors import APIError, AuthenticationError, PermissionDeniedError
 from .runtime import is_production_environment
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,12 +105,26 @@ class ApplicationServices:
     #: ``None`` until wired — uploads then fail closed
     #: with 503 before any storage or database mutation.
     evidence_index_sync: Any = field(default=None)
+    #: Durable regulatory publication indexing capability. It shares the
+    #: in-process worker and existing evidence index; global retrieval still
+    #: requires PostgreSQL eligibility validation.
+    regulatory_publication_indexer: Any = field(
+        default=None, repr=False)
     #: Phase 10.11 organization registration use case (or a
     #: test fake implementing the store protocol). ``None``
     #: means the dependency composes it lazily from the
     #: database store; the route fails closed with 503 when
     #: neither is available.
     organization_registration: Any = field(default=None)
+    #: Existing configured provider seam used by regulatory requirement
+    #: extraction. None means semantic extraction is not configured.
+    llm_client: Any = field(default=None, repr=False)
+    llm_generation_config: LLMGenerationConfig | None = field(default=None)
+    #: Workstream 6 conversation persistence repositories. When both are
+    #: wired, conversations and messages are stored and can be reopened;
+    #; when either is absent the conversational service remains stateless.
+    conversation_repository: Any = field(default=None)
+    conversation_message_repository: Any = field(default=None)
 
     @classmethod
     def from_environment(cls) -> "ApplicationServices":
@@ -144,6 +164,8 @@ class ApplicationServices:
             organization_registration=OrganizationRegistrationService(
                 OrganizationRegistrationStore(database),
             ),
+            conversation_repository=ConversationRepository(database),
+            conversation_message_repository=ConversationMessageRepository(database),
         )
 
     @classmethod
@@ -177,10 +199,32 @@ class ApplicationServices:
             "xportra.infrastructure.rag_composition"
         )
         base = cls.from_environment()
+        from xportra.persistence.regulatory_publication_index import (
+            RegulatoryPublicationIndexJobRepository,
+        )
+        publication_jobs = RegulatoryPublicationIndexJobRepository(
+            base.database)
         stack = rag_composition.compose_rag_stack_from_environment(
             embedding_provider=embedding_provider,
             llm_client=llm_client,
+            global_requirement_filter=(
+                publication_jobs.currently_eligible_requirement_ids),
         )
+        from xportra.domain.evidence_chunking import EvidenceChunkingService
+        from xportra.domain.evidence_index_sync import EvidenceIndexSyncService
+        from xportra.domain.evidence_indexing import EvidenceIndexingService
+        publication_index_sync = EvidenceIndexSyncService(
+            chunking=EvidenceChunkingService(),
+            indexing=EvidenceIndexingService(),
+            vector_index=stack.vector_index,
+            provider=stack.embedding_provider,
+            embedding_config=stack.config.embedding,
+        )
+        from xportra.application.regulatory_publication_index_service import (
+            RegulatoryPublicationIndexService,
+        )
+        publication_indexer = RegulatoryPublicationIndexService(
+            base.database, index_sync=publication_index_sync)
         return cls(
             database=base.database,
             exporters=base.exporters,
@@ -189,7 +233,16 @@ class ApplicationServices:
             evidence=base.evidence,
             certifications=base.certifications,
             rag=stack.service,
+            llm_client=stack.llm_client,
+            llm_generation_config=LLMGenerationConfig(
+                model_identifier=stack.config.generation.model_identifier,
+                temperature=0.0,
+                max_output_tokens=4096,
+            ),
             result_store=base.result_store,
+            regulatory_publication_indexer=publication_indexer,
+            conversation_repository=base.conversation_repository,
+            conversation_message_repository=base.conversation_message_repository,
         )
 
     @classmethod
@@ -221,6 +274,13 @@ class ApplicationServices:
                           .compose_evidence_index_sync_from_environment())
         except Exception:
             index_sync = None
+        publication_indexer = None
+        if index_sync is not None:
+            from xportra.application.regulatory_publication_index_service import (
+                RegulatoryPublicationIndexService,
+            )
+            publication_indexer = RegulatoryPublicationIndexService(
+                base.database, index_sync=index_sync)
         return cls(
             database=base.database,
             exporters=base.exporters,
@@ -232,6 +292,11 @@ class ApplicationServices:
             result_store=base.result_store,
             evidence_storage=storage,
             evidence_index_sync=index_sync,
+            regulatory_publication_indexer=publication_indexer,
+            llm_client=base.llm_client,
+            llm_generation_config=base.llm_generation_config,
+            conversation_repository=base.conversation_repository,
+            conversation_message_repository=base.conversation_message_repository,
         )
 
     @classmethod
@@ -244,6 +309,7 @@ class ApplicationServices:
         never per request), then each optional capability is composed
         independently through the EXISTING composition roots:
 
+        - regulatory extraction via the existing OpenRouter client,
         - RAG chain via ``compose_rag_stack_from_environment``
           (Phase 5.14; Qdrant + OpenRouter + embeddings),
         - evidence object storage via
@@ -275,9 +341,34 @@ class ApplicationServices:
         rag_composition = importlib.import_module(
             "xportra.infrastructure.rag_composition"
         )
+        from xportra.persistence.regulatory_publication_index import (
+            RegulatoryPublicationIndexJobRepository,
+        )
+        publication_jobs = RegulatoryPublicationIndexJobRepository(
+            base.database)
+        llm_client = None
+        llm_generation_config = None
         try:
-            stack = rag_composition.compose_rag_stack_from_environment()
-        except Exception:
+            (
+                llm_client,
+                llm_generation_config,
+            ) = rag_composition.compose_regulatory_extraction_llm_from_environment()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Regulatory semantic extraction unavailable (%s).",
+                type(exc).__name__,
+            )
+        try:
+            stack = rag_composition.compose_rag_stack_from_environment(
+                llm_client=llm_client,
+                global_requirement_filter=(
+                    publication_jobs.currently_eligible_requirement_ids),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Optional RAG composition unavailable (%s).",
+                type(exc).__name__,
+            )
             stack = None
         upload_composition = importlib.import_module(
             "xportra.infrastructure.evidence_upload"
@@ -292,6 +383,24 @@ class ApplicationServices:
                           .compose_evidence_index_sync_from_environment())
         except Exception:
             index_sync = None
+        if index_sync is None and stack is not None:
+            from xportra.domain.evidence_chunking import EvidenceChunkingService
+            from xportra.domain.evidence_index_sync import EvidenceIndexSyncService
+            from xportra.domain.evidence_indexing import EvidenceIndexingService
+            index_sync = EvidenceIndexSyncService(
+                chunking=EvidenceChunkingService(),
+                indexing=EvidenceIndexingService(),
+                vector_index=stack.vector_index,
+                provider=stack.embedding_provider,
+                embedding_config=stack.config.embedding,
+            )
+        publication_indexer = None
+        if index_sync is not None:
+            from xportra.application.regulatory_publication_index_service import (
+                RegulatoryPublicationIndexService,
+            )
+            publication_indexer = RegulatoryPublicationIndexService(
+                base.database, index_sync=index_sync)
         return cls(
             database=base.database,
             exporters=base.exporters,
@@ -300,9 +409,16 @@ class ApplicationServices:
             evidence=base.evidence,
             certifications=base.certifications,
             rag=stack.service if stack is not None else None,
+            llm_client=(
+                stack.llm_client if stack is not None else llm_client
+            ),
+            llm_generation_config=llm_generation_config,
             result_store=base.result_store,
             evidence_storage=storage,
             evidence_index_sync=index_sync,
+            regulatory_publication_indexer=publication_indexer,
+            conversation_repository=base.conversation_repository,
+            conversation_message_repository=base.conversation_message_repository,
         )
 
 

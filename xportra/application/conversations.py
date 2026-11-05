@@ -19,13 +19,17 @@ POST message
     -> return response
 ```
 
+When conversation repositories are injected, the service also
+persists conversations and messages so conversations can be
+reopened and follow-up questions receive preceding context.
+Without repositories the service remains stateless (the Phase
+10.2 default): every call is independent and nothing is stored.
+
 The service owns no compliance truth: shipment answers quote
 the revalidated workflow record with identifier citations;
 regulatory answers carry the validated RAG answer through
-unchanged. It duplicates no compliance engine, performs no
-mutation (no upload/record/analysis/finalize/applicability or
-state change exists anywhere in this module), persists
-nothing, and imports no mutating application service.
+unchanged. It duplicates no compliance engine and imports no
+mutating application service.
 """
 
 from __future__ import annotations
@@ -106,18 +110,216 @@ def _citations_from_validated(validated: Any) -> tuple[CitationReference, ...]:
     return tuple(citations)
 
 
+def _citations_to_records(citations: tuple[CitationReference, ...]) -> list[dict[str, Any]]:
+    """Serialize validated citations for persistence."""
+    records = []
+    for citation in citations:
+        records.append({
+            "label": citation.label,
+            "rank_position": citation.rank_position,
+            "chunk_id": str(citation.chunk_id),
+            "document_id": str(citation.document_id),
+            "chunk_index": citation.chunk_index,
+            "source_id": citation.source_id,
+            "source_type": citation.source_type,
+            "content_fingerprint": citation.content_fingerprint,
+            "source_location": citation.source_location,
+            "document_version": citation.document_version,
+        })
+    return records
+
+
+def _shipment_refs_to_records(
+    refs: tuple[ShipmentCitation, ...],
+) -> list[dict[str, Any]]:
+    """Serialize shipment citations for persistence."""
+    return [
+        {"kind": ref.kind, "id": str(ref.identifier)} for ref in refs
+    ]
+
+
 class ConversationApplicationService:
-    """Stateless read-only conversational use case.
+    """Conversational use case with optional persistence.
 
     ``rag`` is the injected Phase 5 RAG application service
     (``RAGApplicationContract``) or ``None``. Shipment-only
     intents never touch it; knowledge intents fail closed with
     ``InfrastructureError`` when it is unwired — an unwired
     chain never becomes an empty successful answer.
+
+    ``conversation_repo`` and ``message_repo`` are optional
+    persistence boundaries. ``database`` is required when either
+    repository is supplied, so the service can manage transactions
+    without reaching into repository internals. When both repos
+    and a database are supplied the service creates conversation
+    rows, appends user and assistant messages, and can reopen
+    conversations with their message history. When persistence is
+    not configured the service remains stateless: calls are
+    independent and nothing is stored.
     """
 
-    def __init__(self, *, rag: Any | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        rag: Any | None = None,
+        conversation_repo: Any | None = None,
+        message_repo: Any | None = None,
+        database: Any = None,
+    ) -> None:
         self._rag = rag
+        self._conversation_repo = conversation_repo
+        self._message_repo = message_repo
+        self._database = database
+
+    @property
+    def _persistent(self) -> bool:
+        return (
+            self._conversation_repo is not None
+            and self._message_repo is not None
+            and self._database is not None
+        )
+
+    # ------------------------------------------------------------------
+    # Persistence: conversation lifecycle
+    # ------------------------------------------------------------------
+
+    def create_conversation(
+        self,
+        ctx: ApplicationContext,
+        *,
+        conversation_id: UUID,
+        mode: str,
+    ) -> dict[str, Any]:
+        """Create a new tenant-scoped conversation.
+
+        Raises ``ApplicationValidationError`` when persistence is
+        not configured. Tenant identity comes from ``ctx`` only.
+        """
+        if not self._persistent:
+            raise ApplicationValidationError(
+                "conversation persistence is not configured for this deployment")
+        context = _guards.checked_context(ctx)
+        if mode not in CONVERSATION_MODES:
+            raise ApplicationValidationError(
+                f"unknown conversation mode: {mode}")
+        with self._database.transaction() as connection:
+            self._conversation_repo.create_in_transaction(
+                connection, context.tenant, conversation_id, mode)
+        return {
+            "id": str(conversation_id),
+            "tenant_id": str(context.tenant.tenant_id),
+            "mode": mode,
+        }
+
+    def get_conversation_with_messages(
+        self,
+        ctx: ApplicationContext,
+        *,
+        conversation_id: UUID,
+    ) -> dict[str, Any] | None:
+        """Return a conversation with its messages, or ``None``.
+
+        Tenant isolation is enforced: a conversation belonging to
+        another tenant is not returned. Messages are ordered
+        oldest first so the frontend can replay the transcript.
+        """
+        if not self._persistent:
+            raise ApplicationValidationError(
+                "conversation persistence is not configured for this deployment")
+        context = _guards.checked_context(ctx)
+        row = self._conversation_repo.get(context.tenant, conversation_id)
+        if row is None:
+            return None
+        messages = self._message_repo.list_for_conversation(conversation_id)
+        return {
+            "id": str(row["id"]),
+            "tenant_id": str(row["tenant_id"]),
+            "mode": row["mode"],
+            "created_at": row["created_at"].isoformat() if hasattr(
+                row["created_at"], "isoformat") else str(row["created_at"]),
+            "updated_at": row["updated_at"].isoformat() if hasattr(
+                row["updated_at"], "isoformat") else str(row["updated_at"]),
+            "messages": [
+                {
+                    "id": str(m["id"]),
+                    "role": m["role"],
+                    "content": m["content"],
+                    "intent": m["intent"],
+                    "status": m["status"],
+                    "citations": m["citations"] or [],
+                    "shipment_references": m["shipment_references"] or [],
+                    "refusal_reason": m["refusal_reason"],
+                    "created_at": m["created_at"].isoformat() if hasattr(
+                        m["created_at"], "isoformat") else str(m["created_at"]),
+                }
+                for m in messages
+            ],
+        }
+
+    def list_conversations(
+        self,
+        ctx: ApplicationContext,
+    ) -> list[dict[str, Any]]:
+        """List the tenant's conversations, most recent first."""
+        if not self._persistent:
+            raise ApplicationValidationError(
+                "conversation persistence is not configured for this deployment")
+        context = _guards.checked_context(ctx)
+        rows = self._conversation_repo.list_for_tenant(context.tenant)
+        return [
+            {
+                "id": str(row["id"]),
+                "tenant_id": str(row["tenant_id"]),
+                "mode": row["mode"],
+                "created_at": row["created_at"].isoformat() if hasattr(
+                    row["created_at"], "isoformat") else str(row["created_at"]),
+                "updated_at": row["updated_at"].isoformat() if hasattr(
+                    row["updated_at"], "isoformat") else str(row["updated_at"]),
+            }
+            for row in rows
+        ]
+
+    # ------------------------------------------------------------------
+    # Persistence: message append (used by handle_message)
+    # ------------------------------------------------------------------
+
+    def _persist_user_message(
+        self,
+        connection,
+        conversation_id: UUID,
+        user_text: str,
+        intent: str,
+    ) -> None:
+        self._message_repo.create_in_transaction(
+            connection,
+            conversation_id,
+            "user",
+            user_text,
+            intent=intent,
+        )
+
+    def _persist_assistant_message(
+        self,
+        connection,
+        conversation_id: UUID,
+        answer: AssistantResponse,
+    ) -> None:
+        self._message_repo.create_in_transaction(
+            connection,
+            conversation_id,
+            "assistant",
+            answer.summary_text,
+            intent=answer.intent,
+            status=answer.status,
+            citations=_citations_to_records(answer.citations),
+            shipment_references=_shipment_refs_to_records(
+                answer.shipment_references),
+            refusal_reason=answer.refusal_reason,
+        )
+
+    # ------------------------------------------------------------------
+    # Core: handle one turn (stateless logic, optional persistence)
+    # ------------------------------------------------------------------
 
     def handle_message(
         self,
@@ -192,23 +394,42 @@ class ConversationApplicationService:
                 refs = (ShipmentCitation(
                     kind="workflow", identifier=workflow.id),)
                 if knowledge.status == RESPONSE_STATUS_REFUSED_UNKNOWN:
-                    return knowledge
-                return AssistantResponse(
-                    conversation_id=conversation_id,
-                    mode=mode,
-                    intent=intent,
-                    status=knowledge.status,
-                    summary_text=knowledge.summary_text,
-                    shipment_references=refs,
-                    citations=knowledge.citations,
-                )
-            return knowledge
+                    answer = knowledge
+                else:
+                    answer = AssistantResponse(
+                        conversation_id=conversation_id,
+                        mode=mode,
+                        intent=intent,
+                        status=knowledge.status,
+                        summary_text=knowledge.summary_text,
+                        shipment_references=refs,
+                        citations=knowledge.citations,
+                    )
+            else:
+                answer = knowledge
+        else:
+            answer = self._answer_shipment(
+                context, message, workflow_record,
+                requirement_id=requirement_id,
+                evidence_id=evidence_id,
+            )
 
-        return self._answer_shipment(
-            context, message, workflow_record,
-            requirement_id=requirement_id,
-            evidence_id=evidence_id,
-        )
+        # Persist both sides of the turn when persistence is configured.
+        if self._persistent:
+            tenant = context.tenant
+            with self._database.transaction() as connection:
+                existing = self._conversation_repo.get(tenant, conversation_id)
+                if existing is None:
+                    self._conversation_repo.create_in_transaction(
+                        connection, tenant, conversation_id, mode)
+                else:
+                    self._conversation_repo.touch(
+                        connection, tenant, conversation_id)
+                self._persist_user_message(
+                    connection, conversation_id, user_text, intent)
+                self._persist_assistant_message(connection, conversation_id, answer)
+
+        return answer
 
     def _answer_shipment(
         self,

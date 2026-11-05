@@ -14,6 +14,8 @@ import types
 import unittest
 from uuid import UUID
 
+from qdrant_client.http import models as qmodels
+
 from xportra.domain.errors import DomainValidationError, VectorStoreError
 from xportra.domain.evidence_indexing import EmbeddingModelConfig
 from xportra.domain.evidence_retrieval import (
@@ -158,7 +160,7 @@ def make_service(index=None, provider=None, embedding_config=None):
 
 
 class FakeQdrantClient:
-    """In-memory Qdrant stand-in that honors ``query_filter.must``."""
+    """In-memory Qdrant stand-in that honors the full query filter."""
 
     def __init__(self, ignore_filter=False):
         self.collections = {}
@@ -205,13 +207,16 @@ class FakeQdrantClient:
         must = list(query_filter.must)
         self.last_query = types.SimpleNamespace(
             query=list(query), limit=limit,
-            must=[(c.key, c.match.value) for c in must])
+            must=[self._describe_condition(c) for c in must],
+            should=[
+                self._describe_condition(c)
+                for c in query_filter.should or []
+            ])
         coll = self.collections[collection_name]
         scored = []
         for point in coll["points"].values():
-            if not self.ignore_filter and not all(
-                    point.payload.get(c.key) == c.match.value
-                    for c in must):
+            if not self.ignore_filter and not self._matches_filter(
+                    point.payload, query_filter):
                 continue
             scored.append((cosine(query, point.vector), point))
         scored.sort(key=lambda item: (-item[0], str(item[1].id)))
@@ -220,6 +225,48 @@ class FakeQdrantClient:
                 id=point.id, score=score, payload=dict(point.payload))
             for score, point in scored[:limit]
         ])
+
+    @classmethod
+    def _describe_condition(cls, condition):
+        if isinstance(condition, qmodels.Filter):
+            return {
+                "must": tuple(
+                    cls._describe_condition(item)
+                    for item in condition.must or []
+                ),
+                "should": tuple(
+                    cls._describe_condition(item)
+                    for item in condition.should or []
+                ),
+            }
+        return (condition.key, condition.match.value)
+
+    @classmethod
+    def _matches_filter(cls, payload, query_filter):
+        if not all(
+            cls._matches_condition(payload, condition)
+            for condition in query_filter.must or []
+        ):
+            return False
+        should = query_filter.should or []
+        return not should or any(
+            cls._matches_condition(payload, condition)
+            for condition in should
+        )
+
+    @classmethod
+    def _matches_condition(cls, payload, condition):
+        if isinstance(condition, qmodels.Filter):
+            return cls._matches_filter(payload, condition)
+        match = condition.match
+        if match.value is not None:
+            return payload.get(condition.key) == match.value
+        if match.text is not None:
+            return all(
+                term.casefold() in payload.get(condition.key, "").casefold()
+                for term in match.text.split()
+            )
+        return False
 
 
 def make_index_record(**overrides):
@@ -236,6 +283,9 @@ def make_index_record(**overrides):
         document_version="v1",
         embedding_model=MODEL,
         embedding_dimensions=DIMS,
+        content_scope="tenant",
+        regulatory_requirement_id=None,
+        publication_fingerprint=None,
         embedding_vector=[1.0, 0.0, 0.0, 0.0],
     )
     base.update(overrides)
@@ -360,8 +410,19 @@ class TestEmptyScope(AdapterTestCase):
         results = self.index.find(
             QUERY_VECTOR, tenant_id=self.tenant, top_k=10)
         must = self.client.last_query.must
-        self.assertEqual(len(must), 1)
-        self.assertEqual(must[0], ("tenant_id", str(TENANT_ID)))
+        self.assertEqual(must, [])
+        self.assertIn(("tenant_id", str(TENANT_ID)),
+                      self.client.last_query.should)
+        self.assertIn(
+            {
+                "must": (
+                    ("content_scope", "global_regulatory"),
+                    ("publication_status", "published"),
+                ),
+                "should": (),
+            },
+            self.client.last_query.should,
+        )
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0].tenant_id, TENANT_ID)
 
@@ -545,14 +606,17 @@ class TestTenantIsolationWithScope(unittest.TestCase):
 class TestProviderTranslation(AdapterTestCase):
     """Domain scope → provider filter expression (AND, canonical keys)."""
 
-    def test_01_tenant_condition_is_always_first(self) -> None:
+    def test_01_tenant_condition_is_in_the_tenant_union_branch(self) -> None:
         self.seed(make_index_record())
         self.index.find(
             QUERY_VECTOR, tenant_id=self.tenant, top_k=5,
             scope=EvidenceRetrievalScope(source_id=SRC_A))
         must = self.client.last_query.must
-        self.assertEqual(must[0], ("tenant_id", str(TENANT_ID)))
-        self.assertEqual(must[1], ("source_id", SRC_A))
+        self.assertEqual(must, [("source_id", SRC_A)])
+        self.assertEqual(
+            self.client.last_query.should[0],
+            ("tenant_id", str(TENANT_ID)),
+        )
 
     def test_02_full_scope_translated_with_payload_encoding(self) -> None:
         self.seed(make_index_record())
@@ -562,12 +626,15 @@ class TestProviderTranslation(AdapterTestCase):
                 source_id=SRC_A, source_type="guidance",
                 document_id=DOC_A, document_version="v1"))
         self.assertEqual(self.client.last_query.must, [
-            ("tenant_id", str(TENANT_ID)),
             ("source_id", SRC_A),
             ("source_type", "guidance"),
             ("document_id", str(DOC_A)),
             ("document_version", "v1"),
         ])
+        self.assertEqual(
+            self.client.last_query.should[0],
+            ("tenant_id", str(TENANT_ID)),
+        )
 
     def test_03_domain_modules_contain_no_provider_types(self) -> None:
         import xportra.domain.evidence_retrieval as retrieval_mod
@@ -643,7 +710,8 @@ class TestProvenanceAfterFiltering(AdapterTestCase):
         "tenant_id", "chunk_id", "document_id", "chunk_index",
         "content", "content_fingerprint", "source_id", "source_type",
         "source_location", "document_version", "embedding_model",
-        "embedding_dimensions", "score",
+        "embedding_dimensions", "score", "content_scope",
+        "regulatory_requirement_id", "publication_fingerprint",
     )
 
     def test_01_filtered_domain_result_is_complete(self) -> None:

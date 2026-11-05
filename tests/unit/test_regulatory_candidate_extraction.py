@@ -8,6 +8,9 @@ and authorization denial.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
+import json
+from types import SimpleNamespace
 from unittest import TestCase
 from uuid import UUID
 
@@ -19,11 +22,19 @@ from xportra.application.errors import (
 from xportra.application.regulatory_candidate_extraction_service import (
     EXTRACTION_OUTCOME_FAILED,
     EXTRACTION_OUTCOME_MANUAL,
+    EXTRACTION_OUTCOME_PARTIAL,
     EXTRACTION_OUTCOME_SUCCEEDED,
     RegulatoryCandidateExtractionService,
 )
 from xportra.api.errors import APIError, PermissionDeniedError
+from xportra.domain.ingestion import (
+    RegulatoryRequirementExtractionResult,
+    RegulatoryRequirementExtractionService,
+)
+from xportra.domain.llm import LLMGenerationConfig, LLMResponse
+from xportra.infrastructure.llm import ScriptedLLMClient
 from xportra.persistence.database import Database
+from xportra.persistence.errors import PersistenceIntegrityError
 
 ACTOR = UUID("aaaaaaaa-0000-0000-0000-000000000001")
 NON_GRANTED = UUID("bbbbbbbb-0000-0000-0000-000000000002")
@@ -89,39 +100,95 @@ class FakeJobRepository:
         self.claimed_job_id: UUID | None = None
         self.failed_job_id: UUID | None = None
         self.failed_error: str | None = None
+        self.stage_history: list[str] = []
+        self._claim_started_at = datetime(
+            2026, 11, 4, tzinfo=timezone.utc
+        )
 
     def get(self, job_id: UUID):
         return self.jobs.get(job_id)
 
-    def claim(self, job_id, actor_user_id=None):
+    def claim(self, job_id):
         self.claimed_job_id = job_id
-        if job_id in self.jobs:
-            self.jobs[job_id] = dict(self.jobs[job_id])
-            self.jobs[job_id]["status"] = "claimed"
-            self.jobs[job_id]["started_at"] = "2026-10-22T00:00:00Z"
-            self.jobs[job_id]["actor_user_id"] = actor_user_id
-        return dict(self.jobs.get(job_id, {}))
+        job = self.jobs.get(job_id)
+        if job is None or job.get("status") not in ("pending", "retryable"):
+            return None
+        self.jobs[job_id] = dict(job)
+        self.jobs[job_id].update({
+            "status": "claimed",
+            "started_at": self._claim_started_at,
+            "completed_at": None,
+            "error_details": None,
+            "current_stage": "queued",
+        })
+        return dict(self.jobs[job_id])
 
-    def complete(self, job_id, actor_user_id=None):
+    def complete(self, job_id, claim_started_at=None):
         self.completed_job_id = job_id
-        if job_id in self.jobs:
-            self.jobs[job_id] = dict(self.jobs[job_id])
-            self.jobs[job_id]["status"] = "completed"
-            self.jobs[job_id]["completed_at"] = "2026-10-22T00:00:00Z"
-        return dict(self.jobs.get(job_id, {}))
+        job = self.jobs.get(job_id)
+        if (
+            job is None
+            or job.get("status") not in ("claimed", "processing")
+            or job.get("started_at") != claim_started_at
+        ):
+            return None
+        self.jobs[job_id] = dict(job)
+        self.jobs[job_id].update({
+            "status": "completed",
+            "completed_at": self._claim_started_at,
+            "current_stage": "completed",
+        })
+        self.stage_history.append("completed")
+        return dict(self.jobs[job_id])
 
-    def fail(self, job_id, error_details=None, make_retryable=False, actor_user_id=None):
+    def fail(
+        self,
+        job_id,
+        error_details=None,
+        make_retryable=False,
+        claim_started_at=None,
+    ):
         self.failed_job_id = job_id
         self.failed_error = error_details
-        if job_id in self.jobs:
-            self.jobs[job_id] = dict(self.jobs[job_id])
-            self.jobs[job_id]["status"] = "retryable" if make_retryable else "failed"
-            self.jobs[job_id]["error_details"] = error_details
-        return dict(self.jobs.get(job_id, {}))
+        job = self.jobs.get(job_id)
+        if (
+            job is None
+            or job.get("status") not in ("claimed", "processing")
+            or job.get("started_at") != claim_started_at
+        ):
+            return None
+        self.jobs[job_id] = dict(job)
+        self.jobs[job_id].update({
+            "status": "retryable" if make_retryable else "failed",
+            "error_details": error_details,
+            "completed_at": self._claim_started_at,
+            "current_stage": "failed",
+        })
+        if make_retryable:
+            self.jobs[job_id]["retry_count"] = (
+                int(self.jobs[job_id].get("retry_count") or 0) + 1
+            )
+        self.stage_history.append("failed")
+        return dict(self.jobs[job_id])
 
-    def update_stage(self, job_id, current_stage, stage_updated_at):  # noqa: ARG002
-        # No-op for test fixture; the real repo persists to DB.
-        pass
+    def update_stage(
+        self, job_id, current_stage, stage_updated_at,
+        claim_started_at,
+    ):
+        job = self.jobs.get(job_id)
+        if (
+            job is None
+            or job.get("status") not in ("claimed", "processing")
+            or job.get("started_at") != claim_started_at
+        ):
+            return None
+        self.jobs[job_id] = dict(job)
+        self.jobs[job_id].update({
+            "current_stage": current_stage,
+            "stage_updated_at": stage_updated_at,
+        })
+        self.stage_history.append(current_stage)
+        return dict(self.jobs[job_id])
 
 
 class FakeNormalizationRepository:
@@ -172,6 +239,8 @@ class FakeRequirementRepository:
         self.requirements: list[dict] = list(existing or [])
         self.created: list[dict] = []
         self.fail_create = False
+        self.extraction_runs: list[dict] = []
+        self.extraction_run_candidates: list[dict] = []
 
     def get(self, requirement_id: UUID):
         for r in self.requirements:
@@ -188,6 +257,23 @@ class FakeRequirementRepository:
     def create(self, **kwargs):
         if self.fail_create:
             raise RuntimeError("simulated requirement insert failure")
+        for existing in self.requirements:
+            if (
+                existing.get("normalized_document_id")
+                == kwargs.get("normalized_document_id")
+                and existing.get("position") == kwargs["position"]
+            ):
+                cause = SimpleNamespace(
+                    sqlstate="23505",
+                    diag=SimpleNamespace(
+                        constraint_name=(
+                            "regulatory_requirements_document_position_key"
+                        )
+                    ),
+                )
+                raise PersistenceIntegrityError(
+                    "regulatory requirement creation", cause
+                )
         req_id = kwargs.get("id", CANDIDATE)
         row = {
             "id": req_id,
@@ -213,6 +299,83 @@ class FakeRequirementRepository:
         self.requirements.append(row)
         self.created.append(row)
         return row
+
+    def create_with_extraction_run_candidate(
+        self, *, extraction_run_id, candidate_index, values,
+    ):
+        candidate = self.create(**values)
+        resolved = self.resolve_extraction_run_candidate(
+            extraction_run_id=extraction_run_id,
+            candidate_index=candidate_index,
+            candidate_id=candidate["id"],
+            resolution_status="persisted",
+            is_origin=True,
+        )
+        if resolved is None:
+            self.requirements.remove(candidate)
+            self.created.remove(candidate)
+            raise RuntimeError(
+                "candidate evidence could not be resolved atomically"
+            )
+        return candidate
+
+    def mark_extraction_succeeded(self, requirement_id):
+        for requirement in self.requirements:
+            if requirement["id"] == requirement_id:
+                requirement["extraction_outcome"] = "succeeded"
+                return requirement
+        return None
+
+    def create_extraction_run(self, **values):
+        self.extraction_runs.append(dict(values))
+        return dict(values)
+
+    def create_extraction_run_candidate(
+        self, *, extraction_run_id, normalized_document_id,
+        candidate_index, evidence_snapshot,
+    ):
+        row = {
+            "extraction_run_id": extraction_run_id,
+            "normalized_document_id": normalized_document_id,
+            "candidate_index": candidate_index,
+            "evidence_snapshot": evidence_snapshot,
+            "candidate_id": None,
+            "resolution_status": "pending",
+            "is_origin": False,
+        }
+        self.extraction_run_candidates.append(row)
+        return row
+
+    def resolve_extraction_run_candidate(
+        self, *, extraction_run_id, candidate_index, candidate_id,
+        resolution_status, is_origin=False,
+    ):
+        row = next(
+            (
+                item for item in self.extraction_run_candidates
+                if item["extraction_run_id"] == extraction_run_id
+                and item["candidate_index"] == candidate_index
+            ),
+            None,
+        )
+        if row is None or row["resolution_status"] != "pending":
+            return None
+        row["candidate_id"] = candidate_id
+        row["resolution_status"] = resolution_status
+        row["is_origin"] = is_origin
+        return row
+
+    def list_extraction_runs_for_candidate(self, requirement_id):
+        return [
+            {
+                **run,
+                **link,
+            }
+            for link in self.extraction_run_candidates
+            if link["candidate_id"] == requirement_id
+            for run in self.extraction_runs
+            if run["id"] == link["extraction_run_id"]
+        ]
 
 
 class FakeParser:
@@ -324,6 +487,16 @@ class FakeCandidateExtractor:
         return self.extract(normalized_document)
 
 
+class SequencedExtractionResult:
+    is_configured = True
+
+    def __init__(self, results):
+        self.results = list(results)
+
+    def extract(self, normalized_document):
+        return self.results.pop(0)
+
+
 class FakeIngestionService:
     """Fake ingestion service for job status updates."""
 
@@ -335,31 +508,39 @@ class FakeIngestionService:
         self.failed_error: str | None = None
         self.fail_calls: list[dict] = []
 
-    def complete_job(self, job_id, actor_user_id=None):
+    def complete_job(
+        self, job_id, actor_user_id=None, claim_started_at=None
+    ):
         self.completed_job_id = job_id
         if self.job_repo is not None:
-            return self.job_repo.complete(job_id, actor_user_id=actor_user_id)
+            job = self.job_repo.get(job_id)
+            return self.job_repo.complete(
+                job_id,
+                claim_started_at=claim_started_at,
+            )
         return {"id": job_id, "status": "completed"}
 
     def claim_job(self, job_id, actor_user_id=None):
         self.claimed_job_id = job_id
         if self.job_repo is not None:
-            return self.job_repo.claim(job_id, actor_user_id=actor_user_id)
+            return self.job_repo.claim(job_id)
         return {"id": job_id, "status": "claimed"}
 
     def fail_job(self, job_id, error_details=None, make_retryable=False,
-                 actor_user_id=None):
+                 actor_user_id=None, claim_started_at=None):
         self.failed_job_id = job_id
         self.failed_error = error_details
         self.fail_calls.append({
             "job_id": job_id,
             "error_details": error_details,
             "make_retryable": make_retryable,
+            "claim_started_at": claim_started_at,
         })
         if self.job_repo is not None:
             return self.job_repo.fail(
                 job_id, error_details=error_details,
-                make_retryable=make_retryable, actor_user_id=actor_user_id,
+                make_retryable=make_retryable,
+                claim_started_at=claim_started_at,
             )
         return {"id": job_id, "status": "retryable" if make_retryable else "failed"}
 
@@ -511,6 +692,105 @@ def _b64(content: bytes) -> str:
 
 
 class RegulatoryCandidateExtractionTests(TestCase):
+    def test_valid_empty_semantic_result_is_successful_and_explicit(self):
+        llm = ScriptedLLMClient(responses=[
+            LLMResponse(
+                json.dumps({"requirements": []}),
+                model_identifier="scripted-model",
+            )
+        ])
+        semantic_extractor = RegulatoryRequirementExtractionService(
+            llm_client=llm,
+            configuration=LLMGenerationConfig(
+                model_identifier="scripted-model",
+                max_output_tokens=4096,
+            ),
+        )
+        factory = ServiceFactory(candidate_extractor=semantic_extractor)
+
+        result = factory.service().extract_candidates(
+            actor_user_id=ACTOR,
+            source_id=SOURCE,
+            artifact_id=ARTIFACT,
+            job_id=JOB,
+        )
+
+        self.assertEqual(result["outcome"], EXTRACTION_OUTCOME_SUCCEEDED)
+        self.assertEqual(result["candidate_count"], 0)
+        self.assertTrue(result["no_qualifying_requirements"])
+        self.assertEqual(result["job"]["status"], "completed")
+
+    def test_partial_candidates_retry_and_become_succeeded_after_full_run(self):
+        quote = "The shipment must carry a phytosanitary certificate."
+        candidate = {
+            "id": CANDIDATE,
+            "normalized_document_id": NORMALIZATION,
+            "artifact_id": ARTIFACT,
+            "source_id": SOURCE,
+            "requirement_text": quote,
+            "requirement_type": "documentation",
+            "source_location": {
+                "supporting_quote": quote,
+                "title": "phytosanitary certificate",
+            },
+            "position": 10,
+            "actor": None,
+            "condition_metadata": None,
+            "status": "extracted",
+        }
+        extractor = SequencedExtractionResult([
+            RegulatoryRequirementExtractionResult(
+                candidates=(candidate,),
+                outcome=EXTRACTION_OUTCOME_PARTIAL,
+                failed_chunks=({"chunk_index": 2, "reason": "timeout"},),
+            ),
+            RegulatoryRequirementExtractionResult(
+                candidates=(candidate,),
+                outcome=EXTRACTION_OUTCOME_SUCCEEDED,
+            ),
+        ])
+        factory = ServiceFactory(candidate_extractor=extractor)
+        service = factory.service()
+
+        partial = service.extract_candidates(
+            actor_user_id=ACTOR,
+            source_id=SOURCE,
+            artifact_id=ARTIFACT,
+            job_id=JOB,
+        )
+        self.assertEqual(partial["outcome"], EXTRACTION_OUTCOME_PARTIAL)
+        self.assertEqual(partial["job"]["status"], "retryable")
+        self.assertEqual(
+            factory.requirement_repo.requirements[0]["extraction_outcome"],
+            EXTRACTION_OUTCOME_PARTIAL,
+        )
+
+        retried = service.extract_candidates(
+            actor_user_id=ACTOR,
+            source_id=SOURCE,
+            artifact_id=ARTIFACT,
+            job_id=JOB,
+        )
+        self.assertEqual(retried["outcome"], EXTRACTION_OUTCOME_SUCCEEDED)
+        self.assertEqual(retried["job"]["status"], "completed")
+        self.assertEqual(
+            retried["candidates"][0]["extraction_outcome"],
+            EXTRACTION_OUTCOME_SUCCEEDED,
+        )
+        self.assertEqual(len(factory.requirement_repo.requirements), 1)
+        self.assertEqual(len(factory.requirement_repo.extraction_runs), 2)
+        self.assertEqual(
+            [run["outcome"] for run in factory.requirement_repo.extraction_runs],
+            [EXTRACTION_OUTCOME_PARTIAL, EXTRACTION_OUTCOME_SUCCEEDED],
+        )
+        self.assertEqual(
+            [
+                link["resolution_status"]
+                for link in factory.requirement_repo.extraction_run_candidates
+            ],
+            ["persisted", "reused"],
+        )
+
     def test_successful_extraction_creates_candidates_with_provenance(self):
         factory = ServiceFactory()
         service = factory.service()
@@ -523,6 +803,19 @@ class RegulatoryCandidateExtractionTests(TestCase):
         self.assertEqual(result["outcome"], EXTRACTION_OUTCOME_SUCCEEDED)
         self.assertEqual(result["candidate_count"], 2)
         self.assertEqual(result["job"]["status"], "completed")
+        self.assertEqual(result["job"]["actor_user_id"], ACTOR)
+        self.assertEqual(
+            factory.job_repo.stage_history,
+            [
+                "retrieving_artifact",
+                "validating_document",
+                "extracting_text",
+                "normalizing_content",
+                "extracting_requirements",
+                "saving_candidates",
+                "completed",
+            ],
+        )
         self.assertEqual(factory.job_repo.completed_job_id, JOB)
         # Candidates have provenance fields
         for cand in result["candidates"]:
@@ -533,9 +826,108 @@ class RegulatoryCandidateExtractionTests(TestCase):
             self.assertEqual(cand["parser_version"], "v1")
             self.assertFalse(cand["manual_entry"])
             self.assertIsNone(cand["reviewer_user_id"])
+        self.assertEqual(len(factory.requirement_repo.extraction_runs), 1)
+        run = factory.requirement_repo.extraction_runs[0]
+        self.assertEqual(run["source_id"], SOURCE)
+        self.assertEqual(run["artifact_id"], ARTIFACT)
+        self.assertEqual(run["normalized_document_id"], NORMALIZATION)
+        self.assertEqual(run["ingestion_job_id"], JOB)
+        self.assertEqual(run["artifact_content_hash"], "hash")
+        self.assertEqual(run["extraction_method"], "custom_extractor")
+        self.assertEqual(run["parser_version"], "v1")
+        self.assertEqual(len(factory.requirement_repo.extraction_run_candidates), 2)
+        self.assertTrue(
+            all(
+                item["resolution_status"] == "persisted"
+                and item["is_origin"]
+                for item in factory.requirement_repo.extraction_run_candidates
+            )
+        )
         # Storage read was called
         self.assertIn("regulatory-source-artifacts/src/hash",
                       factory.storage.get_calls)
+
+    def test_changed_retry_evidence_is_appended_without_overwriting_candidate(self):
+        first_quote = "Shall be labeled with origin."
+        second_quote = "Shall not exceed 50 kg."
+        first_candidate = {
+            "id": CANDIDATE,
+            "normalized_document_id": NORMALIZATION,
+            "artifact_id": ARTIFACT,
+            "source_id": SOURCE,
+            "requirement_text": first_quote,
+            "requirement_type": "documentation",
+            "source_location": {"supporting_quote": first_quote},
+            "position": 0,
+            "actor": None,
+            "condition_metadata": None,
+            "status": "extracted",
+        }
+        second_candidate = {
+            **first_candidate,
+            "id": UUID("22222222-0000-0000-0000-000000000201"),
+            "requirement_text": second_quote,
+            "source_location": {"supporting_quote": second_quote},
+        }
+        extractor = SequencedExtractionResult([
+            RegulatoryRequirementExtractionResult(
+                candidates=(first_candidate,),
+                outcome=EXTRACTION_OUTCOME_PARTIAL,
+                failed_chunks=({"chunk_index": 1, "reason": "timeout"},),
+            ),
+            RegulatoryRequirementExtractionResult(
+                candidates=(second_candidate,),
+                outcome=EXTRACTION_OUTCOME_SUCCEEDED,
+            ),
+        ])
+        factory = ServiceFactory(candidate_extractor=extractor)
+        service = factory.service()
+
+        service.extract_candidates(
+            actor_user_id=ACTOR,
+            source_id=SOURCE,
+            artifact_id=ARTIFACT,
+            job_id=JOB,
+        )
+        retried = service.extract_candidates(
+            actor_user_id=ACTOR,
+            source_id=SOURCE,
+            artifact_id=ARTIFACT,
+            job_id=JOB,
+        )
+
+        self.assertEqual(
+            [
+                candidate["requirement_text"]
+                for candidate in retried["candidates"]
+            ],
+            [first_quote, second_quote],
+        )
+        self.assertEqual(
+            [
+                link["evidence_snapshot"]["requirement_text"]
+                for link in factory.requirement_repo.extraction_run_candidates
+            ],
+            [first_quote, second_quote],
+        )
+        self.assertEqual(
+            [run["outcome"] for run in factory.requirement_repo.extraction_runs],
+            [EXTRACTION_OUTCOME_PARTIAL, EXTRACTION_OUTCOME_SUCCEEDED],
+        )
+
+    def test_worker_claim_preserves_original_actor_attribution(self):
+        factory = ServiceFactory()
+        factory.job_repo.jobs[JOB]["actor_user_id"] = NON_GRANTED
+
+        result = factory.service().extract_candidates(
+            actor_user_id=ACTOR,
+            source_id=SOURCE,
+            artifact_id=ARTIFACT,
+            job_id=JOB,
+        )
+
+        self.assertEqual(result["job"]["status"], "completed")
+        self.assertEqual(result["job"]["actor_user_id"], NON_GRANTED)
 
     def test_unauthorized_actor_denied(self):
         factory = ServiceFactory(granted_actor=False)
@@ -628,6 +1020,7 @@ class RegulatoryCandidateExtractionTests(TestCase):
         self.assertEqual(
             factory.ingestion_service.fail_calls[-1]["make_retryable"], True
         )
+        self.assertEqual(factory.job_repo.jobs[JOB]["status"], "retryable")
 
     def test_failed_extraction_beyond_retry_bound_is_terminal(self):
         # Bounded retries: once an attempt's durable retry_count has
@@ -676,13 +1069,48 @@ class RegulatoryCandidateExtractionTests(TestCase):
                 job_id=JOB,
             )
 
-    def test_idempotent_re_extraction_returns_existing_candidates(self):
+    def test_candidate_persistence_failure_is_recorded_and_surfaced(self):
         factory = ServiceFactory()
+        factory.requirement_repo.fail_create = True
+
+        with self.assertRaisesRegex(
+                InfrastructureError, "candidate persistence failed"):
+            factory.service().extract_candidates(
+                actor_user_id=ACTOR,
+                source_id=SOURCE,
+                artifact_id=ARTIFACT,
+                job_id=JOB,
+            )
+
+        self.assertEqual(factory.job_repo.jobs[JOB]["status"], "retryable")
+        self.assertEqual(factory.job_repo.jobs[JOB]["current_stage"], "failed")
+        self.assertEqual(
+            factory.ingestion_service.fail_calls[-1]["make_retryable"], True
+        )
+
+    def test_idempotent_re_extraction_returns_existing_candidates(self):
+        factory = ServiceFactory(
+            candidate_extractor=FakeCandidateExtractor(candidates=[{
+                "id": CANDIDATE,
+                "normalized_document_id": NORMALIZATION,
+                "artifact_id": ARTIFACT,
+                "source_id": SOURCE,
+                "requirement_text": "Pre-existing candidate.",
+                "requirement_type": "labeling",
+                "source_location": {},
+                "position": 0,
+                "actor": None,
+                "condition_metadata": None,
+                "status": "extracted",
+            }])
+        )
         # Pre-create a candidate for the artifact's normalization
         factory.normalization_repo.normalizations[NORMALIZATION] = {
             "id": NORMALIZATION,
             "artifact_id": ARTIFACT,
             "source_id": SOURCE,
+            "normalized_text": CONTENT_TEXT.decode("utf-8"),
+            "parser_name": "v1",
         }
         factory.requirement_repo.requirements.append({
             "id": CANDIDATE,
@@ -714,6 +1142,52 @@ class RegulatoryCandidateExtractionTests(TestCase):
         self.assertEqual(result1["candidate_count"], 1)
         # Only one candidate exists (no duplicate created)
         self.assertEqual(len(factory.requirement_repo.requirements), 1)
+
+    def test_existing_candidates_do_not_hide_missing_candidate_persistence(self):
+        factory = ServiceFactory()
+        factory.normalization_repo.normalizations[NORMALIZATION] = {
+            "id": NORMALIZATION,
+            "artifact_id": ARTIFACT,
+            "source_id": SOURCE,
+            "normalized_text": CONTENT_TEXT.decode("utf-8"),
+            "parser_name": "v1",
+        }
+        factory.requirement_repo.requirements.append({
+            "id": CANDIDATE,
+            "normalized_document_id": NORMALIZATION,
+            "artifact_id": ARTIFACT,
+            "source_id": SOURCE,
+            "requirement_text": "Already persisted candidate.",
+            "requirement_type": "labeling",
+            "source_location": {},
+            "position": 0,
+            "actor": None,
+            "condition_metadata": None,
+            "status": "extracted",
+            "ingestion_job_id": JOB,
+            "extraction_outcome": EXTRACTION_OUTCOME_SUCCEEDED,
+            "parser_version": "v1",
+            "manual_entry": False,
+            "reviewer_user_id": None,
+            "reviewed_at": None,
+            "created_at": None,
+            "updated_at": None,
+        })
+
+        result = factory.service().extract_candidates(
+            actor_user_id=ACTOR,
+            source_id=SOURCE,
+            artifact_id=ARTIFACT,
+            job_id=JOB,
+        )
+
+        self.assertTrue(result["duplicate"])
+        self.assertEqual(result["job"]["status"], "completed")
+        self.assertEqual(result["candidate_count"], 3)
+        self.assertEqual(
+            {candidate["position"] for candidate in result["candidates"]},
+            {0, 1, 2},
+        )
 
     def test_manual_candidate_entry_with_reviewer_attribution(self):
         factory = ServiceFactory()
@@ -851,3 +1325,24 @@ class RegulatoryCandidateExtractionTests(TestCase):
                 artifact_id=ARTIFACT, job_id=JOB,
             )
         self.assertEqual(factory.job_repo.failed_job_id, JOB)
+        self.assertEqual(
+            factory.requirement_repo.extraction_runs[0]["outcome"],
+            EXTRACTION_OUTCOME_FAILED,
+        )
+        self.assertEqual(
+            factory.requirement_repo.extraction_runs[0]["failed_chunks"][0][
+                "error_type"
+            ],
+            "RuntimeError",
+        )
+        self.assertEqual(
+            factory.requirement_repo.extraction_runs[0]["extraction_method"],
+            "custom_extractor",
+        )
+        self.assertEqual(
+            factory.requirement_repo.extraction_runs[0]["extraction_version"],
+            "unknown",
+        )
+        self.assertIsNone(
+            factory.requirement_repo.extraction_runs[0]["prompt_version"]
+        )

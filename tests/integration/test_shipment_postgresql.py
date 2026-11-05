@@ -14,12 +14,12 @@ verifies removal.
 import os
 import pathlib
 import unittest
-from types import SimpleNamespace
 from uuid import UUID
 
 from fastapi.testclient import TestClient
 
 from xportra.api.app import create_app
+from xportra.api.dependencies import ApplicationServices
 from xportra.application.result_store import ComplianceResultStore
 from xportra.persistence.database import Database, DatabaseSettings
 from xportra.persistence.repositories import (
@@ -39,6 +39,8 @@ MIGRATIONS = (
 )
 UP = MIGRATIONS / "013_shipments.sql"
 DOWN = MIGRATIONS / "013_shipments.down.sql"
+UP_012 = MIGRATIONS / "012_compliance_workflows.sql"
+DOWN_012 = MIGRATIONS / "012_compliance_workflows.down.sql"
 
 TENANT_A_SLUG = "shipment-integration-a"
 TENANT_B_SLUG = "shipment-integration-b"
@@ -81,6 +83,7 @@ class ShipmentPostgreSQLTests(unittest.TestCase):
             raise unittest.SkipTest("DATABASE_URL is not configured")
 
         cls.database = Database(DatabaseSettings.from_environment())
+        apply_migration(cls.database, UP_012)
         apply_migration(cls.database, UP)
         if not table_exists(cls.database, "shipments"):
             raise unittest.SkipTest(
@@ -108,10 +111,10 @@ class ShipmentPostgreSQLTests(unittest.TestCase):
             shipments=ShipmentRepository(cls.database),
         )
         cls.shipments = ShipmentRepository(cls.database)
-        cls.client = TestClient(create_app(services=SimpleNamespace(
-            rag=None,
-            result_store=cls.store,
-        )))
+        services = ApplicationServices.from_environment()
+        app = create_app(services=services)
+        app.state.services = services
+        cls.client = TestClient(app)
 
     @classmethod
     def tearDownClass(cls):
@@ -119,6 +122,7 @@ class ShipmentPostgreSQLTests(unittest.TestCase):
             return
         try:
             apply_migration(cls.database, DOWN)
+            apply_migration(cls.database, DOWN_012)
             if table_exists(cls.database, "shipments"):
                 raise AssertionError(
                     "rollback left shipments behind")

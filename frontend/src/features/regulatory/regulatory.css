@@ -309,3 +309,96 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---- Ingestion administration --------------------------------------- */
+
+.reg-ingestion-heading,
+.reg-ingestion-job-head,
+.reg-ingestion-run__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.reg-ingestion-heading > div {
+  flex: 1 1 18rem;
+}
+
+.reg-ingestion-heading .muted,
+.reg-ingestion-job-head .muted {
+  margin: 0.25rem 0 0;
+}
+
+.reg-ingestion-job-head h3,
+.reg-ingestion-run__header h4 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.reg-ingestion-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+  gap: 0.75rem 1rem;
+  margin: 1rem 0;
+}
+
+.reg-ingestion-meta > div {
+  min-width: 0;
+}
+
+.reg-ingestion-meta dt {
+  color: var(--xb-text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.reg-ingestion-meta dd {
+  margin: 0.2rem 0 0;
+  overflow-wrap: anywhere;
+}
+
+.reg-ingestion-details,
+.reg-ingestion-run,
+.reg-ingestion-evidence {
+  min-width: 0;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--xb-border);
+  border-radius: var(--xb-radius-md);
+  background: var(--xb-surface-elevated);
+}
+
+.reg-ingestion-runs,
+.reg-ingestion-evidence-list,
+.reg-ingestion-candidate-links {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.reg-ingestion-evidence-list {
+  padding-left: 0;
+}
+
+.reg-ingestion-evidence h5 {
+  margin: 0 0 0.5rem;
+}
+
+.reg-ingestion-evidence blockquote,
+.reg-review-facts blockquote {
+  margin: 0;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--xb-info);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.reg-ingestion-json {
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

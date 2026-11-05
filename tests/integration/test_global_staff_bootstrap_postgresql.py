@@ -64,6 +64,14 @@ class GlobalStaffBootstrapIntegrationTests(unittest.TestCase):
             raise unittest.SkipTest("DATABASE_URL is not configured")
         cls.database = Database(DatabaseSettings.from_environment())
         cls._verify_migration_015()
+        # Ensure no leftover grant_manage holder from interrupted runs of
+        # this or other test classes blocks bootstrap tests.
+        with cls.database.transaction() as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM xportra.global_staff_grants "
+                    "WHERE permission = 'grant_manage'"
+                )
         # Create a shared fixture tenant (unique slug, idempotent).
         cls.tenant_id = UUID("99999999-0000-0000-0000-000000000099")
         with cls.database.transaction() as connection:

@@ -139,6 +139,9 @@ class EvidenceRetrievalResult:
     embedding_model: str
     embedding_dimensions: int
     score: float
+    content_scope: str = "tenant"
+    regulatory_requirement_id: UUID | None = None
+    publication_fingerprint: str | None = None
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -155,6 +158,9 @@ class EvidenceRetrievalResult:
             "embedding_model": self.embedding_model,
             "embedding_dimensions": self.embedding_dimensions,
             "score": self.score,
+            "content_scope": self.content_scope,
+            "regulatory_requirement_id": self.regulatory_requirement_id,
+            "publication_fingerprint": self.publication_fingerprint,
         }
 
     @classmethod
@@ -215,6 +221,29 @@ class EvidenceRetrievalResult:
             or not math.isfinite(score)
         ):
             raise DomainValidationError("relevance score is malformed")
+        content_scope = record.get("content_scope", "tenant")
+        if content_scope not in {"tenant", "global_regulatory"}:
+            raise DomainValidationError("content scope is malformed")
+        regulatory_requirement_id = record.get(
+            "regulatory_requirement_id")
+        publication_fingerprint = record.get(
+            "publication_fingerprint")
+        if content_scope == "global_regulatory":
+            if not isinstance(regulatory_requirement_id, UUID):
+                raise DomainValidationError(
+                    "regulatory requirement identity is malformed")
+            if (
+                not isinstance(publication_fingerprint, str)
+                or not publication_fingerprint.strip()
+            ):
+                raise DomainValidationError(
+                    "regulatory publication fingerprint is malformed")
+        elif regulatory_requirement_id is not None:
+            raise DomainValidationError(
+                "tenant evidence cannot carry a regulatory requirement id")
+        elif publication_fingerprint is not None:
+            raise DomainValidationError(
+                "tenant evidence cannot carry a publication fingerprint")
         return cls(
             tenant_id=tenant_id,
             chunk_id=chunk_id,
@@ -229,6 +258,9 @@ class EvidenceRetrievalResult:
             embedding_model=embedding_model,
             embedding_dimensions=dimensions,
             score=float(score),
+            content_scope=content_scope,
+            regulatory_requirement_id=regulatory_requirement_id,
+            publication_fingerprint=publication_fingerprint,
         )
 
 

@@ -53,6 +53,7 @@ from xportra.api.schemas import (
     RegulatoryGovernanceFlagListResponse,
     RegulatoryGovernanceFlagResponse,
     RegulatoryIngestionJobListResponse,
+    RegulatoryIngestionJobExtractionHistoryResponse,
     RegulatoryIngestionJobResponse,
     RegulatoryManualCandidateRequest,
     RegulatoryManualCandidateResponse,
@@ -68,6 +69,7 @@ from xportra.api.schemas import (
     RegulatoryStageAReviewHistoryResponse,
     RegulatoryStageAReviewRequest,
     RegulatoryStageAReviewResponse,
+    RegulatoryStageAReviewDetailResponse,
     RegulatoryWordingCorrectionListResponse,
     RegulatoryStageBReviewHistoryListResponse,
     RegulatoryStageBReviewHistoryResponse,
@@ -158,7 +160,13 @@ def _extraction_service(services: Any = Depends(get_services)) -> RegulatoryCand
             503, "application_not_ready",
             "Application services are not initialized",
         )
-    return RegulatoryCandidateExtractionService(database)
+    return RegulatoryCandidateExtractionService(
+        database,
+        llm_client=getattr(services, "llm_client", None),
+        llm_configuration=getattr(
+            services, "llm_generation_config", None
+        ),
+    )
 
 
 ExtractionServiceDependency = Annotated[
@@ -308,12 +316,16 @@ def _candidate_response(candidate: dict[str, Any]) -> dict[str, Any]:
         "source_authority_id": candidate.get("source_authority_id"),
         "artifact_uri": candidate.get("artifact_uri"),
         "artifact_content_hash": candidate.get("artifact_content_hash"),
+        "artifact_source_version": candidate.get("artifact_source_version"),
+        "artifact_status": candidate.get("artifact_status"),
         "artifact_content_length": candidate.get("artifact_content_length"),
         "artifact_content_type": candidate.get("artifact_content_type"),
         "artifact_acquisition_channel": candidate.get("artifact_acquisition_channel"),
         "ingestion_job_status": candidate.get("ingestion_job_status"),
         "ingestion_job_error_details": candidate.get("ingestion_job_error_details"),
         "ingestion_job_parser_version": candidate.get("ingestion_job_parser_version"),
+        "document_parser_name": candidate.get("document_parser_name"),
+        "extraction_history": candidate.get("extraction_history") or [],
     }
 
 
@@ -605,6 +617,22 @@ def get_job(
 
 
 @router.get(
+    "/regulatory/ingestion-jobs/{job_id}/extraction-history",
+    response_model=RegulatoryIngestionJobExtractionHistoryResponse,
+)
+def get_job_extraction_history(
+    job_id: UUID,
+    service: ExtractionServiceDependency,
+    actor_id: GlobalStaffDependency,
+):
+    """Read persisted extraction outcomes and evidence for one staff job."""
+    history = service.get_job_extraction_history(job_id)
+    if history is None:
+        raise ApplicationNotFoundError("ingestion job not found")
+    return history
+
+
+@router.get(
     "/regulatory/sources/{source_id}/ingestion-jobs",
     response_model=RegulatoryIngestionJobListResponse,
 )
@@ -687,6 +715,13 @@ def extract_candidates(
         "duplicate": result.get("duplicate", False),
         "normalization_id": result.get("normalization_id"),
         "error": result.get("error"),
+        "failed_chunks": result.get("failed_chunks", []),
+        "rejected_candidate_count": result.get(
+            "rejected_candidate_count", 0
+        ),
+        "no_qualifying_requirements": result.get(
+            "no_qualifying_requirements", False
+        ),
     }
 
 
@@ -833,6 +868,7 @@ def _stage_a_detail_response(candidate: dict[str, Any]) -> dict[str, Any]:
         "requirement_text": candidate.get("requirement_text"),
         "requirement_type": candidate.get("requirement_type"),
         "source_location": candidate.get("source_location") or {},
+        "normalized_document_id": candidate.get("normalized_document_id"),
         "position": candidate.get("position"),
         "extraction_outcome": candidate.get("extraction_outcome"),
         "status": candidate.get("status"),
@@ -847,9 +883,12 @@ def _stage_a_detail_response(candidate: dict[str, Any]) -> dict[str, Any]:
         "source_version": candidate.get("source_version"),
         "source_status": candidate.get("source_status"),
         "source_authority_id": candidate.get("source_authority_id"),
+        "document_parser_name": candidate.get("document_parser_name"),
         # Artifact metadata for review traceability.
         "artifact_uri": candidate.get("artifact_uri"),
         "artifact_content_hash": candidate.get("artifact_content_hash"),
+        "artifact_source_version": candidate.get("artifact_source_version"),
+        "artifact_status": candidate.get("artifact_status"),
         "artifact_content_length": candidate.get("artifact_content_length"),
         "artifact_content_type": candidate.get("artifact_content_type"),
         "artifact_acquisition_channel": candidate.get("artifact_acquisition_channel"),
@@ -858,6 +897,7 @@ def _stage_a_detail_response(candidate: dict[str, Any]) -> dict[str, Any]:
         "ingestion_job_status": candidate.get("ingestion_job_status"),
         "ingestion_job_error_details": candidate.get("ingestion_job_error_details"),
         "ingestion_job_parser_version": candidate.get("ingestion_job_parser_version"),
+        "extraction_history": candidate.get("extraction_history") or [],
     }
 
 
@@ -935,7 +975,7 @@ def stage_a_verify(
 
 @router.get(
     "/regulatory/candidates/{candidate_id}/stage-a",
-    response_model=RegulatoryStageAReviewResponse,
+    response_model=RegulatoryStageAReviewDetailResponse,
 )
 def get_stage_a(
     candidate_id: UUID,

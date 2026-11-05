@@ -14,8 +14,11 @@ import types
 import unittest
 from uuid import UUID
 
+from qdrant_client.http import models as qmodels
+
 from xportra.domain.errors import DomainValidationError, VectorStoreError
 from xportra.domain.evidence_indexing import EmbeddingModelConfig
+from xportra.domain.evidence_corpus import GLOBAL_REGULATORY_TENANT_ID
 from xportra.domain.evidence_retrieval import (
     DEFAULT_TOP_K,
     EvidenceRetrievalQuery,
@@ -35,8 +38,11 @@ OTHER_TENANT = TenantContext(OTHER_TENANT_ID)
 CHUNK_ID = UUID("cccccccc-cccc-cccc-cccc-cccccccccccc")
 CHUNK_ID_2 = UUID("dddddddd-dddd-dddd-dddd-dddddddddddd")
 OTHER_CHUNK_ID = UUID("33333333-3333-3333-3333-333333333333")
+GLOBAL_CHUNK_ID = UUID("55555555-5555-5555-5555-555555555555")
 DOC_ID = UUID("11111111-1111-1111-1111-111111111111")
 DOC_ID_2 = UUID("22222222-2222-2222-2222-222222222222")
+GLOBAL_REQUIREMENT_ID = UUID("44444444-4444-4444-4444-444444444444")
+PUBLICATION_FINGERPRINT = "a" * 64
 
 COLLECTION = "evidence_chunks_retrieval_test"
 DIMS = 4
@@ -196,17 +202,18 @@ class FakeQdrantClient:
     def query_points(self, *, collection_name, query, limit, query_filter,
                      with_payload, with_vectors):
         self._maybe_fail("query_points")
-        tenant_value = None
-        for condition in query_filter.must:
-            tenant_value = condition.match.value
+        tenant_value = next(
+            condition.match.value
+            for condition in query_filter.should
+            if getattr(condition, "key", None) == "tenant_id")
         self.last_query = types.SimpleNamespace(
             collection_name=collection_name, query=list(query), limit=limit,
             tenant_filter=tenant_value)
         coll = self.collections[collection_name]
         scored = []
         for point in coll["points"].values():
-            if not self.ignore_filter and (
-                    point.payload.get("tenant_id") != tenant_value):
+            if not self.ignore_filter and not self._matches_filter(
+                    point.payload, query_filter):
                 continue
             scored.append((cosine(query, point.vector), point))
         scored.sort(key=lambda item: (-item[0], str(item[1].id)))
@@ -215,6 +222,41 @@ class FakeQdrantClient:
                 id=point.id, score=score, payload=dict(point.payload))
             for score, point in scored[:limit]
         ])
+
+    def _matches_filter(self, payload, query_filter):
+        if not all(
+            self._matches_condition(payload, condition)
+            for condition in query_filter.must or []
+        ):
+            return False
+        return any(
+            self._matches_condition(payload, condition)
+            for condition in query_filter.should or []
+        )
+
+    def _matches_condition(self, payload, condition):
+        if isinstance(condition, qmodels.Filter):
+            if not all(
+                self._matches_condition(payload, item)
+                for item in condition.must or []
+            ):
+                return False
+            return all(
+                self._matches_condition(payload, item)
+                for item in condition.must_not or []
+            )
+        key = getattr(condition, "key", None)
+        match = getattr(condition, "match", None)
+        value = getattr(match, "value", None)
+        if value is not None:
+            return payload.get(key) == value
+        text = getattr(match, "text", None)
+        if text is not None:
+            return all(
+                term.casefold() in payload.get("content", "").casefold()
+                for term in text.split()
+            )
+        return False
 
 
 def make_index_record(**overrides):
@@ -317,7 +359,7 @@ class TestEvidenceRetrievalResultModel(unittest.TestCase):
     def test_02_roundtrip_preserves_all_fields(self) -> None:
         original = make_result(score=0.42)
         record = original.to_record()
-        self.assertEqual(len(record), 13)
+        self.assertEqual(len(record), 16)
         self.assertEqual(
             EvidenceRetrievalResult.from_record(record), original)
 
@@ -516,7 +558,106 @@ class TestTenantIsolation(AdapterTestCase):
         self.assertEqual(
             self.client.last_query.tenant_filter, str(TENANT_ID))
 
-    def test_05_adapter_fails_closed_despite_broken_provider_filter(
+    def test_05_published_global_points_join_only_requesting_tenant(
+        self,
+    ) -> None:
+        self.seed(make_index_record())
+        self.index.upsert(
+            make_index_record(
+                tenant_id=OTHER_TENANT_ID,
+                chunk_id=OTHER_CHUNK_ID,
+                document_id=DOC_ID_2),
+            tenant_id=self.other)
+        global_index = QdrantEvidenceVectorIndex(
+            self.client,
+            self.config,
+            global_requirement_filter=lambda ids: {
+                requirement_id: PUBLICATION_FINGERPRINT
+                for requirement_id in ids
+            },
+        )
+        global_index.upsert(
+            make_index_record(
+                tenant_id=GLOBAL_REGULATORY_TENANT_ID,
+                chunk_id=GLOBAL_CHUNK_ID,
+                document_id=DOC_ID_2,
+                source_type="regulation",
+                index_metadata={
+                    "content_scope": "global_regulatory",
+                    "regulatory_requirement_id": GLOBAL_REQUIREMENT_ID,
+                    "publication_status": "published",
+                    "publication_fingerprint": PUBLICATION_FINGERPRINT,
+                },
+            ),
+            tenant_id=TenantContext(GLOBAL_REGULATORY_TENANT_ID),
+        )
+
+        results = global_index.find(
+            [1.0, 0.0, 0.0, 0.0],
+            tenant_id=self.tenant,
+            top_k=10,
+        )
+
+        self.assertEqual(
+            {result.chunk_id for result in results},
+            {CHUNK_ID, GLOBAL_CHUNK_ID},
+        )
+        regulatory_result = next(
+            result for result in results
+            if result.chunk_id == GLOBAL_CHUNK_ID
+        )
+        self.assertEqual(regulatory_result.tenant_id, TENANT_ID)
+        self.assertEqual(
+            regulatory_result.content_scope, "global_regulatory")
+        self.assertEqual(
+            regulatory_result.regulatory_requirement_id,
+            GLOBAL_REQUIREMENT_ID,
+        )
+        self.assertNotIn(OTHER_CHUNK_ID, {
+            result.chunk_id for result in results
+        })
+
+    def test_06_global_points_fail_closed_without_or_with_stale_eligibility(
+        self,
+    ) -> None:
+        global_index = QdrantEvidenceVectorIndex(
+            self.client, self.config)
+        global_index.upsert(
+            make_index_record(
+                tenant_id=GLOBAL_REGULATORY_TENANT_ID,
+                chunk_id=GLOBAL_CHUNK_ID,
+                document_id=DOC_ID_2,
+                source_type="regulation",
+                index_metadata={
+                    "content_scope": "global_regulatory",
+                    "regulatory_requirement_id": GLOBAL_REQUIREMENT_ID,
+                    "publication_status": "published",
+                    "publication_fingerprint": PUBLICATION_FINGERPRINT,
+                },
+            ),
+            tenant_id=TenantContext(GLOBAL_REGULATORY_TENANT_ID),
+        )
+
+        without_authority = global_index.find(
+            [1.0, 0.0, 0.0, 0.0],
+            tenant_id=self.tenant,
+            top_k=5,
+        )
+        self.assertEqual(without_authority, [])
+
+        stale_index = QdrantEvidenceVectorIndex(
+            self.client,
+            self.config,
+            global_requirement_filter=lambda _ids: {},
+        )
+        stale = stale_index.find(
+            [1.0, 0.0, 0.0, 0.0],
+            tenant_id=self.tenant,
+            top_k=5,
+        )
+        self.assertEqual(stale, [])
+
+    def test_07_adapter_fails_closed_despite_broken_provider_filter(
         self,
     ) -> None:
         client = FakeQdrantClient(ignore_filter=True)
@@ -637,7 +778,7 @@ class TestProvenancePreservation(AdapterTestCase):
             index=FakeVectorIndex(entries=seed_entries())).retrieve(
                 EvidenceRetrievalQuery("certificate"), tenant_id=TENANT)
         record = results[0].to_record()
-        self.assertEqual(len(record), 13)
+        self.assertEqual(len(record), 16)
         for field in self.PROVENANCE_FIELDS:
             self.assertIn(field, record)
 
