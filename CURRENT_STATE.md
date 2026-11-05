@@ -1,17 +1,244 @@
 # CURRENT_STATE.md — Current Project State
 
 > Source of truth for what is true about Xportra AI right now.
-> Updated: 2026-11-04
+> Updated: 2026-11-05
 
-## Current task update (2026-11-04)
+## Current task update — Workstream 7
 
-The assigned worker regression fix is complete. The polling query's existing
-`artifact_id IS NOT NULL` filter is now covered by selection tests proving
-pending placeholders remain pending, valid jobs are not starved, retryable
-jobs remain selectable, and ordering/locking/`SKIP LOCKED` are preserved.
-FastAPI startup now logs a sanitized reason when the worker actor is missing
-or invalid. Focused worker and startup tests: 40 passed. See
-`tasks/completed/registration-ingestion-worker-artifact-filter.md`.
+Workstream 7 verifies the existing regulatory-to-Ask-Xportra lifecycle.
+Overall verdict is **PASS**: all Phase C live Qdrant verification completed
+against an isolated local Qdrant server (v1.20.0 at
+http://127.0.0.1:6333); both frontend failures diagnosed; one deferred as
+out of scope. Zero application code changes made.
+
+**Qdrant environment (Phase A):** Classified `SAFE_LOCAL_TEST`. Local Qdrant
+server v1.20.0 at `http://127.0.0.1:6333` (ports 6333 REST, 6334 gRPC),
+bound to localhost, no authentication. `.env.test.local` (process-local
+only) provides `APP_ENV=test`,
+`VECTOR_STORE_URL=http://127.0.0.1:6333`,
+`VECTOR_STORE_COLLECTION=xportra-regulatory`,
+`EMBEDDING_MODEL=all-MiniLM-L6-v2`, `EMBEDDING_DIMENSIONS=384`.
+`DATABASE_URL=postgresql://postgres@localhost:5432/xportra_test` set
+explicitly for the test process. Production `.env` untouched; production
+Qdrant Cloud endpoint not used.
+
+**Phase C (live Qdrant verification) — ALL VERIFIED:**
+- C1 Collection: `xportra-regulatory`, dim 384, distance Cosine, status green.
+- C2 Publication indexing: end-to-end via existing workflow (trigger →
+  outbox job → process_next → sentence-transformers embedding → Qdrant vector).
+  Point metadata verified; PostgreSQL job status='indexed' with fingerprint.
+- C3 Idempotency/updates: no duplicate vectors on re-processing; fingerprint
+  consistent; content update replaces point in place.
+- C4 Retrieval/tenant isolation: global retrievable; tenant-specific
+  retrievable; cross-tenant isolation enforced; unpublished/withdrawn
+  excluded; stale Qdrant points excluded by PostgreSQL eligibility
+  (fail-closed).
+- C5 Ask Xportra: real RAGApplicationService with live Qdrant retrieval;
+  tenant context preserved; citations correspond to evidence; conversation
+  repos wired. LIVE Qdrant + MOCKED LLM (ScriptedLLMClient).
+- C6 Withdrawal/stale: withdrawn content excluded from Ask Xportra; stale
+  point excluded by PostgreSQL eligibility; restoration works.
+- C7 Cleanup: all 3 test Qdrant points + all PostgreSQL test records
+  removed; collection intact (0 points); no pre-existing data affected.
+
+**Frontend failures (Phase B):** Full suite `vitest run` — 661 passed,
+1 failed (662 total). Previous report stated 660 passed, 2 failed.
+- Failure 1 (fixed): stale regulatory workflow expectation in
+  `SourceWorkflow.test.tsx` — expected "Registration record — no document
+  attached yet"; component renders "Registration placeholder". Test
+  assertion updated; no application code changed.
+- Failure 2 (deferred, out of scope):
+  `RegisterPage.test.tsx` > "retains pending profile data and shows a safe
+  retry after API failure". Root cause:
+  `sessionStorageOrNull()` at `pendingRegistration.ts:50` returns
+  `window.localStorage` instead of `window.sessionStorage`. Registration/
+  auth — not part of the regulatory ingestion/publication/Ask Xportra
+  lifecycle; deferred per fixing rules.
+
+**Backend verification (Phase D):** Unit suite 2477 passed, 0 failed
+(`DATABASE_URL=postgresql://postgres@localhost:5432/xportra_test`).
+Focused unit (publication index, retrieval, index sync, scope): 135 passed.
+Focused integration (publication index PostgreSQL): 6 passed.
+Full integration suite: 123 passed, 26 failed, 5 errors — all pre-existing
+database-state contamination unrelated to the regulatory lifecycle.
+Python compileall passed. `git diff --check` (CRLF-aware) passed.
+
+**Frontend verification (Phase D):** Full suite 661 passed, 1 failed.
+Lint (`tsc --noEmit`) passed. Production build (`vite build`) passed
+(existing large-chunk advisory).
+
+Zero code changes made. All modified tracked files and untracked files are
+pre-existing from Workstreams 1–6. Nothing staged, committed, pushed, reset,
+or cleaned.
+
+## Current task update — Workstream 6 (2026-11-05)
+
+Workstream 6 — Complete RAG and Ask Xportra — is complete. The existing
+RAG implementation (Workstream 5) was connected to the exporter-facing
+Ask Xportra experience, and conversation persistence was added so
+conversations can be created, reopened, and continued with follow-up
+questions.
+
+### Backend changes
+
+- **Migration 037** (`migrations/037_conversations.sql` + `.down.sql`):
+  `xportra.conversations` (id, tenant_id, mode, created_at,
+  updated_at) and `xportra.conversation_messages` (id, conversation_id,
+  role, content, intent, status, citations JSONB,
+  shipment_references JSONB, refusal_reason, created_at) with tenant
+  isolation indexes.
+- **`xportra/persistence/repositories.py`**: Added
+  `ConversationRepository` (create_in_transaction, get, list_for_tenant,
+  touch) and `ConversationMessageRepository`
+  (create_in_transaction, list_for_conversation, get_by_id).
+- **`xportra/application/conversations.py`**: Extended
+  `ConversationApplicationService` with `create_conversation()`,
+  `get_conversation_with_messages()`, `list_conversations()`, and
+  automatic persistence of both user and assistant messages on
+  `handle_message()` when repositories are wired. Degrades to
+  stateless (Phase 10.2 behavior) when repos are absent.
+- **`xportra/api/conversations.py`**: Added `POST /conversations`
+  (create), `GET /conversations` (list), `GET
+  /conversations/{conversation_id}` (get with messages). `POST
+  /conversations/messages` persists turns when repos are wired.
+- **`xportra/api/schemas.py`**: Added `ConversationCreateRequest`,
+  `ConversationCreateResponse`, `ConversationListItem`,
+  `ConversationListResponse`, `ConversationMessageItem`,
+  `ConversationDetailResponse`.
+- **`xportra/api/dependencies.py`**: Wired
+  `conversation_repository` and `conversation_message_repository` into
+  `ApplicationServices` across all composition entry points
+  (`from_environment`, `from_environment_with_rag`,
+  `from_environment_with_evidence_upload`,
+  `from_environment_with_capabilities`).
+
+### Frontend changes
+
+- **`frontend/src/features/ask/AskPage.tsx`**: Complete Ask Xportra
+  experience — conversation creation/listing/resume, message threading
+  with follow-up questions, detailed citation/source inspection,
+  loading/error/empty/insufficient-evidence states, knowledge vs
+  shipment-aware mode toggle.
+- **`frontend/src/features/ask/ask.css`**: Styles for history sidebar,
+  message threading, citations, source inspection.
+- **`frontend/src/api/conversations.ts`**: Typed CRUD API functions
+  (create, list, get, post message).
+- **`frontend/src/types/api.ts`**: Conversation CRUD types.
+
+### Tests
+
+- `tests/unit/test_conversation_persistence.py`: 11 unit tests using
+  in-memory fakes (create, get, list, tenant isolation, message
+  persistence, persistence-not-configured errors).
+- `tests/integration/test_conversation_persistence_postgresql.py`: 6
+  integration tests against local `xportra_test` (PostgreSQL 18.6),
+  covering create/get, cross-tenant isolation, list isolation, touch,
+  message persistence, database identity verification.
+- `frontend/src/features/ask/AskPage.test.tsx`: 4 Vitest tests
+  (rendering, start state, conversation creation, error handling).
+
+### Verification
+
+- Backend unit: 50 passed (39 conversational backend + 11
+  conversation persistence).
+- Backend integration: 6 passed against `xportra_test`
+  (`DATABASE_URL=postgresql://postgres@localhost:5432/xportra_test`).
+- Frontend: 39 passed across ask/conversation/client test files.
+- TypeScript check: passes.
+- Live Qdrant: NOT available (no local Qdrant instance; production
+  cloud credentials in `.env` not used for testing). All retrieval
+  paths are mocked. Live Qdrant behavior remains unverified —
+  documented as a limitation, not claimed as passed.
+- Full backend unit suite: 2461 passed, 7 failed (7 pre-existing
+  failures in evidence retrieval/hybrid retrieval tests unrelated to
+  Workstream 6).
+- No files staged, committed, or pushed. Pre-existing unrelated
+  worktree modifications preserved.
+
+## Workstream 5 status (2026-11-05)
+
+Workstream 5 — Connect Approved Publication to Qdrant — is complete under
+ADR-0025. Approved eligible requirements are durably reconciled through
+the PostgreSQL index outbox and the existing in-process worker. Regulatory
+points use an explicit global content scope; retrieval includes only the
+requesting tenant's evidence plus global requirements whose current
+PostgreSQL eligibility and publication fingerprint still match.
+Publication, content, source, and review-flag changes reconcile indexed
+state. Existing tenant-only behavior and architecture are preserved.
+
+Verification:
+
+- Focused publication, retrieval, index-sync, worker, and composition
+  unit tests: 161 passed, 1 Starlette/httpx deprecation warning.
+- Local PostgreSQL 18.6 `xportra_test` publication-index integration
+  tests: 6 passed, 0 skipped.
+- No verified Qdrant test collection was available, so live Qdrant
+  validation was not attempted.
+- Nothing was staged, committed, or pushed. Pre-existing unrelated
+  worktree modifications remain untouched.
+
+## Workstream 4 status (2026-11-05)
+
+Workstream 4 — Complete Existing Ingestion Administration — is complete.
+The existing staff dashboard now shows backend job states and stages,
+timestamps, artifact identity, persisted extraction outcomes and candidate
+evidence, failure details, refresh errors, and eligible retries. A
+staff-authorized read-only API exposes persisted extraction history,
+including empty runs. The job response schema exposes its existing stage
+fields. No worker behavior, database schema, or migration was changed.
+
+Verification:
+
+- Frontend focused tests: 43 passed.
+- Frontend TypeScript check passed; production build passed with the existing
+  large-chunk warning.
+- Focused ingestion API tests: 10 passed (one Starlette/httpx deprecation
+  warning).
+- Local PostgreSQL 18.6 `xportra_test` extraction integration suite:
+  17 passed and 4 subtests passed. The test-specific fixture rows were absent
+  before and after the suite; no migration was needed.
+- No files were staged, committed, or pushed. Pre-existing unrelated
+  worktree modifications remain untouched.
+
+## Previous Workstream 3 status (completed 2026-11-05)
+
+Workstream 3 — Strengthen Evidence and Provenance — is complete under
+ADR-0024. Migration 035 adds immutable extraction-run and candidate-evidence
+history, with source/artifact/version/document/job identity constrained in
+PostgreSQL.
+Candidate persistence is atomic with origin-history resolution. Reprocessing
+appends exact evidence snapshots without replacing earlier candidate text.
+Candidate list, detail, and Stage A detail responses expose artifact version,
+content hash, source location, and applicable extraction history. Absent page
+and section references distinguish unavailable context from model omission.
+
+Verification used only local PostgreSQL 18.6 at
+`127.0.0.1:5432/xportra_test`, with a process-scoped `DATABASE_URL`. Migration
+035 was applied with the documented `psql -v ON_ERROR_STOP=1 -f` procedure.
+After integration cleanup, source/artifact/normalization/requirement/job row
+counts matched the existing baseline and extraction history tables were empty.
+Production `.env` settings were not changed and credentials were not printed.
+
+Workstream 3 focused unit/regression suites: 110 passed, 1 dependency warning,
+and 6 subtests passed. Local PostgreSQL extraction, Stage A, and full-workflow
+integration suites: 27 passed, 4 subtests passed, 0 skipped. Python compilation
+and CRLF-aware `git diff --check` passed. No files were staged, committed, or
+pushed; pre-existing unrelated worktree changes remain untouched.
+After final migration and failure-metadata corrections, the focused candidate
+extraction unit and local PostgreSQL integration suites passed 43 tests and
+4 subtests with no skips.
+
+Workstream 1 is complete and verified. The worker now claims jobs atomically,
+fences lifecycle writes with a claim token, renews active leases, and preserves
+original actor attribution. Focused worker, extraction, ingestion-service,
+and source-intake unit suites pass (116 tests); the Workstream 1 PostgreSQL
+integration suite passes (12 tests) on local PostgreSQL 18.6,
+`127.0.0.1:5432/xportra_test`. Missing repository migrations 010, 012, 013,
+and 034 were applied locally using the established `psql` procedure; the
+read-only migration check reports no missing objects. Existing row counts
+were unchanged after fixture cleanup. No production `.env` setting was
+modified, and the pre-existing local edit to migration 034 remains untouched.
+See `tasks/completed/workstream-1-repair-ingestion-execution.md`.
 
 > **Phase 4D regulatory administration milestones M1–M8 are COMPLETE**
 > (backend, repository-only; no deployment, no production database access,
